@@ -95,22 +95,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   // Step 2: Load memberships whenever user changes — OUTSIDE the auth lock
+  // setTimeout(0) ensures supabase-js internal lock is fully released (auth-js #762)
   useEffect(() => {
     if (!user) return
 
     let cancelled = false
     setLoading(true)
 
-    fetchMemberships(user.id).then((memberships) => {
-      if (cancelled) return
-      const org = pickOrg(memberships)
-      setOrgMemberships(memberships)
-      setCurrentOrgState(org)
-      setLoading(false)
-    })
+    const timer = setTimeout(() => {
+      fetchMemberships(user.id).then((memberships) => {
+        if (cancelled) return
+        const org = pickOrg(memberships)
+        setOrgMemberships(memberships)
+        setCurrentOrgState(org)
+        setLoading(false)
+      })
+    }, 0)
 
     return () => {
       cancelled = true
+      clearTimeout(timer)
     }
   }, [user?.id])
 
