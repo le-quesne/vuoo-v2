@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 
 export function LoginPage() {
-  const { user, currentOrg, loading } = useAuth()
+  const { user, currentOrg, isSuperAdmin, loading } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [isSignUp, setIsSignUp] = useState(false)
@@ -20,7 +20,7 @@ export function LoginPage() {
   }
 
   // User is authenticated — redirect based on org state
-  // Both user and currentOrg are set atomically, no race condition
+  if (user && isSuperAdmin && !currentOrg) return <Navigate to="/admin" replace />
   if (user && currentOrg) return <Navigate to="/planner" replace />
   if (user) return <Navigate to="/onboarding" replace />
 
