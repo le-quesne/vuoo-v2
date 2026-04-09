@@ -30,16 +30,18 @@ export const AuthContext = createContext<AuthContextValue>({
 })
 
 const ORG_STORAGE_KEY = 'vuoo_current_org_id'
-const AUTH_TIMEOUT_MS = 3000
 
 async function fetchMemberships(userId: string): Promise<MembershipRow[]> {
+  console.log('[AUTH] fetchMemberships START for', userId)
   const { data, error } = await supabase
     .from('organization_members')
     .select('*, organization:organizations(*)')
     .eq('user_id', userId)
 
+  console.log('[AUTH] fetchMemberships DONE:', { count: data?.length, error })
+
   if (error) {
-    console.error('[AuthContext] fetchMemberships error:', error)
+    console.error('[AUTH] fetchMemberships error:', error)
     return []
   }
 
@@ -59,19 +61,6 @@ function pickOrg(memberships: MembershipRow[]): Organization | null {
   return first
 }
 
-// Read session from localStorage directly — bypasses supabase-js locks entirely
-function getStoredUser(): User | null {
-  try {
-    const storageKey = `sb-iywjnoojchdcjswmikxg-auth-token`
-    const raw = localStorage.getItem(storageKey)
-    if (!raw) return null
-    const session = JSON.parse(raw)
-    return session?.user ?? null
-  } catch {
-    return null
-  }
-}
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [currentOrg, setCurrentOrgState] = useState<Organization | null>(null)
@@ -79,65 +68,55 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
   const userRef = useRef<User | null>(null)
-  const resolvedRef = useRef(false)
 
-  // Step 1: Listen for auth changes — NO API calls here (auth-js #762 deadlock)
+  console.log('[AUTH] render:', { user: user?.id?.slice(0,8), currentOrg: currentOrg?.name, loading, memberships: orgMemberships.length })
+
+  // Step 1: Listen for auth changes — NO API calls here (auth-js #762)
   useEffect(() => {
+    console.log('[AUTH] useEffect[onAuthStateChange] mounted')
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
+        console.log('[AUTH] onAuthStateChange:', event, { hasSession: !!session, userId: session?.user?.id?.slice(0,8) })
+
         if (event === 'TOKEN_REFRESHED') return
 
-        resolvedRef.current = true
         const u = session?.user ?? null
         userRef.current = u
         setIsSuperAdmin(u?.app_metadata?.is_super_admin === true)
 
         if (!u) {
+          console.log('[AUTH] no user, clearing state')
           setUser(null)
           setOrgMemberships([])
           setCurrentOrgState(null)
           setLoading(false)
         } else {
+          console.log('[AUTH] user found, setting loading=true + user')
           setLoading(true)
           setUser(u)
         }
       },
     )
 
-    // Safety net: if onAuthStateChange never fires (auth-js lock deadlock),
-    // fall back to reading the session directly from localStorage
-    const timeout = setTimeout(() => {
-      if (resolvedRef.current) return
-
-      const storedUser = getStoredUser()
-      userRef.current = storedUser
-      if (storedUser) {
-        setIsSuperAdmin(storedUser.app_metadata?.is_super_admin === true)
-        setUser(storedUser)
-        // loading stays true — useEffect[user?.id] will handle it
-      } else {
-        setLoading(false)
-      }
-    }, AUTH_TIMEOUT_MS)
-
-    return () => {
-      subscription.unsubscribe()
-      clearTimeout(timeout)
-    }
+    return () => subscription.unsubscribe()
   }, [])
 
-  // Step 2: Load memberships whenever user changes — OUTSIDE the auth lock
-  // setTimeout(0) ensures supabase-js internal lock is fully released (auth-js #762)
+  // Step 2: Load memberships — OUTSIDE auth lock
   useEffect(() => {
+    console.log('[AUTH] useEffect[user?.id]:', user?.id?.slice(0,8) ?? 'null')
     if (!user) return
 
     let cancelled = false
     setLoading(true)
 
     const timer = setTimeout(() => {
+      console.log('[AUTH] setTimeout fired, calling fetchMemberships')
       fetchMemberships(user.id).then((memberships) => {
+        console.log('[AUTH] fetchMemberships resolved:', { cancelled, count: memberships.length })
         if (cancelled) return
         const org = pickOrg(memberships)
+        console.log('[AUTH] setting state:', { org: org?.name, loading: false })
         setOrgMemberships(memberships)
         setCurrentOrgState(org)
         setLoading(false)
@@ -145,6 +124,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, 0)
 
     return () => {
+      console.log('[AUTH] useEffect[user?.id] cleanup')
       cancelled = true
       clearTimeout(timer)
     }
