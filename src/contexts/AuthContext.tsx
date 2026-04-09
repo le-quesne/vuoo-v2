@@ -30,6 +30,7 @@ export const AuthContext = createContext<AuthContextValue>({
 })
 
 const ORG_STORAGE_KEY = 'vuoo_current_org_id'
+const AUTH_TIMEOUT_MS = 3000
 
 async function fetchMemberships(userId: string): Promise<MembershipRow[]> {
   const { data, error } = await supabase
@@ -58,6 +59,19 @@ function pickOrg(memberships: MembershipRow[]): Organization | null {
   return first
 }
 
+// Read session from localStorage directly — bypasses supabase-js locks entirely
+function getStoredUser(): User | null {
+  try {
+    const storageKey = `sb-iywjnoojchdcjswmikxg-auth-token`
+    const raw = localStorage.getItem(storageKey)
+    if (!raw) return null
+    const session = JSON.parse(raw)
+    return session?.user ?? null
+  } catch {
+    return null
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [currentOrg, setCurrentOrgState] = useState<Organization | null>(null)
@@ -65,14 +79,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
   const userRef = useRef<User | null>(null)
+  const resolvedRef = useRef(false)
 
   // Step 1: Listen for auth changes — NO API calls here (auth-js #762 deadlock)
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
-        // TOKEN_REFRESHED only refreshes the JWT — same user, no need to reload
         if (event === 'TOKEN_REFRESHED') return
 
+        resolvedRef.current = true
         const u = session?.user ?? null
         userRef.current = u
         setIsSuperAdmin(u?.app_metadata?.is_super_admin === true)
@@ -83,15 +98,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setCurrentOrgState(null)
           setLoading(false)
         } else {
-          // Set loading=true BEFORE setUser so the next render shows spinner
-          // while memberships are being loaded in the useEffect below
           setLoading(true)
           setUser(u)
         }
       },
     )
 
-    return () => subscription.unsubscribe()
+    // Safety net: if onAuthStateChange never fires (auth-js lock deadlock),
+    // fall back to reading the session directly from localStorage
+    const timeout = setTimeout(() => {
+      if (resolvedRef.current) return
+
+      const storedUser = getStoredUser()
+      userRef.current = storedUser
+      if (storedUser) {
+        setIsSuperAdmin(storedUser.app_metadata?.is_super_admin === true)
+        setUser(storedUser)
+        // loading stays true — useEffect[user?.id] will handle it
+      } else {
+        setLoading(false)
+      }
+    }, AUTH_TIMEOUT_MS)
+
+    return () => {
+      subscription.unsubscribe()
+      clearTimeout(timeout)
+    }
   }, [])
 
   // Step 2: Load memberships whenever user changes — OUTSIDE the auth lock
