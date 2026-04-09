@@ -32,16 +32,12 @@ export const AuthContext = createContext<AuthContextValue>({
 const ORG_STORAGE_KEY = 'vuoo_current_org_id'
 
 async function fetchMemberships(userId: string): Promise<MembershipRow[]> {
-  console.log('[AUTH] fetchMemberships START for', userId)
   const { data, error } = await supabase
     .from('organization_members')
     .select('*, organization:organizations(*)')
     .eq('user_id', userId)
 
-  console.log('[AUTH] fetchMemberships DONE:', { count: data?.length, error })
-
   if (error) {
-    console.error('[AUTH] fetchMemberships error:', error)
     return []
   }
 
@@ -69,16 +65,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
   const userRef = useRef<User | null>(null)
 
-  console.log('[AUTH] render:', { user: user?.id?.slice(0,8), currentOrg: currentOrg?.name, loading, memberships: orgMemberships.length })
-
   // Step 1: Listen for auth changes — NO API calls here (auth-js #762)
   useEffect(() => {
-    console.log('[AUTH] useEffect[onAuthStateChange] mounted')
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
-        console.log('[AUTH] onAuthStateChange:', event, { hasSession: !!session, userId: session?.user?.id?.slice(0,8) })
-
         if (event === 'TOKEN_REFRESHED') return
 
         const u = session?.user ?? null
@@ -87,7 +77,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsSuperAdmin(u?.app_metadata?.is_super_admin === true)
 
         if (!u) {
-          console.log('[AUTH] no user, clearing state')
           setUser(null)
           setOrgMemberships([])
           setCurrentOrgState(null)
@@ -95,11 +84,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } else if (u.id !== prevId) {
           // Only set loading + user if it's a NEW user
           // Duplicate events (SIGNED_IN fires multiple times) are ignored
-          console.log('[AUTH] NEW user, setting loading=true + user')
           setLoading(true)
           setUser(u)
         } else {
-          console.log('[AUTH] same user, skipping (duplicate event)')
         }
       },
     )
@@ -109,19 +96,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Step 2: Load memberships — OUTSIDE auth lock
   useEffect(() => {
-    console.log('[AUTH] useEffect[user?.id]:', user?.id?.slice(0,8) ?? 'null')
     if (!user) return
 
     let cancelled = false
     setLoading(true)
 
     const timer = setTimeout(() => {
-      console.log('[AUTH] setTimeout fired, calling fetchMemberships')
       fetchMemberships(user.id).then((memberships) => {
-        console.log('[AUTH] fetchMemberships resolved:', { cancelled, count: memberships.length })
         if (cancelled) return
         const org = pickOrg(memberships)
-        console.log('[AUTH] setting state:', { org: org?.name, loading: false })
         setOrgMemberships(memberships)
         setCurrentOrgState(org)
         setLoading(false)
@@ -129,7 +112,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, 0)
 
     return () => {
-      console.log('[AUTH] useEffect[user?.id] cleanup')
       cancelled = true
       clearTimeout(timer)
     }
