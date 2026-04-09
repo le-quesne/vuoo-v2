@@ -82,6 +82,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (event === 'TOKEN_REFRESHED') return
 
         const u = session?.user ?? null
+        const prevId = userRef.current?.id
         userRef.current = u
         setIsSuperAdmin(u?.app_metadata?.is_super_admin === true)
 
@@ -91,10 +92,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setOrgMemberships([])
           setCurrentOrgState(null)
           setLoading(false)
-        } else {
-          console.log('[AUTH] user found, setting loading=true + user')
+        } else if (u.id !== prevId) {
+          // Only set loading + user if it's a NEW user
+          // Duplicate events (SIGNED_IN fires multiple times) are ignored
+          console.log('[AUTH] NEW user, setting loading=true + user')
           setLoading(true)
           setUser(u)
+        } else {
+          console.log('[AUTH] same user, skipping (duplicate event)')
         }
       },
     )
