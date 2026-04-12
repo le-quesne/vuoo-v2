@@ -8,15 +8,13 @@ const navItems = [
 
 export function AdminLayout() {
   return (
-    <div className="flex min-h-screen bg-gray-50">
-      <aside className="fixed left-0 top-0 h-screen w-56 bg-gray-900 flex flex-col p-4 z-50">
+    <div className="flex min-h-screen bg-slate-50">
+      <aside className="fixed left-0 top-0 h-screen w-56 bg-navy-950 flex flex-col p-4 z-50">
         <div className="flex items-center gap-2 mb-6">
-          <div className="w-9 h-9 bg-red-500 rounded-lg flex items-center justify-center text-white font-bold text-sm">
-            VU
-          </div>
+          <img src="/logo_vuoo_white.svg" alt="Vuoo" className="w-9 h-9" />
           <div>
             <div className="text-white text-sm font-semibold">Vuoo Admin</div>
-            <div className="text-gray-500 text-[10px]">Super Admin Panel</div>
+            <div className="text-slate-500 text-[10px]">Super Admin Panel</div>
           </div>
         </div>
 
@@ -30,7 +28,7 @@ export function AdminLayout() {
                 `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                   isActive
                     ? 'bg-red-500/20 text-red-400'
-                    : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                    : 'text-slate-400 hover:text-white hover:bg-navy-800'
                 }`
               }
             >
@@ -42,7 +40,7 @@ export function AdminLayout() {
 
         <NavLink
           to="/planner"
-          className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
+          className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-400 hover:text-white hover:bg-navy-800 transition-colors"
         >
           <ArrowLeft size={18} />
           Volver a la app

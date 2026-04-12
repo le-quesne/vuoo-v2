@@ -1,13 +1,13 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useMemo } from 'react'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import { MAPBOX_TOKEN, MAP_STYLE, DEFAULT_CENTER, DEFAULT_ZOOM, fetchDirections } from '../lib/mapbox'
-import type { Stop } from '../types/database'
+import type { Stop, DriverLocation } from '../types/database'
 
 mapboxgl.accessToken = MAPBOX_TOKEN
 
 const ROUTE_COLORS = [
-  '#6366f1', // indigo
+  '#3b82f6', // blue
   '#f59e0b', // amber
   '#10b981', // emerald
   '#ef4444', // red
@@ -26,16 +26,39 @@ interface RouteGroup {
 
 interface RouteMapProps {
   routeGroups: RouteGroup[]
+  showRouteLines?: boolean
   onStopClick?: (stop: Stop) => void
   selectedStopId?: string | null
+  driverLocations?: DriverLocation[]
+  driverColorByRouteId?: Record<string, string>
+  driverNameByRouteId?: Record<string, string>
 }
 
-export function RouteMap({ routeGroups, onStopClick, selectedStopId }: RouteMapProps) {
+export function RouteMap({
+  routeGroups,
+  showRouteLines = true,
+  onStopClick,
+  selectedStopId,
+  driverLocations,
+  driverColorByRouteId,
+  driverNameByRouteId,
+}: RouteMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<mapboxgl.Map | null>(null)
   const markersRef = useRef<mapboxgl.Marker[]>([])
+  const driverMarkersRef = useRef<mapboxgl.Marker[]>([])
   const mapLoadedRef = useRef(false)
-  const abortRef = useRef(0)
+  const onStopClickRef = useRef(onStopClick)
+  onStopClickRef.current = onStopClick
+
+  const routeDataKey = useMemo(() =>
+    JSON.stringify(routeGroups.map(g => ({
+      id: g.routeId,
+      color: g.color,
+      stops: g.stops.map(s => ({ id: s.id, lat: s.lat, lng: s.lng })),
+    }))),
+    [routeGroups]
+  )
 
   // Init map once
   useEffect(() => {
@@ -53,7 +76,6 @@ export function RouteMap({ routeGroups, onStopClick, selectedStopId }: RouteMapP
 
     map.on('load', () => {
       mapLoadedRef.current = true
-      // We'll add sources/layers dynamically per route group
     })
 
     mapRef.current = map
@@ -65,86 +87,196 @@ export function RouteMap({ routeGroups, onStopClick, selectedStopId }: RouteMapP
     }
   }, [])
 
-  // Update markers + route lines when routeGroups or selectedStopId change
-  const updateMap = useCallback(async () => {
+  // Update markers (sync)
+  useEffect(() => {
     const map = mapRef.current
-    if (!map || !mapLoadedRef.current) return
+    if (!map) return
 
-    const currentAbort = ++abortRef.current
+    function drawMarkers(map: mapboxgl.Map) {
+      markersRef.current.forEach((m) => m.remove())
+      markersRef.current = []
 
-    // Clear old markers
-    markersRef.current.forEach((m) => m.remove())
-    markersRef.current = []
+      const bounds = new mapboxgl.LngLatBounds()
+      let hasPoints = false
 
-    // Clear old route layers/sources
-    for (let i = 0; i < 20; i++) {
-      const layerId = `route-line-${i}`
-      const borderId = `route-border-${i}`
-      const sourceId = `route-src-${i}`
-      if (map.getLayer(borderId)) map.removeLayer(borderId)
-      if (map.getLayer(layerId)) map.removeLayer(layerId)
-      if (map.getSource(sourceId)) map.removeSource(sourceId)
+      for (const group of routeGroups) {
+        const stopsWithCoords = group.stops.filter((s) => s.lat && s.lng)
+
+        stopsWithCoords.forEach((stop, i) => {
+          const isSelected = selectedStopId === stop.id
+          const el = document.createElement('div')
+          el.style.cssText = `
+            width: 30px; height: 30px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 12px; font-weight: 700; color: white;
+            background: ${group.color};
+            border: 2.5px solid white;
+            box-shadow: ${isSelected ? `0 0 0 3px ${group.color}40, 0 2px 8px rgba(0,0,0,0.3)` : '0 2px 8px rgba(0,0,0,0.3)'};
+            cursor: pointer;
+            ${isSelected ? 'transform: scale(1.3);' : ''}
+          `
+          el.textContent = String(i + 1)
+
+          el.addEventListener('click', (e) => {
+            e.stopPropagation()
+            onStopClickRef.current?.(stop)
+          })
+
+          const popup = new mapboxgl.Popup({ offset: 18, closeButton: false }).setHTML(`
+            <div style="font-family: system-ui; padding: 2px;">
+              <div style="font-weight: 600; font-size: 13px; margin-bottom: 2px;">Parada ${i + 1}</div>
+              <div style="font-size: 12px; color: #444;">${stop.name}</div>
+              ${stop.address ? `<div style="font-size: 11px; color: #888;">${stop.address}</div>` : ''}
+              ${stop.time_window_start ? `<div style="font-size: 11px; color: #888;">${stop.time_window_start}-${stop.time_window_end}</div>` : ''}
+            </div>
+          `)
+
+          const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+            .setLngLat([stop.lng!, stop.lat!])
+            .setPopup(popup)
+            .addTo(map)
+
+          markersRef.current.push(marker)
+          bounds.extend([stop.lng!, stop.lat!])
+          hasPoints = true
+        })
+      }
+
+      if (hasPoints) {
+        map.fitBounds(bounds, { padding: 70, duration: 0 })
+      }
     }
 
-    const bounds = new mapboxgl.LngLatBounds()
-    let hasPoints = false
+    if (mapLoadedRef.current) {
+      drawMarkers(map)
+    } else {
+      const handler = () => drawMarkers(map)
+      map.on('load', handler)
+      return () => { map.off('load', handler) }
+    }
+  }, [routeDataKey, selectedStopId])
 
-    for (let groupIdx = 0; groupIdx < routeGroups.length; groupIdx++) {
-      const group = routeGroups[groupIdx]
-      const stopsWithCoords = group.stops.filter((s) => s.lat && s.lng)
-      if (stopsWithCoords.length === 0) continue
+  // Draw driver location markers (distinctive, dynamic)
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
 
-      // Add markers (fixed to map coordinates)
-      stopsWithCoords.forEach((stop, i) => {
-        const el = document.createElement('div')
-        el.style.cssText = `
-          width: 30px; height: 30px; border-radius: 50%;
+    function drawDriverMarkers(map: mapboxgl.Map) {
+      driverMarkersRef.current.forEach((m) => m.remove())
+      driverMarkersRef.current = []
+
+      if (!driverLocations || driverLocations.length === 0) return
+
+      for (const loc of driverLocations) {
+        if (loc.lat == null || loc.lng == null) continue
+        const color = (loc.route_id && driverColorByRouteId?.[loc.route_id]) || '#111827'
+        const name = (loc.route_id && driverNameByRouteId?.[loc.route_id]) || 'Conductor'
+
+        const wrap = document.createElement('div')
+        wrap.style.cssText = `
+          position: relative;
+          width: 34px; height: 34px;
           display: flex; align-items: center; justify-content: center;
-          font-size: 12px; font-weight: 700; color: white;
-          background: ${group.color};
-          border: 2.5px solid white;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-          cursor: pointer;
-          transition: transform 0.15s;
+          pointer-events: auto;
         `
-        el.textContent = String(i + 1)
 
-        if (selectedStopId === stop.id) {
-          el.style.transform = 'scale(1.3)'
-          el.style.boxShadow = `0 0 0 3px ${group.color}40, 0 2px 8px rgba(0,0,0,0.3)`
+        const pulse = document.createElement('div')
+        pulse.style.cssText = `
+          position: absolute; inset: 0;
+          border-radius: 50%;
+          background: ${color}55;
+          animation: vuoo-pulse 1.6s ease-out infinite;
+        `
+
+        const core = document.createElement('div')
+        core.style.cssText = `
+          position: relative;
+          width: 20px; height: 20px; border-radius: 50%;
+          background: ${color};
+          border: 3px solid white;
+          box-shadow: 0 2px 10px rgba(0,0,0,0.35);
+          display: flex; align-items: center; justify-content: center;
+        `
+
+        const inner = document.createElement('div')
+        inner.style.cssText = `
+          width: 6px; height: 6px; border-radius: 50%;
+          background: white;
+        `
+        core.appendChild(inner)
+        wrap.appendChild(pulse)
+        wrap.appendChild(core)
+
+        if (!document.getElementById('vuoo-pulse-style')) {
+          const style = document.createElement('style')
+          style.id = 'vuoo-pulse-style'
+          style.textContent = `@keyframes vuoo-pulse { 0% { transform: scale(0.6); opacity: 0.9; } 100% { transform: scale(1.8); opacity: 0; } }`
+          document.head.appendChild(style)
         }
 
-        el.addEventListener('click', (e) => {
-          e.stopPropagation()
-          onStopClick?.(stop)
-        })
-
+        const recordedAt = loc.recorded_at ? new Date(loc.recorded_at).toLocaleTimeString('es-CL') : ''
         const popup = new mapboxgl.Popup({ offset: 18, closeButton: false }).setHTML(`
           <div style="font-family: system-ui; padding: 2px;">
-            <div style="font-weight: 600; font-size: 13px; margin-bottom: 2px;">Parada ${i + 1}</div>
-            <div style="font-size: 12px; color: #444;">${stop.name}</div>
-            ${stop.address ? `<div style="font-size: 11px; color: #888;">${stop.address}</div>` : ''}
-            ${stop.time_window_start ? `<div style="font-size: 11px; color: #888;">${stop.time_window_start}-${stop.time_window_end}</div>` : ''}
+            <div style="font-weight: 600; font-size: 13px; margin-bottom: 2px;">${name}</div>
+            <div style="font-size: 11px; color: #888;">Ultima posicion ${recordedAt}</div>
+            ${loc.speed != null ? `<div style="font-size: 11px; color: #888;">${Math.round(loc.speed * 3.6)} km/h</div>` : ''}
           </div>
         `)
 
-        const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
-          .setLngLat([stop.lng!, stop.lat!])
+        const marker = new mapboxgl.Marker({ element: wrap, anchor: 'center' })
+          .setLngLat([loc.lng, loc.lat])
           .setPopup(popup)
           .addTo(map)
 
-        markersRef.current.push(marker)
-        bounds.extend([stop.lng!, stop.lat!])
-        hasPoints = true
-      })
+        driverMarkersRef.current.push(marker)
+      }
+    }
 
-      // Fetch real road directions for this route group
-      if (stopsWithCoords.length >= 2) {
+    if (mapLoadedRef.current) {
+      drawDriverMarkers(map)
+    } else {
+      const handler = () => drawDriverMarkers(map)
+      map.on('load', handler)
+      return () => { map.off('load', handler) }
+    }
+  }, [driverLocations, driverColorByRouteId, driverNameByRouteId])
+
+  // Fetch and draw route lines (async) — only when showRouteLines is true
+  useEffect(() => {
+    if (!showRouteLines) return
+
+    const map = mapRef.current
+    if (!map) return
+
+    let cancelled = false
+
+    async function drawRouteLines(map: mapboxgl.Map) {
+      if (!mapLoadedRef.current) {
+        await new Promise<void>((resolve) => {
+          map.on('load', () => resolve())
+        })
+      }
+      if (cancelled) return
+
+      // Clear old route layers/sources
+      for (let i = 0; i < 20; i++) {
+        const borderId = `route-border-${i}`
+        const layerId = `route-line-${i}`
+        const sourceId = `route-src-${i}`
+        if (map.getLayer(borderId)) map.removeLayer(borderId)
+        if (map.getLayer(layerId)) map.removeLayer(layerId)
+        if (map.getSource(sourceId)) map.removeSource(sourceId)
+      }
+
+      for (let groupIdx = 0; groupIdx < routeGroups.length; groupIdx++) {
+        const group = routeGroups[groupIdx]
+        const stopsWithCoords = group.stops.filter((s) => s.lat && s.lng)
+        if (stopsWithCoords.length < 2) continue
+
         const coords: [number, number][] = stopsWithCoords.map((s) => [s.lng!, s.lat!])
         const directions = await fetchDirections(coords)
 
-        // Check if we were cancelled
-        if (abortRef.current !== currentAbort) return
+        if (cancelled) return
 
         if (directions) {
           const sourceId = `route-src-${groupIdx}`
@@ -163,7 +295,6 @@ export function RouteMap({ routeGroups, onStopClick, selectedStopId }: RouteMapP
             },
           })
 
-          // White border for contrast
           map.addLayer({
             id: borderId,
             type: 'line',
@@ -176,7 +307,6 @@ export function RouteMap({ routeGroups, onStopClick, selectedStopId }: RouteMapP
             layout: { 'line-cap': 'round', 'line-join': 'round' },
           })
 
-          // Colored route line
           map.addLayer({
             id: layerId,
             type: 'line',
@@ -192,29 +322,14 @@ export function RouteMap({ routeGroups, onStopClick, selectedStopId }: RouteMapP
       }
     }
 
-    if (hasPoints) {
-      map.fitBounds(bounds, { padding: 70, duration: 600 })
-    }
-  }, [routeGroups, selectedStopId, onStopClick])
-
-  // Trigger update when data changes
-  useEffect(() => {
-    const map = mapRef.current
-    if (!map) return
-
-    if (mapLoadedRef.current) {
-      updateMap()
-    } else {
-      const onLoad = () => updateMap()
-      map.on('load', onLoad)
-      return () => { map.off('load', onLoad) }
-    }
-  }, [updateMap])
+    drawRouteLines(map)
+    return () => { cancelled = true }
+  }, [routeDataKey, showRouteLines])
 
   return <div ref={containerRef} className="w-full h-full" />
 }
 
-// Simple map for a flat list of stops
+// Simple map — markers only, no route lines
 export function SimpleMap({
   stops,
   onStopClick,
@@ -224,16 +339,17 @@ export function SimpleMap({
   onStopClick?: (stop: Stop) => void
   selectedStopId?: string | null
 }) {
+  const groups = useMemo(() => [{
+    routeId: 'all',
+    vehicleName: 'All',
+    stops,
+    color: ROUTE_COLORS[0],
+  }], [stops])
+
   return (
     <RouteMap
-      routeGroups={[
-        {
-          routeId: 'all',
-          vehicleName: 'All',
-          stops,
-          color: ROUTE_COLORS[0],
-        },
-      ]}
+      routeGroups={groups}
+      showRouteLines={false}
       onStopClick={onStopClick}
       selectedStopId={selectedStopId}
     />

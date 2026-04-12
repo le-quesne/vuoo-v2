@@ -99,7 +99,7 @@ export function AdminOrgDetail() {
         <div className="flex gap-2">
           <button
             onClick={handleImpersonate}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-500 text-white rounded-lg text-sm font-medium hover:bg-indigo-600"
+            className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600"
           >
             <Eye size={16} />
             Impersonar

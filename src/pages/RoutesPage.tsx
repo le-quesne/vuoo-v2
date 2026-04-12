@@ -53,7 +53,7 @@ export function RoutesPage() {
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as RouteStatus | 'all')}
-            className="pl-10 pr-8 py-2 border border-gray-200 rounded-lg text-sm appearance-none bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            className="pl-10 pr-8 py-2 border border-gray-200 rounded-lg text-sm appearance-none bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
           >
             <option value="all">Todos los estados</option>
             <option value="not_started">No empezada</option>

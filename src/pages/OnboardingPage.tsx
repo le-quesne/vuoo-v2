@@ -41,9 +41,7 @@ export function OnboardingPage() {
       <div className="w-full max-w-sm">
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
           <div className="flex justify-center mb-6">
-            <div className="w-12 h-12 bg-indigo-500 rounded-xl flex items-center justify-center text-white font-bold text-lg">
-              VU
-            </div>
+            <img src="/logo_vuoo.svg" alt="Vuoo" className="h-10" />
           </div>
           <h1 className="text-xl font-semibold text-center mb-2">Crea tu organizacion</h1>
           <p className="text-sm text-gray-500 text-center mb-6">
@@ -61,7 +59,7 @@ export function OnboardingPage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Mi Empresa"
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
               />
             </div>
 
@@ -70,7 +68,7 @@ export function OnboardingPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2.5 bg-indigo-500 text-white rounded-lg text-sm font-medium hover:bg-indigo-600 disabled:opacity-50"
+              className="w-full py-2.5 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 disabled:opacity-50"
             >
               {loading ? 'Creando...' : 'Continuar'}
             </button>

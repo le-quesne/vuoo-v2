@@ -1,7 +1,29 @@
 @import "tailwindcss";
 
+@theme {
+  --font-display: 'Sora', sans-serif;
+  --font-sans: 'Inter', sans-serif;
+
+  /* Navy — fondos oscuros */
+  --color-navy-950: #0a0e1a;
+  --color-navy-900: #0f1629;
+  --color-navy-800: #162038;
+  --color-navy-700: #1e2d4a;
+  --color-navy-600: #2a3d5e;
+}
+
 @layer base {
   body {
-    @apply m-0 bg-gray-50 text-gray-900 antialiased;
+    @apply m-0 bg-slate-50 text-slate-900 font-sans antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+  }
+}
+
+@layer components {
+  .input {
+    @apply w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400;
   }
 }

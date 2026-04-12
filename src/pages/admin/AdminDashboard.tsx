@@ -41,7 +41,7 @@ export function AdminDashboard() {
   const summaryCards = [
     { label: 'Organizaciones', value: totals.orgs, icon: Building2, color: 'bg-red-500' },
     { label: 'Usuarios', value: totals.members, icon: Users, color: 'bg-blue-500' },
-    { label: 'Planes', value: totals.plans, icon: Calendar, color: 'bg-indigo-500' },
+    { label: 'Planes', value: totals.plans, icon: Calendar, color: 'bg-blue-500' },
     { label: 'Paradas', value: totals.stops, icon: MapPin, color: 'bg-green-500' },
     { label: 'Vehiculos', value: totals.vehicles, icon: Truck, color: 'bg-orange-500' },
   ]

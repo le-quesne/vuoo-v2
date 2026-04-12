@@ -54,7 +54,7 @@ export function PlannerPage() {
 
     const [routesRes, stopsRes] = await Promise.all([
       supabase.from('routes').select('id, plan_id').in('plan_id', planIds),
-      supabase.from('stops').select('id, plan_id, status').in('plan_id', planIds),
+      supabase.from('plan_stops').select('id, plan_id, status').in('plan_id', planIds),
     ])
 
     const routes = routesRes.data ?? []
@@ -102,13 +102,13 @@ export function PlannerPage() {
           <div
             key={d.toISOString()}
             onClick={() => setSelectedDate(d)}
-            className={`min-h-24 border border-gray-100 p-1.5 cursor-pointer transition-colors hover:bg-indigo-50/50 ${
+            className={`min-h-24 border border-gray-100 p-1.5 cursor-pointer transition-colors hover:bg-blue-50/50 ${
               !inMonth ? 'bg-gray-50/50 text-gray-300' : ''
-            } ${isSameDay(d, selectedDate) ? 'bg-indigo-50 ring-2 ring-indigo-400 ring-inset' : ''}`}
+            } ${isSameDay(d, selectedDate) ? 'bg-blue-50 ring-2 ring-blue-400 ring-inset' : ''}`}
           >
             <span
               className={`text-xs font-medium inline-flex w-6 h-6 items-center justify-center rounded-full ${
-                isToday(d) ? 'bg-indigo-500 text-white' : ''
+                isToday(d) ? 'bg-blue-500 text-white' : ''
               }`}
             >
               {format(d, 'd')}
@@ -121,7 +121,7 @@ export function PlannerPage() {
                     e.stopPropagation()
                     navigate(`/planner/${p.id}`)
                   }}
-                  className="text-[10px] px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded truncate cursor-pointer hover:bg-indigo-200 flex items-center gap-1"
+                  className="text-[10px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded truncate cursor-pointer hover:bg-blue-200 flex items-center gap-1"
                 >
                   <span className="truncate">{p.name}</span>
                 </div>
@@ -186,7 +186,7 @@ export function PlannerPage() {
               placeholder="Buscar plan..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm w-56 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              className="pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm w-56 focus:outline-none focus:ring-2 focus:ring-blue-400"
             />
           </div>
         </div>
@@ -223,8 +223,8 @@ export function PlannerPage() {
                 className="p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors"
               >
                 <div className="flex items-center gap-2 mb-1.5">
-                  <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-indigo-500">
+                  <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-blue-500">
                       <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
                       <line x1="16" y1="2" x2="16" y2="6" />
                       <line x1="8" y1="2" x2="8" y2="6" />
@@ -248,7 +248,7 @@ export function PlannerPage() {
                 {/* Progress bar */}
                 <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-indigo-500 rounded-full transition-all"
+                    className="h-full bg-blue-500 rounded-full transition-all"
                     style={{ width: `${progress}%` }}
                   />
                 </div>
@@ -280,7 +280,7 @@ export function PlannerPage() {
               navigate(`/planner/${data.id}`)
             }
           }}
-          className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-500 text-white rounded-lg text-sm font-medium hover:bg-indigo-600 transition-colors"
+          className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 transition-colors"
         >
           <Plus size={16} />
           Crear un plan nuevo

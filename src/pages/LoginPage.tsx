@@ -14,7 +14,7 @@ export function LoginPage() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
       </div>
     )
   }
@@ -42,9 +42,7 @@ export function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
           <div className="flex justify-center mb-6">
-            <div className="w-12 h-12 bg-indigo-500 rounded-xl flex items-center justify-center text-white font-bold text-lg">
-              VU
-            </div>
+            <img src="/logo_vuoo.svg" alt="Vuoo" className="h-10" />
           </div>
           <h1 className="text-xl font-semibold text-center mb-6">
             {isSignUp ? 'Crear cuenta' : 'Iniciar sesion'}
@@ -60,7 +58,7 @@ export function LoginPage() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
               />
             </div>
             <div>
@@ -72,7 +70,7 @@ export function LoginPage() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
               />
             </div>
 
@@ -83,7 +81,7 @@ export function LoginPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="w-full py-2.5 bg-indigo-500 text-white rounded-lg text-sm font-medium hover:bg-indigo-600 disabled:opacity-50"
+              className="w-full py-2.5 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 disabled:opacity-50"
             >
               {submitting
                 ? 'Cargando...'
@@ -95,7 +93,7 @@ export function LoginPage() {
 
           <button
             onClick={() => setIsSignUp(!isSignUp)}
-            className="w-full text-center text-sm text-indigo-500 mt-4 hover:underline"
+            className="w-full text-center text-sm text-blue-500 mt-4 hover:underline"
           >
             {isSignUp ? 'Ya tengo cuenta' : 'Crear una cuenta nueva'}
           </button>

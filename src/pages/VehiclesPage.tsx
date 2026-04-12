@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Search } from 'lucide-react'
+import { Plus, Search, Pencil, Trash2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import type { Vehicle, FuelType } from '../types/database'
@@ -24,19 +24,10 @@ function VehicleAvatar({ name, index }: { name: string; index: number }) {
   )
 }
 
-const SUB_NAV = [
-  'Vehiculos',
-  'Informacion de parada',
-  'Pruebas de entrega',
-  'Paradas completadas',
-  'Paradas canceladas',
-  'Configuracion',
-]
-
 export function VehiclesPage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
-  const [showCreate, setShowCreate] = useState(false)
-  const [activeSection, setActiveSection] = useState(0)
+  const [showModal, setShowModal] = useState(false)
+  const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null)
   const [search, setSearch] = useState('')
 
   useEffect(() => {
@@ -51,82 +42,82 @@ export function VehiclesPage() {
     if (data) setVehicles(data)
   }
 
+  async function handleDelete(v: Vehicle) {
+    if (!window.confirm(`Eliminar vehiculo ${v.name}?`)) return
+    await supabase.from('vehicles').delete().eq('id', v.id)
+    loadVehicles()
+  }
+
+  function openCreate() {
+    setEditingVehicle(null)
+    setShowModal(true)
+  }
+
+  function openEdit(v: Vehicle) {
+    setEditingVehicle(v)
+    setShowModal(true)
+  }
+
+  function closeModal() {
+    setShowModal(false)
+    setEditingVehicle(null)
+  }
+
   const filtered = vehicles.filter((v) =>
     v.name.toLowerCase().includes(search.toLowerCase())
   )
 
   return (
-    <div className="flex h-screen">
-      {/* Left sidebar nav */}
-      <div className="w-60 border-r border-gray-200 bg-white p-4 flex flex-col">
-        <h2 className="text-lg font-semibold mb-4">Drivers</h2>
-        <nav className="space-y-0.5">
-          {SUB_NAV.map((item, i) => (
-            <button
-              key={item}
-              onClick={() => setActiveSection(i)}
-              className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                activeSection === i
-                  ? 'bg-indigo-50 text-indigo-700 font-medium'
-                  : 'text-gray-600 hover:bg-gray-50'
-              }`}
-            >
-              {item}
-            </button>
-          ))}
-        </nav>
+    <div className="flex-1 p-6 overflow-y-auto">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-medium">Vehiculos</h2>
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Buscar..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm w-48 focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
+          </div>
+          <button
+            onClick={openCreate}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600"
+          >
+            <Plus size={16} />
+            Crear vehiculo
+          </button>
+        </div>
       </div>
 
-      {/* Main content */}
-      <div className="flex-1 p-6 overflow-y-auto">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-medium">Vehiculos</h2>
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Buscar..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm w-48 focus:outline-none focus:ring-2 focus:ring-indigo-400"
-              />
-            </div>
-            <button
-              onClick={() => setShowCreate(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-indigo-500 text-white rounded-lg text-sm font-medium hover:bg-indigo-600"
-            >
-              <Plus size={16} />
-              Crear vehiculo
-            </button>
-          </div>
-        </div>
+      <div className="text-xs text-gray-400 mb-2">
+        {filtered.length} vehiculos
+      </div>
 
-        <div className="text-xs text-gray-400 mb-2">
-          {filtered.length} vehiculos
-        </div>
-
-        {/* Table */}
-        <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs text-gray-500 bg-gray-50 border-b border-gray-200">
-                <th className="p-3 font-medium w-8"></th>
-                <th className="p-3 font-medium">Nombre</th>
-                <th className="p-3 font-medium">Matricula</th>
-                <th className="p-3 font-medium">Marca</th>
-                <th className="p-3 font-medium">Modelo</th>
-                <th className="p-3 font-medium">Precio/km ($)</th>
-                <th className="p-3 font-medium">Combustible</th>
-                <th className="p-3 font-medium">Consumo medio</th>
-                <th className="p-3 font-medium">Capacidad (kg)</th>
-                <th className="p-3 font-medium">Fecha creacion</th>
-              </tr>
+      <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs text-gray-500 bg-gray-50 border-b border-gray-200">
+              <th className="p-3 font-medium w-8"></th>
+              <th className="p-3 font-medium">Nombre</th>
+              <th className="p-3 font-medium">Matricula</th>
+              <th className="p-3 font-medium">Marca</th>
+              <th className="p-3 font-medium">Modelo</th>
+              <th className="p-3 font-medium">Precio/km ($)</th>
+              <th className="p-3 font-medium">Combustible</th>
+              <th className="p-3 font-medium">Consumo medio</th>
+              <th className="p-3 font-medium">Capacidad (kg)</th>
+              <th className="p-3 font-medium">Fecha creacion</th>
+              <th className="p-3 font-medium w-20">Acciones</th>
+            </tr>
           </thead>
           <tbody>
             {filtered.map((v, i) => (
               <tr
                 key={v.id}
+                onClick={() => openEdit(v)}
                 className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer"
               >
                 <td className="p-3">
@@ -148,11 +139,35 @@ export function VehiclesPage() {
                     month: '2-digit',
                   })}
                 </td>
+                <td className="p-3">
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        openEdit(v)
+                      }}
+                      className="p-1.5 rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                      title="Editar"
+                    >
+                      <Pencil size={15} />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleDelete(v)
+                      }}
+                      className="p-1.5 rounded-md text-red-500 hover:bg-red-50 hover:text-red-600"
+                      title="Eliminar"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </td>
               </tr>
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={10} className="p-8 text-center text-gray-400">
+                <td colSpan={11} className="p-8 text-center text-gray-400">
                   No hay vehiculos
                 </td>
               </tr>
@@ -161,38 +176,44 @@ export function VehiclesPage() {
         </table>
       </div>
 
-        {showCreate && (
-          <CreateVehicleModal
-            onClose={() => setShowCreate(false)}
-            onCreated={() => {
-              setShowCreate(false)
-              loadVehicles()
-            }}
-          />
-        )}
-      </div>
+      {showModal && (
+        <VehicleFormModal
+          vehicle={editingVehicle ?? undefined}
+          onClose={closeModal}
+          onSaved={() => {
+            closeModal()
+            loadVehicles()
+          }}
+        />
+      )}
     </div>
   )
 }
 
-function CreateVehicleModal({
+function VehicleFormModal({
+  vehicle,
   onClose,
-  onCreated,
+  onSaved,
 }: {
+  vehicle?: Vehicle
   onClose: () => void
-  onCreated: () => void
+  onSaved: () => void
 }) {
+  const isEdit = !!vehicle
+
   const [form, setForm] = useState({
-    name: '',
-    license_plate: '',
-    brand: '',
-    model: '',
-    capacity_weight_kg: 0,
-    price_per_km: '',
-    fuel_type: 'gasoline' as FuelType,
-    avg_consumption: '',
-    time_window_start: '',
-    time_window_end: '',
+    name: vehicle?.name ?? '',
+    license_plate: vehicle?.license_plate ?? '',
+    brand: vehicle?.brand ?? '',
+    model: vehicle?.model ?? '',
+    capacity_weight_kg: vehicle?.capacity_weight_kg ?? 0,
+    price_per_km:
+      vehicle?.price_per_km != null ? String(vehicle.price_per_km) : '',
+    fuel_type: (vehicle?.fuel_type ?? 'gasoline') as FuelType,
+    avg_consumption:
+      vehicle?.avg_consumption != null ? String(vehicle.avg_consumption) : '',
+    time_window_start: vehicle?.time_window_start ?? '',
+    time_window_end: vehicle?.time_window_end ?? '',
   })
 
   const { user, currentOrg } = useAuth()
@@ -201,7 +222,7 @@ function CreateVehicleModal({
     e.preventDefault()
     if (!user || !currentOrg) return
 
-    await supabase.from('vehicles').insert({
+    const payload = {
       name: form.name,
       license_plate: form.license_plate || null,
       brand: form.brand || null,
@@ -212,10 +233,18 @@ function CreateVehicleModal({
       avg_consumption: form.avg_consumption ? Number(form.avg_consumption) : null,
       time_window_start: form.time_window_start || null,
       time_window_end: form.time_window_end || null,
-      user_id: user.id,
-      org_id: currentOrg.id,
-    })
-    onCreated()
+    }
+
+    if (isEdit && vehicle) {
+      await supabase.from('vehicles').update(payload).eq('id', vehicle.id)
+    } else {
+      await supabase.from('vehicles').insert({
+        ...payload,
+        user_id: user.id,
+        org_id: currentOrg.id,
+      })
+    }
+    onSaved()
   }
 
   return (
@@ -224,7 +253,9 @@ function CreateVehicleModal({
         onSubmit={handleSubmit}
         className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto"
       >
-        <h3 className="text-lg font-semibold mb-4">Nuevo vehiculo</h3>
+        <h3 className="text-lg font-semibold mb-4">
+          {isEdit ? 'Editar vehiculo' : 'Nuevo vehiculo'}
+        </h3>
         <div className="space-y-3">
           <Field
             label="Nombre *"
@@ -275,7 +306,7 @@ function CreateVehicleModal({
                 onChange={(e) =>
                   setForm({ ...form, fuel_type: e.target.value as FuelType })
                 }
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
               >
                 <option value="gasoline">Gasolina</option>
                 <option value="diesel">Diesel</option>
@@ -301,7 +332,7 @@ function CreateVehicleModal({
                 onChange={(e) =>
                   setForm({ ...form, time_window_start: e.target.value })
                 }
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
               />
             </div>
             <div>
@@ -314,7 +345,7 @@ function CreateVehicleModal({
                 onChange={(e) =>
                   setForm({ ...form, time_window_end: e.target.value })
                 }
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
               />
             </div>
           </div>
@@ -330,9 +361,9 @@ function CreateVehicleModal({
           </button>
           <button
             type="submit"
-            className="flex-1 px-4 py-2 bg-indigo-500 text-white rounded-lg text-sm font-medium hover:bg-indigo-600"
+            className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600"
           >
-            Crear
+            {isEdit ? 'Guardar' : 'Crear'}
           </button>
         </div>
       </form>
@@ -363,7 +394,7 @@ function Field({
         required={required}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
       />
     </div>
   )
