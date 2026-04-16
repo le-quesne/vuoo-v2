@@ -11,6 +11,7 @@ export interface AuthContextValue {
   orgMemberships: MembershipRow[]
   orgRole: OrgRole | null
   isSuperAdmin: boolean
+  isDriver: boolean
   loading: boolean
   setCurrentOrg: (org: Organization) => void
   refreshMemberships: () => Promise<void>
@@ -23,6 +24,7 @@ export const AuthContext = createContext<AuthContextValue>({
   orgMemberships: [],
   orgRole: null,
   isSuperAdmin: false,
+  isDriver: false,
   loading: true,
   setCurrentOrg: () => {},
   refreshMemberships: async () => {},
@@ -139,6 +141,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const orgRole =
     orgMemberships.find((m) => m.org_id === currentOrg?.id)?.role ?? null
 
+  const isDriver = user?.app_metadata?.role === 'driver'
+
   return (
     <AuthContext.Provider
       value={{
@@ -147,6 +151,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         orgMemberships,
         orgRole,
         isSuperAdmin,
+        isDriver,
         loading,
         setCurrentOrg,
         refreshMemberships,

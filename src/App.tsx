@@ -16,6 +16,7 @@ import { StopsPage } from './pages/StopsPage'
 import { RoutesPage } from './pages/RoutesPage'
 import { VehiclesPage } from './pages/VehiclesPage'
 import { DriversPage } from './pages/DriversPage'
+import { UsersPage } from './pages/UsersPage'
 import { AnalyticsPage } from './pages/AnalyticsPage'
 import { NotificationSettingsPage } from './pages/NotificationSettingsPage'
 import { AdminLayout } from './pages/admin/AdminLayout'
@@ -23,6 +24,8 @@ import { AdminDashboard } from './pages/admin/AdminDashboard'
 import { AdminOrgDetail } from './pages/admin/AdminOrgDetail'
 import { AdminUsers } from './pages/admin/AdminUsers'
 import TrackingPage from './pages/TrackingPage'
+import { DriverWelcomePage } from './pages/DriverWelcomePage'
+import { WelcomePage } from './pages/WelcomePage'
 
 export default function App() {
   return (
@@ -32,6 +35,8 @@ export default function App() {
           {/* Public */}
           <Route path="/login" element={<LoginPage />} />
           <Route path="/track/:token" element={<TrackingPage />} />
+          <Route path="/driver-welcome" element={<DriverWelcomePage />} />
+          <Route path="/welcome" element={<WelcomePage />} />
 
           {/* Onboarding */}
           <Route element={<RequireAuth />}>
@@ -57,6 +62,7 @@ export default function App() {
               <Route path="/routes" element={<RoutesPage />} />
               <Route path="/vehicles" element={<VehiclesPage />} />
               <Route path="/drivers" element={<DriversPage />} />
+              <Route path="/users" element={<UsersPage />} />
               <Route path="/analytics" element={<AnalyticsPage />} />
               <Route path="/notifications/settings" element={<NotificationSettingsPage />} />
               <Route path="*" element={<Navigate to="/planner" replace />} />

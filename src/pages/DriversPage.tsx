@@ -316,7 +316,14 @@ function DriverModal({
           notes: form.notes || null,
         }
 
+        // Refresh session to ensure the access token is valid before calling the edge function
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+        if (sessionError || !session?.access_token) {
+          throw new Error('Tu sesión ha expirado. Por favor recarga la página e inicia sesión nuevamente.')
+        }
+
         const { data, error } = await supabase.functions.invoke('invite-driver', {
+          headers: { Authorization: `Bearer ${session.access_token}` },
           body: {
             email: trimmedEmail,
             first_name: form.first_name,
@@ -329,9 +336,15 @@ function DriverModal({
         if (error) throw error
         if (data?.error) throw new Error(data.error)
 
-        window.alert(
-          `Conductor creado. Se envio una invitacion por email a ${trimmedEmail}.`,
-        )
+        if (data?.email_sent) {
+          window.alert(
+            `Conductor creado. Se enviaron las credenciales por email a ${trimmedEmail}.`,
+          )
+        } else {
+          window.alert(
+            `Conductor creado, pero no se pudo enviar el email (${data?.email_error ?? 'error desconocido'}).\n\nEntrega estas credenciales manualmente:\n\nEmail: ${trimmedEmail}\nContrasena temporal: ${data?.temp_password}`,
+          )
+        }
       }
 
       onSaved()
@@ -348,6 +361,7 @@ function DriverModal({
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
       <form
         onSubmit={handleSubmit}
+        noValidate
         className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto"
       >
         <h3 className="text-lg font-semibold mb-4">

@@ -7,6 +7,7 @@ import {
   Route,
   Truck,
   Users,
+  UserCog,
   BarChart3,
   Bell,
   LogOut,
@@ -24,6 +25,7 @@ const navItems = [
   { to: '/routes', icon: Route, label: 'Rutas' },
   { to: '/vehicles', icon: Truck, label: 'Vehiculos' },
   { to: '/drivers', icon: Users, label: 'Conductores' },
+  { to: '/users', icon: UserCog, label: 'Usuarios' },
   { to: '/analytics', icon: BarChart3, label: 'Analytics' },
   { to: '/notifications/settings', icon: Bell, label: 'Notificaciones' },
 ]

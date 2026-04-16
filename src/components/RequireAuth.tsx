@@ -8,7 +8,7 @@ export function RequireAuth({
   requireSuperAdmin?: boolean
   requireOrg?: boolean
 }) {
-  const { user, currentOrg, isSuperAdmin, loading } = useAuth()
+  const { user, currentOrg, isSuperAdmin, isDriver, loading } = useAuth()
 
   if (loading) {
     return (
@@ -19,6 +19,7 @@ export function RequireAuth({
   }
 
   if (!user) return <Navigate to="/login" replace />
+  if (isDriver) return <Navigate to="/driver-welcome" replace />
   if (requireSuperAdmin && !isSuperAdmin) return <Navigate to="/planner" replace />
   if (requireOrg && !currentOrg) return <Navigate to="/onboarding" replace />
 
