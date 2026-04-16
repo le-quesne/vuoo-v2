@@ -1,0 +1,85 @@
+{
+  "expo": {
+    "name": "Vuoo",
+    "slug": "vuoo-mobile",
+    "version": "0.0.1",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "vuoo",
+    "newArchEnabled": true,
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "cl.vuoo.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Vuoo necesita acceso a la camara para registrar pruebas de entrega.",
+        "NSPhotoLibraryUsageDescription": "Vuoo necesita acceso a tus fotos para adjuntar pruebas de entrega.",
+        "NSLocationWhenInUseUsageDescription": "Vuoo necesita tu ubicacion para mostrar tu avance en la ruta.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Vuoo rastrea tu ubicacion durante la ruta para que el dispatcher pueda verte en vivo.",
+        "NSLocationAlwaysUsageDescription": "Vuoo rastrea tu ubicacion durante la ruta para que el dispatcher pueda verte en vivo.",
+        "UIBackgroundModes": [
+          "location",
+          "fetch",
+          "remote-notification"
+        ],
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "cl.vuoo.app",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.WAKE_LOCK",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Vuoo necesita acceso a la camara para registrar pruebas de entrega.",
+          "photosPermission": "Vuoo necesita acceso a tus fotos para adjuntar pruebas de entrega."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Vuoo necesita tu ubicacion para mostrar tu avance en la ruta.",
+          "locationAlwaysAndWhenInUsePermission": "Vuoo rastrea tu ubicacion durante la ruta para que el dispatcher pueda verte en vivo.",
+          "locationAlwaysPermission": "Vuoo rastrea tu ubicacion durante la ruta para que el dispatcher pueda verte en vivo.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#6366f1"
+        }
+      ],
+      "expo-asset",
+      "expo-sqlite"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "f641e829-112a-406f-bffe-87780c32c645"
+      },
+      "router": {}
+    },
+    "owner": "lequesne"
+  }
+}

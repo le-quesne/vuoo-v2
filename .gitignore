@@ -26,3 +26,5 @@ dist-ssr
 .playwright-mcp
 *.png
 .vercel
+.obsidian/
+supabase/.temp/
