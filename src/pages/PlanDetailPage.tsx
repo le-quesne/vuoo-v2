@@ -660,13 +660,6 @@ export function PlanDetailPage() {
               </div>
             )}
 
-            <button
-              onClick={() => setShowAddVehicle(true)}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2 text-xs text-gray-500 border border-dashed border-gray-300 rounded-lg hover:border-blue-400 hover:text-blue-600"
-            >
-              <Truck size={12} />
-              Agregar vehiculo al plan
-            </button>
           </div>
 
           <DragOverlay>
@@ -698,6 +691,13 @@ export function PlanDetailPage() {
               Optimizar con Vuoo
             </button>
           )}
+          <button
+            onClick={() => setShowAddVehicle(true)}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50"
+          >
+            <Truck size={14} />
+            Agregar vehiculo
+          </button>
           <button
             onClick={() => setShowAddStop(true)}
             className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50"
