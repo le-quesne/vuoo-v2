@@ -16,8 +16,8 @@ import { useAuth } from '../hooks/useAuth'
 
 const navItems = [
   { to: '/planner', icon: Calendar, label: 'Planner' },
-  { to: '/control', icon: Activity, label: 'Control', badgeKey: 'controlAlerts' as const },
   { to: '/orders', icon: Package, label: 'Pedidos', badgeKey: 'pendingOrders' as const },
+  { to: '/control', icon: Activity, label: 'Control', badgeKey: 'controlAlerts' as const },
   { to: '/analytics', icon: BarChart3, label: 'Analytics' },
 ]
 

@@ -109,7 +109,7 @@ export function DriversPage() {
     <div className="flex h-screen">
       <div className="flex-1 p-6 overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-medium">Conductores</h2>
+          <h1 className="text-xl font-semibold">Conductores</h1>
           <div className="flex items-center gap-3">
             <div className="relative">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />

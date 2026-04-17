@@ -177,7 +177,7 @@ export function NotificationSettingsPage() {
     <div className="flex-1 p-6 overflow-y-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-lg font-medium">Notificaciones</h2>
+          <h1 className="text-xl font-semibold">Notificaciones</h1>
           <p className="text-sm text-gray-500 mt-0.5">
             Configura los canales y eventos de notificacion para tus entregas
           </p>
