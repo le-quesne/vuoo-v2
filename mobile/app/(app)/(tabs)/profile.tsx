@@ -12,8 +12,14 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
-import type { Vehicle } from '@/types/database'
+import type { DriverAvailability, Vehicle } from '@/types/database'
 import { colors, spacing, radius, shadow } from '@/theme'
+
+const AVAILABILITY_OPTIONS: { value: DriverAvailability; label: string; color: string }[] = [
+  { value: 'online', label: 'En línea', color: colors.success },
+  { value: 'on_break', label: 'En pausa', color: colors.warning },
+  { value: 'off_shift', label: 'Fin jornada', color: colors.textMuted },
+]
 
 const DAY_LABELS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
 
@@ -49,9 +55,25 @@ function statusMeta(status: string | null | undefined): { label: string; color: 
 }
 
 export default function ProfileScreen() {
-  const { driver, user, signOut } = useAuth()
+  const { driver, user, signOut, refreshDriver } = useAuth()
   const [vehicle, setVehicle] = useState<Vehicle | null>(null)
   const [loadingVehicle, setLoadingVehicle] = useState(false)
+  const [updatingAvailability, setUpdatingAvailability] = useState<DriverAvailability | null>(null)
+
+  async function handleAvailabilityChange(next: DriverAvailability) {
+    if (!driver || driver.availability === next || updatingAvailability) return
+    setUpdatingAvailability(next)
+    const { error } = await supabase
+      .from('drivers')
+      .update({ availability: next })
+      .eq('id', driver.id)
+    setUpdatingAvailability(null)
+    if (error) {
+      Alert.alert('Error', 'No se pudo actualizar tu disponibilidad.')
+      return
+    }
+    await refreshDriver()
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -131,6 +153,43 @@ export default function ProfileScreen() {
           <View style={[styles.statusBadge, { backgroundColor: status.bg }]}>
             <View style={[styles.statusDot, { backgroundColor: status.color }]} />
             <Text style={[styles.statusText, { color: status.color }]}>{status.label}</Text>
+          </View>
+        </View>
+
+        {/* Availability picker */}
+        <View style={styles.availabilityCard}>
+          <Text style={styles.availabilityLabel}>Mi disponibilidad</Text>
+          <View style={styles.availabilityRow}>
+            {AVAILABILITY_OPTIONS.map((opt) => {
+              const selected = driver.availability === opt.value
+              const isUpdating = updatingAvailability === opt.value
+              return (
+                <Pressable
+                  key={opt.value}
+                  onPress={() => handleAvailabilityChange(opt.value)}
+                  disabled={!!updatingAvailability}
+                  style={({ pressed }) => [
+                    styles.availabilityBtn,
+                    selected && { borderColor: opt.color, backgroundColor: `${opt.color}15` },
+                    pressed && { opacity: 0.8 },
+                  ]}
+                >
+                  <View style={[styles.availabilityDot, { backgroundColor: opt.color }]} />
+                  {isUpdating ? (
+                    <ActivityIndicator color={opt.color} size="small" />
+                  ) : (
+                    <Text
+                      style={[
+                        styles.availabilityBtnText,
+                        selected && { color: opt.color, fontWeight: '700' },
+                      ]}
+                    >
+                      {opt.label}
+                    </Text>
+                  )}
+                </Pressable>
+              )
+            })}
           </View>
         </View>
 
@@ -249,6 +308,51 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 12,
     fontWeight: '600',
+  },
+
+  // Availability picker
+  availabilityCard: {
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    marginTop: spacing.lg,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadow.card,
+  },
+  availabilityLabel: {
+    fontSize: 12,
+    color: colors.textMuted,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    marginBottom: spacing.md,
+  },
+  availabilityRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  availabilityBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.bg,
+  },
+  availabilityBtnText: {
+    fontSize: 13,
+    color: colors.textMuted,
+    fontWeight: '500',
+  },
+  availabilityDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
 
   // Info card

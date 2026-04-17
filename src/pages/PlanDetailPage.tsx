@@ -18,6 +18,7 @@ import {
   Settings,
   GripVertical,
   MoreHorizontal,
+  Activity,
 } from 'lucide-react'
 import {
   DndContext,
@@ -45,6 +46,7 @@ import { DepotConfigModal } from '../components/DepotConfigModal'
 import { VroomWizardModal } from '../components/VroomWizardModal'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { EditRouteModal } from '../components/EditRouteModal'
+import { ActivityTimeline } from '../components/ActivityTimeline'
 import { notifyDriverRouteAssigned } from '../lib/notifyDriver'
 import { calculateRouteWeight, getCapacityStatus } from '../lib/capacity'
 import { MAPBOX_TOKEN, fetchDirections } from '../lib/mapbox'
@@ -99,7 +101,27 @@ export function PlanDetailPage() {
   const [notifLogs, setNotifLogs] = useState<NotificationLog[]>([])
   const [ordersByPlanStop, setOrdersByPlanStop] = useState<Map<string, Order>>(new Map())
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [showActivity, setShowActivity] = useState(false)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+
+  const planRouteIds = useMemo(() => routes.map((r) => r.id), [routes])
+  const planDriverNames = useMemo(() => {
+    const m: Record<string, string> = {}
+    for (const r of routes) {
+      if (r.driver) {
+        m[r.driver.id] = `${r.driver.first_name} ${r.driver.last_name}`.trim()
+      }
+    }
+    return m
+  }, [routes])
+  const planStopNames = useMemo(() => {
+    const m: Record<string, string> = {}
+    for (const r of routes) {
+      for (const ps of r.planStops) m[ps.id] = ps.stop?.name ?? 'Parada'
+    }
+    for (const ps of unassignedStops) m[ps.id] = ps.stop?.name ?? 'Parada'
+    return m
+  }, [routes, unassignedStops])
 
   useEffect(() => {
     if (planId) loadPlanData()
@@ -511,18 +533,32 @@ export function PlanDetailPage() {
                 <span>{totalStops}</span>
               </div>
             </div>
-            <button
-              onClick={() => setShowDepotModal(true)}
-              className={`flex items-center gap-1 text-[11px] px-2 py-1 rounded border transition-colors shrink-0 ${
-                orgDepot
-                  ? 'border-gray-200 text-gray-500 hover:bg-gray-50'
-                  : 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
-              }`}
-              title={orgDepot?.address ?? 'Configurar depot (requerido para optimizar)'}
-            >
-              <Settings size={12} />
-              {orgDepot ? 'Depot' : 'Depot faltante'}
-            </button>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                onClick={() => setShowActivity((v) => !v)}
+                className={`flex items-center gap-1 text-[11px] px-2 py-1 rounded border transition-colors ${
+                  showActivity
+                    ? 'border-gray-300 bg-gray-100 text-gray-900'
+                    : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+                }`}
+                title="Ver timeline de actividad"
+              >
+                <Activity size={12} />
+                Actividad
+              </button>
+              <button
+                onClick={() => setShowDepotModal(true)}
+                className={`flex items-center gap-1 text-[11px] px-2 py-1 rounded border transition-colors ${
+                  orgDepot
+                    ? 'border-gray-200 text-gray-500 hover:bg-gray-50'
+                    : 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
+                }`}
+                title={orgDepot?.address ?? 'Configurar depot (requerido para optimizar)'}
+              >
+                <Settings size={12} />
+                {orgDepot ? 'Depot' : 'Depot faltante'}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -807,6 +843,34 @@ export function PlanDetailPage() {
       )}
 
       {/* Depot Config Modal */}
+      {/* Activity drawer (timeline realtime) */}
+      {showActivity && currentOrg && (
+        <div className="fixed inset-y-0 right-0 z-30 w-96 bg-white border-l border-gray-200 shadow-xl flex flex-col">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+            <div className="flex items-center gap-2">
+              <Activity size={16} className="text-blue-500" />
+              <h3 className="text-sm font-semibold">Actividad del plan</h3>
+            </div>
+            <button
+              onClick={() => setShowActivity(false)}
+              className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+              title="Cerrar"
+            >
+              <X size={16} />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            <ActivityTimeline
+              orgId={currentOrg.id}
+              routeIds={planRouteIds}
+              driverNames={planDriverNames}
+              stopNames={planStopNames}
+              limit={100}
+            />
+          </div>
+        </div>
+      )}
+
       {showDepotModal && currentOrg && (
         <DepotConfigModal
           orgId={currentOrg.id}

@@ -33,6 +33,7 @@ interface LiveRouteCardProps {
 const STATE_LABEL: Record<LiveRouteState, string> = {
   in_transit: 'En ruta',
   offline: 'Offline',
+  on_break: 'En pausa',
   completed: 'Completada',
   not_started: 'No iniciada',
 }

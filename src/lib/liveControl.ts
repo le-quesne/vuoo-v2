@@ -1,4 +1,4 @@
-import type { RouteStatus } from '../types/database'
+import type { DriverAvailability, RouteStatus } from '../types/database'
 
 export interface LiveLocation {
   lat: number
@@ -12,6 +12,8 @@ export interface LiveDriver {
   id: string
   name: string
   phone: string | null
+  availability: DriverAvailability
+  availability_updated_at: string | null
 }
 
 export interface LiveVehicle {
@@ -70,11 +72,23 @@ export function isDriverOnline(location: LiveLocation | null, nowMs: number): bo
   return nowMs - Date.parse(location.recorded_at) < ONLINE_THRESHOLD_MS
 }
 
-export type LiveRouteState = 'completed' | 'in_transit' | 'not_started' | 'offline'
+export type LiveRouteState =
+  | 'completed'
+  | 'in_transit'
+  | 'not_started'
+  | 'offline'
+  | 'on_break'
 
 export function getLiveRouteState(route: LiveRoute, nowMs: number): LiveRouteState {
   if (route.route_status === 'completed') return 'completed'
   if (route.route_status === 'in_transit') {
+    const availability = route.driver?.availability
+    if (availability === 'on_break') return 'on_break'
+    if (availability === 'online') {
+      return isDriverOnline(route.last_location, nowMs) ? 'in_transit' : 'offline'
+    }
+    // Fallback: driver sin availability declarada (off_shift/busy/null) →
+    // inferir por edad del último GPS ping, preservando comportamiento legacy.
     if (!isDriverOnline(route.last_location, nowMs)) return 'offline'
     return 'in_transit'
   }
@@ -87,6 +101,8 @@ export function getStateColor(state: string): string {
       return 'bg-emerald-100 text-emerald-700'
     case 'offline':
       return 'bg-red-100 text-red-700'
+    case 'on_break':
+      return 'bg-amber-100 text-amber-700'
     case 'completed':
       return 'bg-blue-100 text-blue-700'
     case 'not_started':
@@ -100,8 +116,9 @@ export function sortLiveRoutes(routes: LiveRoute[], nowMs: number): LiveRoute[] 
   const stateOrder: Record<LiveRouteState, number> = {
     offline: 0,
     in_transit: 1,
-    not_started: 2,
-    completed: 3,
+    on_break: 2,
+    not_started: 3,
+    completed: 4,
   }
 
   const getProgress = (route: LiveRoute): number => {
@@ -138,6 +155,9 @@ export type AlertType =
   | 'route_started'
   | 'route_completed'
   | 'battery_low'
+  | 'incident'
+  | 'feedback_positive'
+  | 'feedback_negative'
 
 export interface LiveAlert {
   id: string
@@ -356,6 +376,89 @@ export function makeRouteStatusAlert(args: {
   }
 
   return null
+}
+
+const INCIDENT_TYPE_LABELS: Record<string, string> = {
+  vehicle_breakdown: 'Avería de vehículo',
+  accident: 'Accidente',
+  weather: 'Clima',
+  driver_offline: 'Conductor offline',
+  customer_issue: 'Problema con cliente',
+  other: 'Incidente',
+}
+
+export function makeIncidentAlert(args: {
+  incidentId: string
+  type: string
+  description: string | null
+  driverName?: string | null
+  routeId?: string | null
+}): LiveAlert {
+  const { incidentId, type, description, driverName, routeId } = args
+  const ts = Date.now()
+  const typeLabel = INCIDENT_TYPE_LABELS[type] ?? 'Incidente'
+  const who = driverName ?? 'Conductor'
+  const descPart = description ? ` — ${description.slice(0, 80)}` : ''
+  return {
+    id: `incident-${incidentId}`,
+    priority: 'high',
+    type: 'incident',
+    ts,
+    routeId: routeId ?? undefined,
+    message: `${typeLabel}: ${who}${descPart}`,
+  }
+}
+
+export function makeFeedbackAlert(args: {
+  feedbackId: string
+  rating: number
+  comment: string | null
+  driverName?: string | null
+}): LiveAlert {
+  const { feedbackId, rating, comment, driverName } = args
+  const ts = Date.now()
+  const who = driverName ?? 'Conductor'
+  const commentPart = comment ? ` — "${comment.slice(0, 60)}"` : ''
+  const isNegative = rating <= 2
+  const stars = '★'.repeat(rating) + '☆'.repeat(5 - rating)
+  return {
+    id: `feedback-${feedbackId}`,
+    priority: isNegative ? 'high' : rating <= 3 ? 'medium' : 'info',
+    type: isNegative ? 'feedback_negative' : 'feedback_positive',
+    ts,
+    message: `${stars} ${who}${commentPart}`,
+  }
+}
+
+export interface AlertRow {
+  id: string
+  org_id: string
+  type: string
+  priority: 'high' | 'medium' | 'info'
+  title: string
+  body: string | null
+  route_id: string | null
+  plan_stop_id: string | null
+  driver_id: string | null
+  incident_id: string | null
+  feedback_id: string | null
+  acknowledged_by: string | null
+  acknowledged_at: string | null
+  created_at: string
+}
+
+export function alertRowToLive(row: AlertRow): LiveAlert {
+  return {
+    id: row.id,
+    priority: row.priority,
+    type: row.type as AlertType,
+    ts: Date.parse(row.created_at),
+    routeId: row.route_id ?? undefined,
+    planStopId: row.plan_stop_id ?? undefined,
+    driverId: row.driver_id ?? undefined,
+    message: row.body ? `${row.title} — ${row.body}` : row.title,
+    acknowledged: row.acknowledged_at !== null,
+  }
 }
 
 export function mergeAlerts(existing: LiveAlert[], incoming: LiveAlert[]): LiveAlert[] {

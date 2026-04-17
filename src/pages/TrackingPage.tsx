@@ -62,6 +62,13 @@ interface TrackingResponse {
   route_id: string | null
   stop_lat: number
   stop_lng: number
+  notifications: Array<{
+    id: string
+    channel: string
+    event_type: string
+    status: string
+    sent_at: string
+  }>
 }
 
 type Status = TrackingResponse['status']
@@ -146,6 +153,21 @@ function fmtRelative(iso: string | null | undefined): string {
 function fmtTimeWindow(start: string | null, end: string | null): string | null {
   if (!start && !end) return null
   return `${start ? fmtTime(start) : '?'} - ${end ? fmtTime(end) : '?'}`
+}
+
+const NOTIF_CHANNEL_LABELS: Record<string, string> = {
+  whatsapp: 'WhatsApp',
+  sms: 'SMS',
+  email: 'Email',
+}
+
+const NOTIF_EVENT_LABELS: Record<string, string> = {
+  scheduled: 'Entrega programada',
+  in_transit: 'Tu pedido salió',
+  arriving: 'Está llegando',
+  delivered: 'Entregado',
+  failed: 'Entrega fallida',
+  survey: 'Encuesta de feedback',
 }
 
 /* ─────────────────────────── Component ─────────────────────────── */
@@ -733,6 +755,41 @@ export default function TrackingPage() {
               })}
             </div>
           </div>
+
+          {/* ══════════════════════ 4a.5. Historial de notificaciones ══════════════════════ */}
+          {data.notifications && data.notifications.length > 0 && (
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+              <h3 className="text-sm font-semibold text-slate-800 mb-3">
+                Notificaciones
+              </h3>
+              <ul className="space-y-2.5">
+                {data.notifications.map((n) => (
+                  <li key={n.id} className="flex items-start gap-2.5">
+                    <div
+                      className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${
+                        n.status === 'sent' || n.status === 'delivered' || n.status === 'read'
+                          ? 'bg-emerald-400'
+                          : n.status === 'failed'
+                            ? 'bg-red-400'
+                            : 'bg-slate-300'
+                      }`}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs text-slate-700">
+                        {NOTIF_EVENT_LABELS[n.event_type] ?? n.event_type}{' '}
+                        <span className="text-slate-400">
+                          · {NOTIF_CHANNEL_LABELS[n.channel] ?? n.channel}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        {fmtRelative(n.sent_at)}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {/* ══════════════════════ 4b. DETALLE: POD ══════════════════════ */}
           {data.status === 'delivered' && data.pod && (

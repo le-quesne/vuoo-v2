@@ -124,6 +124,46 @@ export default function HomeScreen() {
     loadRoutes().finally(() => setLoading(false))
   }, [loadRoutes])
 
+  // Realtime: reaccionar a cambios hechos por el dispatcher en cualquier
+  // ruta del día (asignación, cambio de status, reasignación de driver).
+  // Los filtros de postgres_changes no soportan combinar driver_id + plan.date,
+  // así que nos suscribimos a todas las rutas del driver y filtramos por fecha
+  // en el handler recargando la lista completa (es barato: pocas rutas/día).
+  useEffect(() => {
+    if (!driver?.id) return
+
+    const channel = supabase
+      .channel(`driver-routes-${driver.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'routes',
+          filter: `driver_id=eq.${driver.id}`,
+        },
+        () => {
+          loadRoutes()
+        },
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'plan_stops',
+        },
+        () => {
+          loadRoutes()
+        },
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [driver?.id, loadRoutes])
+
   const handleRefresh = useCallback(async () => {
     if (refreshingRef.current) return
     refreshingRef.current = true

@@ -306,6 +306,23 @@ serve(async (req) => {
       }
     }
 
+    // 8.5 Notification timeline (last 10 events for this plan_stop)
+    // Sólo channel/event/status/sent_at — sin PII del recipient.
+    const { data: notifRows } = await adminClient
+      .from('notification_logs')
+      .select('id, channel, event_type, status, sent_at, created_at')
+      .eq('plan_stop_id', planStop.id)
+      .order('created_at', { ascending: false })
+      .limit(10)
+
+    const notifications = (notifRows ?? []).map((n) => ({
+      id: n.id as string,
+      channel: n.channel as string,
+      event_type: n.event_type as string,
+      status: n.status as string,
+      sent_at: (n.sent_at ?? n.created_at) as string,
+    }))
+
     // 9. Build driver info
     const driver = route?.driver
       ? {
@@ -338,6 +355,7 @@ serve(async (req) => {
       route_id: planStop.route_id ?? null,
       stop_lat: (stop.lat as number) ?? null,
       stop_lng: (stop.lng as number) ?? null,
+      notifications,
     }
 
     return jsonResponse(response, 200)

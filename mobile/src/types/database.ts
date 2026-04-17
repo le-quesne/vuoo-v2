@@ -4,6 +4,7 @@
 export type StopStatus = 'pending' | 'completed' | 'cancelled' | 'incomplete'
 export type RouteStatus = 'not_started' | 'in_transit' | 'completed'
 export type DriverStatus = 'active' | 'inactive' | 'on_leave'
+export type DriverAvailability = 'off_shift' | 'online' | 'on_break' | 'busy'
 
 export interface Organization {
   id: string
@@ -36,6 +37,8 @@ export interface Driver {
   license_expiry: string | null
   national_id: string | null
   status: DriverStatus
+  availability: DriverAvailability
+  availability_updated_at: string | null
   default_vehicle_id: string | null
   time_window_start: string | null
   time_window_end: string | null

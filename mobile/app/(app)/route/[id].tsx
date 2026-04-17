@@ -25,6 +25,7 @@ import {
 } from '@/components/RouteMapWebView'
 import { TrackingBadge } from '@/components/TrackingBadge'
 import { SyncStatusBar } from '@/components/SyncStatusBar'
+import IncidentReportModal from '@/components/IncidentReportModal'
 
 interface PlanStopRow extends PlanStop {
   stop: Stop
@@ -41,7 +42,8 @@ const STATUS_STYLES: Record<StopStatus, { label: string; color: string; bg: stri
 
 export default function RouteDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
-  const { driver } = useAuth()
+  const { driver, refreshDriver, user } = useAuth()
+  const [incidentModalOpen, setIncidentModalOpen] = useState(false)
   const [route, setRoute] = useState<RouteWithRelations | null>(null)
   const [stops, setStops] = useState<PlanStopRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -136,6 +138,55 @@ export default function RouteDetailScreen() {
     }, [load]),
   )
 
+  // Realtime: cambios hechos por el dispatcher (reasignación de paradas,
+  // reorden, nuevas paradas, cambio de driver asignado, cancelación de la
+  // ruta). Corre mientras haya `id`, independiente del status.
+  useEffect(() => {
+    if (!id || !driver?.id) return
+
+    const channel = supabase
+      .channel(`route-sync-${id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'plan_stops',
+          filter: `route_id=eq.${id}`,
+        },
+        () => {
+          load()
+        },
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'routes',
+          filter: `id=eq.${id}`,
+        },
+        (payload) => {
+          const row = payload.new as Route | undefined
+          if (!row) return
+          if (row.driver_id && row.driver_id !== driver.id) {
+            Alert.alert(
+              'Ruta reasignada',
+              'Esta ruta ya no está asignada a ti. Serás devuelto a la lista de rutas.',
+              [{ text: 'Entendido', onPress: () => router.replace('/(app)/(tabs)') }],
+            )
+            return
+          }
+          load()
+        },
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [id, driver?.id, load])
+
   // Realtime: driver location updates while the route is in transit.
   useEffect(() => {
     if (!driver?.id || route?.status !== 'in_transit') {
@@ -219,6 +270,16 @@ export default function RouteDetailScreen() {
       .eq('id', route.id)
 
     if (driver?.id) {
+      // Marcar al chofer como "online" automáticamente al arrancar la ruta
+      // para que el dispatcher lo vea disponible sin necesidad de que lo
+      // haga manualmente desde el perfil.
+      if (driver.availability !== 'online') {
+        await supabase
+          .from('drivers')
+          .update({ availability: 'online' })
+          .eq('id', driver.id)
+        await refreshDriver()
+      }
       const ok = await startTracking(route.id, driver.id)
       setTracking(ok)
       if (!ok) {
@@ -392,6 +453,15 @@ export default function RouteDetailScreen() {
 
       <SyncStatusBar />
 
+      {route?.status === 'in_transit' && driver?.org_id && (
+        <Pressable
+          onPress={() => setIncidentModalOpen(true)}
+          style={({ pressed }) => [styles.incidentBtn, pressed && { opacity: 0.8 }]}
+        >
+          <Text style={styles.incidentBtnText}>Reportar problema</Text>
+        </Pressable>
+      )}
+
       {(mapStops.length > 0 || depot) && (
         <RouteMapWebView
           stops={mapStops}
@@ -412,6 +482,18 @@ export default function RouteDetailScreen() {
             <Text style={styles.nextBannerAddress}>{nextPending.stop.address}</Text>
           )}
         </Pressable>
+      )}
+
+      {driver?.org_id && driver?.id && user?.id && (
+        <IncidentReportModal
+          visible={incidentModalOpen}
+          orgId={driver.org_id}
+          driverId={driver.id}
+          routeId={id ?? null}
+          userId={user.id}
+          onClose={() => setIncidentModalOpen(false)}
+          onReported={() => {}}
+        />
       )}
 
       <FlatList
@@ -553,6 +635,21 @@ const styles = StyleSheet.create({
     height: 280,
     marginHorizontal: spacing.lg,
     marginTop: spacing.lg,
+  },
+  incidentBtn: {
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.warning,
+    backgroundColor: colors.warningBg,
+    alignItems: 'center',
+  },
+  incidentBtnText: {
+    color: colors.warning,
+    fontSize: 13,
+    fontWeight: '600',
   },
   nextBanner: {
     margin: spacing.lg,

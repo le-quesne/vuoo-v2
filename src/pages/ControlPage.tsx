@@ -28,9 +28,9 @@ import {
   sortLiveRoutes,
   getLiveRouteState,
   derivedAlertsFromRoutes,
+  alertRowToLive,
+  type AlertRow,
   type PendingStopInfo,
-  makeStopStatusAlert,
-  makeRouteStatusAlert,
   mergeAlerts,
   type LiveRoute,
   type LiveDashboard,
@@ -38,7 +38,7 @@ import {
   type LiveAlert,
 } from '../lib/liveControl'
 import { isAlertSoundMuted, setAlertSoundMuted, playAlertBeep } from '../lib/alertSound'
-import type { Stop, DriverLocation, RouteStatus } from '../types/database'
+import type { Stop, DriverLocation, DriverAvailability, RouteStatus } from '../types/database'
 
 type FilterKey = 'all' | 'in_transit' | 'problems' | 'offline' | 'completed'
 type PlanStopEntry = { planStopId: string; status: string; stop: Stop }
@@ -68,6 +68,7 @@ export function ControlPage() {
   const [showIncident, setShowIncident] = useState(false)
   const [contactRouteId, setContactRouteId] = useState<string | null>(null)
   const [reassignTarget, setReassignTarget] = useState<{ planStopId: string; name: string; routeId: string } | null>(null)
+  const [presentUsers, setPresentUsers] = useState<Array<{ user_id: string; email: string | null }>>([])
   const routesRef = useRef<LiveRoute[]>([])
   routesRef.current = routesLive
   const planStopsByRouteRef = useRef<Record<string, PlanStopEntry[]>>({})
@@ -95,8 +96,18 @@ export function ControlPage() {
   }
 
   function acknowledgeAlert(alertId: string) {
+    // UI optimista: marcamos local + removemos del toast queue inmediato.
     setAlerts((prev) => prev.map((a) => (a.id === alertId ? { ...a, acknowledged: true } : a)))
     setToastQueue((q) => q.filter((a) => a.id !== alertId))
+    // Persistir (si la alert tiene UUID de DB; las derivadas client-side
+    // usan IDs tipo `offline-routeId` que no son uuids — las ignoramos).
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(alertId)
+    if (!isUuid || !user?.id) return
+    supabase
+      .from('alerts')
+      .update({ acknowledged_by: user.id, acknowledged_at: new Date().toISOString() })
+      .eq('id', alertId)
+      .then(() => {})
   }
 
   function dismissToast(alertId: string) {
@@ -297,20 +308,10 @@ export function ControlPage() {
           const row = payload.new as
             | { id: string; route_id: string | null; status: string; stop_id: string }
             | undefined
-          const prev = payload.old as { status?: string } | undefined
           if (!row || !row.route_id || !routeIds.includes(row.route_id)) return
-          if (prev?.status !== row.status && ['completed', 'cancelled', 'incomplete'].includes(row.status)) {
-            const route = routesRef.current.find((r) => r.route_id === row.route_id)
-            const entry = planStopsByRouteRef.current[row.route_id]?.find((e) => e.planStopId === row.id)
-            const alert = makeStopStatusAlert({
-              planStopId: row.id,
-              planStopName: entry?.stop.name ?? 'Parada',
-              routeId: row.route_id,
-              status: row.status as 'completed' | 'cancelled' | 'incomplete',
-              driverName: route?.driver?.name ?? null,
-            })
-            pushAlerts([alert])
-          }
+          // Las alerts de stop_completed / stop_failed las genera un trigger
+          // SQL (ver migration 018) y llegan por el canal `alerts-${orgId}`.
+          // Aquí solo refrescamos las KPIs y el listado de rutas.
           loadRoutes()
           loadDashboard()
         },
@@ -320,21 +321,37 @@ export function ControlPage() {
         { event: 'UPDATE', schema: 'public', table: 'routes', filter: `org_id=eq.${orgId}` },
         (payload) => {
           const row = payload.new as { id: string; status: RouteStatus } | undefined
-          const prev = payload.old as { status?: RouteStatus } | undefined
           if (!row || !routeIds.includes(row.id)) return
-          if (prev?.status !== row.status) {
-            const route = routesRef.current.find((r) => r.route_id === row.id)
-            const alert = makeRouteStatusAlert({
-              routeId: row.id,
-              status: row.status,
-              driverName: route?.driver?.name ?? null,
-            })
-            if (alert) pushAlerts([alert])
-          }
+          // route_started / route_completed las genera un trigger SQL.
           setRoutesLive((prev) =>
             prev.map((r) => (r.route_id === row.id ? { ...r, route_status: row.status } : r)),
           )
           loadDashboard()
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'drivers' },
+        (payload) => {
+          const row = payload.new as
+            | { id: string; availability?: DriverAvailability; availability_updated_at?: string | null }
+            | undefined
+          if (!row || !driverIds.includes(row.id)) return
+          if (row.availability === undefined) return
+          setRoutesLive((prev) =>
+            prev.map((r) =>
+              r.driver?.id === row.id && r.driver
+                ? {
+                    ...r,
+                    driver: {
+                      ...r.driver,
+                      availability: row.availability!,
+                      availability_updated_at: row.availability_updated_at ?? null,
+                    },
+                  }
+                : r,
+            ),
+          )
         },
       )
       .subscribe()
@@ -344,6 +361,91 @@ export function ControlPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId, dateStr, routesLive.length])
+
+  // Presence: qué dispatchers están viendo la Torre ahora. Muestra un
+  // avatar stack en el header. Usa Supabase Realtime Presence (no
+  // postgres_changes) — estado efímero que desaparece al desconectarse.
+  useEffect(() => {
+    if (!orgId || !user?.id) return
+
+    const channel = supabase.channel(`presence-control-${orgId}`, {
+      config: { presence: { key: user.id } },
+    })
+
+    channel
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState<{ user_id: string; email: string | null }>()
+        const flat = Object.values(state)
+          .flat()
+          .map((p) => ({ user_id: p.user_id, email: p.email ?? null }))
+        // Deduplicar por user_id (mismo user con múltiples pestañas)
+        const uniq = Array.from(new Map(flat.map((p) => [p.user_id, p])).values())
+        setPresentUsers(uniq)
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track({ user_id: user.id, email: user.email ?? null })
+        }
+      })
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [orgId, user?.id, user?.email])
+
+  // Alertas persistidas: carga inicial (últimas 50 del org) + suscripción
+  // a INSERT/UPDATE. Los triggers SQL de migration 018 crean las rows al
+  // cambiar plan_stops/routes/incidents/feedback; acá solo las consumimos
+  // y sincronizamos acks entre dispatchers.
+  useEffect(() => {
+    if (!orgId) return
+    let cancelled = false
+
+    supabase
+      .from('alerts')
+      .select('*')
+      .eq('org_id', orgId)
+      .order('created_at', { ascending: false })
+      .limit(50)
+      .then(({ data }) => {
+        if (cancelled || !data) return
+        const live = (data as AlertRow[]).map(alertRowToLive)
+        // Seed direct (sin pushAlerts) para no disparar beep en la carga.
+        setAlerts((prev) => mergeAlerts(prev, live))
+        live.forEach((a) => knownAlertIdsRef.current.add(a.id))
+      })
+
+    const channel = supabase
+      .channel(`alerts-${orgId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'alerts', filter: `org_id=eq.${orgId}` },
+        (payload) => {
+          const row = payload.new as AlertRow | undefined
+          if (!row) return
+          pushAlerts([alertRowToLive(row)])
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'alerts', filter: `org_id=eq.${orgId}` },
+        (payload) => {
+          const row = payload.new as AlertRow | undefined
+          if (!row) return
+          const acked = row.acknowledged_at !== null
+          setAlerts((prev) =>
+            prev.map((a) => (a.id === row.id ? { ...a, acknowledged: acked } : a)),
+          )
+          if (acked) setToastQueue((q) => q.filter((a) => a.id !== row.id))
+        },
+      )
+      .subscribe()
+
+    return () => {
+      cancelled = true
+      supabase.removeChannel(channel)
+    }
+  }, [orgId])
 
   const routeColorById = useMemo(() => {
     const map: Record<string, string> = {}
@@ -477,6 +579,33 @@ export function ControlPage() {
             <Radio size={11} className="animate-pulse" />
             live
           </span>
+          {presentUsers.length > 1 && (
+            <div
+              className="ml-2 flex items-center -space-x-1.5"
+              title={`${presentUsers.length} dispatchers viendo ahora: ${presentUsers
+                .map((u) => u.email ?? u.user_id.slice(0, 8))
+                .join(', ')}`}
+            >
+              {presentUsers.slice(0, 4).map((u) => {
+                const initial = (u.email ?? u.user_id).charAt(0).toUpperCase()
+                return (
+                  <div
+                    key={u.user_id}
+                    className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold border-2 border-white ${
+                      u.user_id === user?.id ? 'bg-blue-500' : 'bg-gray-400'
+                    }`}
+                  >
+                    {initial}
+                  </div>
+                )
+              })}
+              {presentUsers.length > 4 && (
+                <div className="w-6 h-6 rounded-full flex items-center justify-center text-gray-600 text-[10px] font-bold border-2 border-white bg-gray-100">
+                  +{presentUsers.length - 4}
+                </div>
+              )}
+            </div>
+          )}
           <button
             onClick={toggleMute}
             className="ml-2 p-2 rounded hover:bg-gray-100 text-gray-500"

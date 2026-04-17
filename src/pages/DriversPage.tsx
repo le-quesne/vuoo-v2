@@ -2,7 +2,24 @@ import { useState, useEffect } from 'react'
 import { Plus, Search, Pencil, Trash2, AlertTriangle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
-import type { Driver, DriverStatus, Vehicle } from '../types/database'
+import type { Driver, DriverAvailability, DriverStatus, Vehicle } from '../types/database'
+
+const AVAILABILITY_META: Record<DriverAvailability, { label: string; dot: string; text: string; bg: string }> = {
+  online: { label: 'En línea', dot: 'bg-emerald-500', text: 'text-emerald-700', bg: 'bg-emerald-50' },
+  on_break: { label: 'En pausa', dot: 'bg-amber-500', text: 'text-amber-700', bg: 'bg-amber-50' },
+  busy: { label: 'Ocupado', dot: 'bg-blue-500', text: 'text-blue-700', bg: 'bg-blue-50' },
+  off_shift: { label: 'Fuera jornada', dot: 'bg-gray-400', text: 'text-gray-600', bg: 'bg-gray-100' },
+}
+
+function AvailabilityBadge({ availability }: { availability: DriverAvailability }) {
+  const meta = AVAILABILITY_META[availability] ?? AVAILABILITY_META.off_shift
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${meta.bg} ${meta.text}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
+      {meta.label}
+    </span>
+  )
+}
 
 const AVATAR_COLORS = ['#10b981', '#6366f1', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#f97316']
 
@@ -82,6 +99,23 @@ export function DriversPage() {
     loadVehicles()
   }, [])
 
+  // Realtime: cuando un chofer cambia su availability desde la app móvil
+  // (o cuando un admin edita cualquier campo), refrescar la tabla sin
+  // esperar a un refresh manual.
+  useEffect(() => {
+    const channel = supabase
+      .channel('drivers-page')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'drivers' },
+        () => loadDrivers(),
+      )
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [])
+
   async function loadDrivers() {
     const { data } = await supabase
       .from('drivers')
@@ -143,6 +177,7 @@ export function DriversPage() {
                 <th className="p-3 font-medium">Nombre</th>
                 <th className="p-3 font-medium">Telefono</th>
                 <th className="p-3 font-medium">Vehiculo asignado</th>
+                <th className="p-3 font-medium">Disponibilidad</th>
                 <th className="p-3 font-medium">Status</th>
                 <th className="p-3 font-medium">Licencia</th>
                 <th className="p-3 font-medium w-20"></th>
@@ -162,6 +197,9 @@ export function DriversPage() {
                   </td>
                   <td className="p-3 text-gray-500">{d.phone ?? '-'}</td>
                   <td className="p-3 text-gray-500">{d.default_vehicle?.name ?? '-'}</td>
+                  <td className="p-3">
+                    <AvailabilityBadge availability={d.availability ?? 'off_shift'} />
+                  </td>
                   <td className="p-3">
                     <StatusBadge status={d.status} />
                   </td>
