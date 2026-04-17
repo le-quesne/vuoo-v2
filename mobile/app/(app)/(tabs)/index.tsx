@@ -13,6 +13,7 @@ import {
   PullRefreshIndicator,
   usePullRefresh,
 } from '@/components/PullRefreshIndicator'
+import { SyncStatusBar } from '@/components/SyncStatusBar'
 import { router } from 'expo-router'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -169,6 +170,7 @@ export default function HomeScreen() {
               <Text style={styles.greetingDate}>{todayLabel}</Text>
               <Text style={styles.greetingCount}>{routesCountLabel}</Text>
             </View>
+            <SyncStatusBar />
             <LoadingStrip visible={refreshing} />
           </View>
         }

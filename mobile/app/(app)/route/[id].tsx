@@ -14,11 +14,17 @@ import {
 import { router, useLocalSearchParams, Stack } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { supabase } from '@/lib/supabase'
-import { startTracking, stopTracking } from '@/lib/location'
+import { isTrackingActive, startTracking, stopTracking } from '@/lib/location'
 import { useAuth } from '@/contexts/AuthContext'
 import type { PlanStop, Stop, Route, Plan, StopStatus } from '@/types/database'
 import { colors, spacing, radius } from '@/theme'
-import { RouteMapWebView, type RouteMapStop } from '@/components/RouteMapWebView'
+import {
+  RouteMapWebView,
+  type DepotLocation,
+  type RouteMapStop,
+} from '@/components/RouteMapWebView'
+import { TrackingBadge } from '@/components/TrackingBadge'
+import { SyncStatusBar } from '@/components/SyncStatusBar'
 
 interface PlanStopRow extends PlanStop {
   stop: Stop
@@ -43,6 +49,8 @@ export default function RouteDetailScreen() {
   const [startingRoute, setStartingRoute] = useState(false)
   const [finishingRoute, setFinishingRoute] = useState(false)
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null)
+  const [tracking, setTracking] = useState(false)
+  const [depot, setDepot] = useState<DepotLocation | null>(null)
 
   const load = useCallback(async () => {
     if (!id) return
@@ -67,6 +75,53 @@ export default function RouteDetailScreen() {
   useEffect(() => {
     load().finally(() => setLoading(false))
   }, [load])
+
+  // Fetch org depot so the map mirrors the web: depot as start/end of the
+  // route line plus a distinct house-icon marker.
+  useEffect(() => {
+    if (!driver?.org_id) {
+      setDepot(null)
+      return
+    }
+    let cancelled = false
+    supabase
+      .from('organizations')
+      .select('default_depot_lat, default_depot_lng, default_depot_address')
+      .eq('id', driver.org_id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled || !data) return
+        const lat = data.default_depot_lat as number | null
+        const lng = data.default_depot_lng as number | null
+        if (typeof lat === 'number' && typeof lng === 'number') {
+          setDepot({
+            lat,
+            lng,
+            address: (data.default_depot_address as string | null) ?? null,
+          })
+        } else {
+          setDepot(null)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [driver?.org_id])
+
+  // Reflect actual tracking state on mount — if the app was backgrounded and
+  // the OS kept the location task alive, we want the badge to show up
+  // immediately instead of waiting for the next Iniciar/Finalizar tap.
+  useEffect(() => {
+    let cancelled = false
+    isTrackingActive()
+      .then((active) => {
+        if (!cancelled) setTracking(active)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // Refetch cada vez que la pantalla gana foco (e.g. al volver de stop/[id]).
   useFocusEffect(
@@ -165,6 +220,7 @@ export default function RouteDetailScreen() {
 
     if (driver?.id) {
       const ok = await startTracking(route.id, driver.id)
+      setTracking(ok)
       if (!ok) {
         Alert.alert(
           'Seguimiento de ubicacion',
@@ -190,6 +246,7 @@ export default function RouteDetailScreen() {
       .update({ status: 'completed' })
       .eq('id', route.id)
     await stopTracking()
+    setTracking(false)
     setFinishingRoute(false)
     await load()
   }
@@ -202,7 +259,8 @@ export default function RouteDetailScreen() {
       .update({ status: 'in_transit' })
       .eq('id', route.id)
     // Reanuda el GPS tracking para que el dispatcher lo vea en vivo.
-    await startTracking(route.id, driver.id).catch(() => {})
+    const ok = await startTracking(route.id, driver.id).catch(() => false)
+    setTracking(!!ok)
     setFinishingRoute(false)
     await load()
   }
@@ -284,9 +342,12 @@ export default function RouteDetailScreen() {
       <View style={styles.summary}>
         <View style={{ flex: 1 }}>
           <Text style={styles.summaryLabel}>Progreso</Text>
-          <Text style={styles.summaryValue}>
-            {completedCount} / {stops.length} paradas
-          </Text>
+          <View style={styles.summaryValueRow}>
+            <Text style={styles.summaryValue}>
+              {completedCount} / {stops.length} paradas
+            </Text>
+            <TrackingBadge active={tracking && route?.status === 'in_transit'} />
+          </View>
         </View>
         {route?.status === 'not_started' && (
           <Pressable
@@ -329,20 +390,23 @@ export default function RouteDetailScreen() {
         )}
       </View>
 
-      {mapStops.length > 0 && (
+      <SyncStatusBar />
+
+      {(mapStops.length > 0 || depot) && (
         <RouteMapWebView
           stops={mapStops}
           driverLocation={driverLocation}
+          depot={depot}
           style={styles.map}
         />
       )}
 
       {nextPending && route?.status !== 'not_started' && (
         <Pressable
-          onPress={() => router.push(`/(app)/stop/${nextPending.id}`)}
+          onPress={() => openMapsFor(nextPending.stop)}
           style={({ pressed }) => [styles.nextBanner, pressed && { opacity: 0.9 }]}
         >
-          <Text style={styles.nextBannerLabel}>Siguiente parada</Text>
+          <Text style={styles.nextBannerLabel}>Siguiente parada · Tocar para navegar</Text>
           <Text style={styles.nextBannerTitle}>{nextPending.stop?.name}</Text>
           {nextPending.stop?.address && (
             <Text style={styles.nextBannerAddress}>{nextPending.stop.address}</Text>
@@ -367,14 +431,6 @@ export default function RouteDetailScreen() {
             planStop={item}
             index={index}
             onPress={() => router.push(`/(app)/stop/${item.id}`)}
-            onNavigate={() => {
-              const { lat, lng, address } = item.stop ?? {}
-              if (lat && lng) {
-                Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`)
-              } else if (address) {
-                Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`)
-              }
-            }}
           />
         )}
       />
@@ -382,21 +438,35 @@ export default function RouteDetailScreen() {
   )
 }
 
+function openMapsFor(stop: Stop | null | undefined): void {
+  if (!stop) return
+  const { lat, lng, address } = stop
+  if (typeof lat === 'number' && typeof lng === 'number') {
+    Linking.openURL(
+      `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`,
+    )
+  } else if (address) {
+    Linking.openURL(
+      `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`,
+    )
+  }
+}
+
 function StopRow({
   planStop,
   index,
   onPress,
-  onNavigate,
 }: {
   planStop: PlanStopRow
   index: number
   onPress: () => void
-  onNavigate: () => void
 }) {
   const styleDef = STATUS_STYLES[planStop.status]
   const tw = planStop.stop?.time_window_start && planStop.stop?.time_window_end
     ? `${planStop.stop.time_window_start.slice(0, 5)} - ${planStop.stop.time_window_end.slice(0, 5)}`
     : null
+  const pending = planStop.status === 'pending'
+  const ctaLabel = pending ? 'Completar' : 'Ver detalle'
 
   return (
     <Pressable
@@ -425,11 +495,16 @@ function StopRow({
         <View style={styles.stopFooter}>
           {tw && <Text style={styles.stopMeta}>{tw}</Text>}
           <Pressable
-            onPress={onNavigate}
+            onPress={onPress}
             hitSlop={8}
-            style={({ pressed }) => [styles.navBtn, pressed && { opacity: 0.7 }]}
+            style={({ pressed }) => [
+              pending ? styles.ctaPrimary : styles.ctaSecondary,
+              pressed && { opacity: 0.75 },
+            ]}
           >
-            <Text style={styles.navBtnText}>Navegar</Text>
+            <Text style={pending ? styles.ctaPrimaryText : styles.ctaSecondaryText}>
+              {ctaLabel}
+            </Text>
           </Pressable>
         </View>
       </View>
@@ -450,7 +525,8 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   summaryLabel: { fontSize: 11, color: colors.textMuted, textTransform: 'uppercase' },
-  summaryValue: { fontSize: 18, fontWeight: '600', color: colors.text, marginTop: 2 },
+  summaryValueRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
+  summaryValue: { fontSize: 18, fontWeight: '600', color: colors.text },
   startButton: {
     backgroundColor: colors.primary,
     paddingHorizontal: spacing.lg,
@@ -517,7 +593,15 @@ const styles = StyleSheet.create({
   stopBadgeText: { fontSize: 10, fontWeight: '600' },
   stopFooter: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.sm, gap: spacing.md },
   stopMeta: { fontSize: 12, color: colors.textMuted },
-  navBtn: {
+  ctaPrimary: {
+    marginLeft: 'auto',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: radius.sm,
+    backgroundColor: colors.primary,
+  },
+  ctaPrimaryText: { fontSize: 13, fontWeight: '700', color: '#ffffff' },
+  ctaSecondary: {
     marginLeft: 'auto',
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -526,5 +610,5 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  navBtnText: { fontSize: 12, fontWeight: '600', color: colors.primary },
+  ctaSecondaryText: { fontSize: 12, fontWeight: '600', color: colors.textMuted },
 })

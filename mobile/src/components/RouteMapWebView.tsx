@@ -1,5 +1,12 @@
 import { useMemo } from 'react'
-import { View, Text, StyleSheet, type StyleProp, type ViewStyle } from 'react-native'
+import {
+  Platform,
+  View,
+  Text,
+  StyleSheet,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native'
 import { WebView } from 'react-native-webview'
 import { colors, radius, shadow, spacing } from '@/theme'
 import type { StopStatus } from '@/types/database'
@@ -18,9 +25,16 @@ export interface DriverLocation {
   lng: number
 }
 
+export interface DepotLocation {
+  lat: number
+  lng: number
+  address?: string | null
+}
+
 interface RouteMapWebViewProps {
   stops: RouteMapStop[]
   driverLocation?: DriverLocation | null
+  depot?: DepotLocation | null
   style?: StyleProp<ViewStyle>
 }
 
@@ -38,9 +52,11 @@ function buildHtml(
   token: string,
   stops: RouteMapStop[],
   driverLocation: DriverLocation | null,
+  depot: DepotLocation | null,
 ): string {
   const stopsJson = JSON.stringify(stops)
   const driverJson = JSON.stringify(driverLocation)
+  const depotJson = JSON.stringify(depot)
   const statusColorsJson = JSON.stringify(STATUS_COLORS)
   const defaultCenterJson = JSON.stringify(DEFAULT_CENTER)
   const primaryColor = colors.primary
@@ -79,6 +95,18 @@ function buildHtml(
     box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.75);
     animation: pulse 1.8s infinite;
   }
+  .depot-marker {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: #4f46e5;
+    border: 3px solid #ffffff;
+    box-shadow: 0 3px 10px rgba(79, 70, 229, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .depot-marker svg { width: 16px; height: 16px; }
   @keyframes pulse {
     0%   { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
     70%  { box-shadow: 0 0 0 14px rgba(59, 130, 246, 0); }
@@ -98,6 +126,7 @@ function buildHtml(
       var TOKEN = ${JSON.stringify(token)};
       var STOPS = ${stopsJson};
       var DRIVER = ${driverJson};
+      var DEPOT = ${depotJson};
       var STATUS_COLORS = ${statusColorsJson};
       var DEFAULT_CENTER = ${defaultCenterJson};
 
@@ -109,7 +138,9 @@ function buildHtml(
       mapboxgl.accessToken = TOKEN;
 
       var initialCenter = DEFAULT_CENTER;
-      if (STOPS && STOPS.length > 0) {
+      if (DEPOT) {
+        initialCenter = [DEPOT.lng, DEPOT.lat];
+      } else if (STOPS && STOPS.length > 0) {
         initialCenter = [STOPS[0].lng, STOPS[0].lat];
       } else if (DRIVER) {
         initialCenter = [DRIVER.lng, DRIVER.lat];
@@ -152,6 +183,28 @@ function buildHtml(
         el.className = 'driver-marker';
         driverMarker = new mapboxgl.Marker({ element: el, anchor: 'center' })
           .setLngLat([loc.lng, loc.lat])
+          .addTo(map);
+      }
+
+      function addDepotMarker() {
+        if (!DEPOT) return;
+        var el = document.createElement('div');
+        el.className = 'depot-marker';
+        el.innerHTML =
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">' +
+          '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>' +
+          '<polyline points="9 22 9 12 15 12 15 22"/>' +
+          '</svg>';
+        var popup = new mapboxgl.Popup({ offset: 22, closeButton: false })
+          .setHTML(
+            '<div style="font-family: system-ui; padding: 2px;">' +
+              '<div style="font-weight: 600; font-size: 13px; color: #4f46e5; margin-bottom: 2px;">Depot</div>' +
+              (DEPOT.address ? '<div style="font-size: 12px; color: #444;">' + DEPOT.address + '</div>' : '') +
+              '</div>',
+          );
+        new mapboxgl.Marker({ element: el, anchor: 'center' })
+          .setLngLat([DEPOT.lng, DEPOT.lat])
+          .setPopup(popup)
           .addTo(map);
       }
 
@@ -202,10 +255,20 @@ function buildHtml(
 
       map.on('load', function () {
         addStopMarkers();
+        addDepotMarker();
         setDriverMarker(DRIVER);
 
-        if (STOPS.length >= 2) {
-          var straightCoords = STOPS.map(function (s) { return [s.lng, s.lat]; });
+        // Route line: depot → stops → depot (same logic as web).
+        var lineStops = STOPS.slice();
+        var hasDepot = !!(DEPOT && typeof DEPOT.lat === 'number' && typeof DEPOT.lng === 'number');
+
+        if (lineStops.length >= 2 || (hasDepot && lineStops.length >= 1)) {
+          var straightCoords = [];
+          if (hasDepot) straightCoords.push([DEPOT.lng, DEPOT.lat]);
+          for (var si = 0; si < lineStops.length; si++) {
+            straightCoords.push([lineStops[si].lng, lineStops[si].lat]);
+          }
+          if (hasDepot) straightCoords.push([DEPOT.lng, DEPOT.lat]);
 
           // Colocamos primero una linea recta como placeholder instantaneo.
           map.addSource('route-line', {
@@ -255,6 +318,7 @@ function buildHtml(
                 var b = new mapboxgl.LngLatBounds(realCoords[0], realCoords[0]);
                 for (var k = 0; k < realCoords.length; k++) b.extend(realCoords[k]);
                 if (DRIVER) b.extend([DRIVER.lng, DRIVER.lat]);
+                if (hasDepot) b.extend([DEPOT.lng, DEPOT.lat]);
                 map.fitBounds(b, { padding: 48, maxZoom: 15, duration: 300 });
               } catch (e) { /* ignore */ }
             }
@@ -267,6 +331,7 @@ function buildHtml(
 
         var boundsPoints = STOPS.map(function (s) { return [s.lng, s.lat]; });
         if (DRIVER) boundsPoints.push([DRIVER.lng, DRIVER.lat]);
+        if (hasDepot) boundsPoints.push([DEPOT.lng, DEPOT.lat]);
 
         if (boundsPoints.length === 1) {
           map.easeTo({ center: boundsPoints[0], zoom: 13, duration: 0 });
@@ -292,13 +357,33 @@ function buildHtml(
 </html>`
 }
 
-export function RouteMapWebView({ stops, driverLocation, style }: RouteMapWebViewProps) {
+export function RouteMapWebView({
+  stops,
+  driverLocation,
+  depot,
+  style,
+}: RouteMapWebViewProps) {
   const token = process.env.EXPO_PUBLIC_MAPBOX_TOKEN ?? ''
 
   const html = useMemo(
-    () => buildHtml(token, stops, driverLocation ?? null),
-    [token, stops, driverLocation],
+    () => buildHtml(token, stops, driverLocation ?? null, depot ?? null),
+    [token, stops, driverLocation, depot],
   )
+
+  // react-native-webview isn't supported on web — show a friendly placeholder
+  // instead of the raw "does not support this platform" error.
+  if (Platform.OS === 'web') {
+    return (
+      <View style={[styles.container, styles.fallback, style]}>
+        <Text style={styles.fallbackText}>
+          El mapa se muestra solo en la app móvil.
+        </Text>
+        <Text style={[styles.fallbackText, { marginTop: 4, fontSize: 11 }]}>
+          {stops.length} {stops.length === 1 ? 'parada' : 'paradas'} en esta ruta
+        </Text>
+      </View>
+    )
+  }
 
   if (!token) {
     return (

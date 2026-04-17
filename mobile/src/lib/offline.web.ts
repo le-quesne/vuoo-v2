@@ -31,6 +31,10 @@ export interface InsertLocationPayload {
 
 export async function initOfflineDb(): Promise<void> {}
 
+export async function getPendingCount(): Promise<number> {
+  return 0
+}
+
 export async function enqueueOperation(
   _action: OfflineAction,
   _payload: unknown,

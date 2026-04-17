@@ -48,6 +48,10 @@ export default function AppLayout() {
         name="stop/[id]"
         options={{ title: 'Parada', headerBackTitle: 'Volver' }}
       />
+      <Stack.Screen
+        name="profile/edit"
+        options={{ title: 'Editar perfil', headerBackTitle: 'Volver' }}
+      />
     </Stack>
   )
 }

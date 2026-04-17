@@ -84,6 +84,22 @@ export async function initOfflineDb(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Queue introspection
+// ---------------------------------------------------------------------------
+
+export async function getPendingCount(): Promise<number> {
+  try {
+    const db = await getDb()
+    const row = await db.getFirstAsync<{ count: number }>(
+      `SELECT count(*) as count FROM sync_queue WHERE synced_at IS NULL;`,
+    )
+    return row?.count ?? 0
+  } catch {
+    return 0
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Enqueue
 // ---------------------------------------------------------------------------
 

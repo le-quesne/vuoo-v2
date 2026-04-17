@@ -147,6 +147,14 @@ export default function ProfileScreen() {
           />
         </View>
 
+        {/* Edit profile button */}
+        <Pressable
+          onPress={() => router.push('/(app)/profile/edit')}
+          style={({ pressed }) => [styles.editBtn, pressed && { opacity: 0.85 }]}
+        >
+          <Text style={styles.editBtnText}>Editar perfil</Text>
+        </Pressable>
+
         {/* Sign out button */}
         <Pressable
           onPress={handleSignOut}
@@ -272,9 +280,23 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
+  // Edit
+  editBtn: {
+    marginTop: spacing.lg,
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+  },
+  editBtnText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+
   // Sign out
   signOutBtn: {
-    marginTop: spacing.xl,
+    marginTop: spacing.sm,
     backgroundColor: colors.dangerBg,
     borderWidth: 1,
     borderColor: colors.danger,
