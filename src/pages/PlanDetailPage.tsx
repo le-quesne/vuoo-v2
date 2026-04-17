@@ -47,10 +47,29 @@ import { ConfirmDialog } from '../components/ConfirmDialog'
 import { EditRouteModal } from '../components/EditRouteModal'
 import { notifyDriverRouteAssigned } from '../lib/notifyDriver'
 import { calculateRouteWeight, getCapacityStatus } from '../lib/capacity'
-import { MAPBOX_TOKEN } from '../lib/mapbox'
+import { MAPBOX_TOKEN, fetchDirections } from '../lib/mapbox'
 import type { Plan, Route, Stop, Vehicle, Driver, PlanStopWithStop, NotificationLog, Order } from '../types/database'
 
 const UNASSIGNED_ID = 'unassigned'
+
+function routePlannedKm(
+  route: { id: string; total_distance_km: number | null },
+  fetched: Record<string, number>,
+): number {
+  if (route.total_distance_km && route.total_distance_km > 0) return route.total_distance_km
+  return fetched[route.id] ?? 0
+}
+
+function routeTraveledKm(
+  route: { id: string; total_distance_km: number | null; planStops: PlanStopWithStop[] },
+  fetched: Record<string, number>,
+): number {
+  const total = routePlannedKm(route, fetched)
+  const stops = route.planStops.length
+  if (stops === 0 || total === 0) return 0
+  const completed = route.planStops.filter((ps) => ps.status === 'completed').length
+  return (completed / stops) * total
+}
 
 export function PlanDetailPage() {
   const { planId } = useParams<{ planId: string }>()
@@ -65,6 +84,7 @@ export function PlanDetailPage() {
   const [showVroomWizard, setShowVroomWizard] = useState(false)
   const [showDepotModal, setShowDepotModal] = useState(false)
   const [orgDepot, setOrgDepot] = useState<{ lat: number; lng: number; address: string | null } | null>(null)
+  const [fetchedDistancesKm, setFetchedDistancesKm] = useState<Record<string, number>>({})
   const [activeDragId, setActiveDragId] = useState<string | null>(null)
   const [deletePlanStopId, setDeletePlanStopId] = useState<string | null>(null)
   const [deleteRouteId, setDeleteRouteId] = useState<string | null>(null)
@@ -104,6 +124,52 @@ export function PlanDetailPage() {
         }
       })
   }, [currentOrg])
+
+  const routeDistanceKey = useMemo(() =>
+    JSON.stringify(
+      routes.map((r) => ({
+        id: r.id,
+        total: r.total_distance_km,
+        stops: r.planStops
+          .filter((ps) => ps.stop?.lat != null && ps.stop?.lng != null)
+          .map((ps) => ({ lat: ps.stop.lat, lng: ps.stop.lng })),
+      })),
+    ) + `|${orgDepot?.lat ?? ''}|${orgDepot?.lng ?? ''}`,
+    [routes, orgDepot?.lat, orgDepot?.lng],
+  )
+
+  useEffect(() => {
+    let cancelled = false
+    async function run() {
+      const results: Record<string, number> = {}
+      for (const r of routes) {
+        if (r.total_distance_km && r.total_distance_km > 0) continue
+        const stops = r.planStops
+          .map((ps) => ps.stop)
+          .filter((s): s is Stop & { lat: number; lng: number } =>
+            !!s && s.lat != null && s.lng != null,
+          )
+        if (stops.length === 0) continue
+        const coords: [number, number][] = []
+        if (orgDepot) coords.push([orgDepot.lng, orgDepot.lat])
+        for (const s of stops) coords.push([s.lng, s.lat])
+        if (orgDepot) coords.push([orgDepot.lng, orgDepot.lat])
+        if (coords.length < 2) continue
+        try {
+          const d = await fetchDirections(coords)
+          if (cancelled) return
+          if (d) results[r.id] = d.distance / 1000
+        } catch {
+          // ignore
+        }
+      }
+      if (!cancelled) setFetchedDistancesKm(results)
+    }
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [routeDistanceKey])
 
   async function loadPlanData() {
     const [planRes, routesRes, planStopsRes] = await Promise.all([
@@ -322,7 +388,8 @@ export function PlanDetailPage() {
   }
 
   const totalStops = routes.reduce((sum, r) => sum + r.planStops.length, 0) + unassignedStops.length
-  const totalDistance = routes.reduce((sum, r) => sum + (r.total_distance_km ?? 0), 0)
+  const totalDistance = routes.reduce((sum, r) => sum + routePlannedKm(r, fetchedDistancesKm), 0)
+  const traveledDistance = routes.reduce((sum, r) => sum + routeTraveledKm(r, fetchedDistancesKm), 0)
   const totalDuration = routes.reduce((sum, r) => sum + (r.total_duration_minutes ?? 0), 0)
   const hours = Math.floor(totalDuration / 60)
   const mins = totalDuration % 60
@@ -437,7 +504,7 @@ export function PlanDetailPage() {
               </div>
               <div className="flex items-center gap-1">
                 <Navigation size={14} />
-                <span>{totalDistance.toFixed(1)}km</span>
+                <span>{Math.round(traveledDistance)}/{Math.round(totalDistance)}km</span>
               </div>
               <div className="flex items-center gap-1">
                 <MapPin size={14} />
@@ -562,7 +629,7 @@ export function PlanDetailPage() {
                           <MapPin size={10} />
                           {route.planStops.length}
                         </span>
-                        <span>{(route.total_distance_km ?? 0).toFixed(1)}km</span>
+                        <span>{Math.round(routeTraveledKm(route, fetchedDistancesKm))}/{Math.round(routePlannedKm(route, fetchedDistancesKm))}km</span>
                         {route.total_duration_minutes != null && route.total_duration_minutes > 0 && (
                           <span>
                             {Math.floor(route.total_duration_minutes / 60)}h {route.total_duration_minutes % 60}m
@@ -1319,8 +1386,7 @@ function AddVehicleToPlanModal({
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [drivers, setDrivers] = useState<Driver[]>([])
   const [loading, setLoading] = useState(true)
-  const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null)
-  const [selectedDriverId, setSelectedDriverId] = useState<string | null>(null)
+  const [selections, setSelections] = useState<Record<string, string | null>>({})
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -1338,38 +1404,56 @@ function AddVehicleToPlanModal({
 
   const { user, currentOrg } = useAuth()
 
-  function selectVehicle(vehicleId: string) {
-    setSelectedVehicleId(vehicleId)
-    const suggested = drivers.find((d) => d.default_vehicle_id === vehicleId)
-    setSelectedDriverId(suggested ? suggested.id : null)
+  function toggleVehicle(vehicleId: string) {
+    setSelections((prev) => {
+      if (vehicleId in prev) {
+        const next = { ...prev }
+        delete next[vehicleId]
+        return next
+      }
+      const suggested = drivers.find((d) => d.default_vehicle_id === vehicleId)
+      return { ...prev, [vehicleId]: suggested ? suggested.id : null }
+    })
   }
 
-  async function addVehicle() {
-    if (!user || !currentOrg || !selectedVehicleId) return
+  function setDriverFor(vehicleId: string, driverId: string | null) {
+    setSelections((prev) => ({ ...prev, [vehicleId]: driverId }))
+  }
+
+  const selectedIds = Object.keys(selections)
+
+  async function addVehicles() {
+    if (!user || !currentOrg || selectedIds.length === 0) return
     setSaving(true)
+    const rows = selectedIds.map((vehicleId) => ({
+      plan_id: planId,
+      vehicle_id: vehicleId,
+      driver_id: selections[vehicleId],
+      status: 'not_started' as const,
+      user_id: user.id,
+      org_id: currentOrg.id,
+    }))
     const { data: inserted } = await supabase
       .from('routes')
-      .insert({
-        plan_id: planId,
-        vehicle_id: selectedVehicleId,
-        driver_id: selectedDriverId,
-        status: 'not_started',
-        user_id: user.id,
-        org_id: currentOrg.id,
-      })
-      .select('id, plan:plans(name, date)')
-      .single()
+      .insert(rows)
+      .select('id, driver_id, plan:plans(name, date)')
     setSaving(false)
 
-    if (inserted?.id && selectedDriverId) {
-      const planLite = (inserted as { plan?: { name?: string | null; date?: string | null } | null })
-        .plan
-      void notifyDriverRouteAssigned({
-        driverId: selectedDriverId,
-        routeId: inserted.id,
-        planName: planLite?.name ?? null,
-        planDate: planLite?.date ?? null,
-      })
+    if (inserted) {
+      for (const row of inserted as Array<{
+        id: string
+        driver_id: string | null
+        plan?: { name?: string | null; date?: string | null } | null
+      }>) {
+        if (row.driver_id) {
+          void notifyDriverRouteAssigned({
+            driverId: row.driver_id,
+            routeId: row.id,
+            planName: row.plan?.name ?? null,
+            planDate: row.plan?.date ?? null,
+          })
+        }
+      }
     }
 
     onAdded()
@@ -1379,7 +1463,7 @@ function AddVehicleToPlanModal({
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
       <div className="bg-white rounded-xl p-6 w-full max-w-sm shadow-xl">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold">Agregar vehiculo</h3>
+          <h3 className="text-lg font-semibold">Agregar vehiculos</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X size={20} />
           </button>
@@ -1391,50 +1475,54 @@ function AddVehicleToPlanModal({
             No hay vehiculos disponibles. Crea uno en la seccion Drivers.
           </p>
         ) : (
-          <>
-            <div className="space-y-1 max-h-64 overflow-y-auto">
-              {vehicles.map((v) => (
-                <button
+          <div className="space-y-2 max-h-[28rem] overflow-y-auto">
+            {vehicles.map((v) => {
+              const isSelected = v.id in selections
+              return (
+                <div
                   key={v.id}
-                  onClick={() => selectVehicle(v.id)}
-                  className={`w-full flex items-center gap-3 p-3 rounded-lg text-left transition-colors ${
-                    selectedVehicleId === v.id
-                      ? 'bg-blue-50 ring-1 ring-blue-300'
-                      : 'hover:bg-gray-50'
+                  className={`rounded-lg transition-colors ${
+                    isSelected ? 'bg-blue-50 ring-1 ring-blue-300' : 'hover:bg-gray-50'
                   }`}
                 >
-                  <Truck size={16} className="text-blue-400 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium">{v.name}</div>
-                    <div className="text-xs text-gray-400">
-                      {v.capacity_weight_kg}kg
-                      {v.license_plate ? ` - ${v.license_plate}` : ''}
+                  <button
+                    onClick={() => toggleVehicle(v.id)}
+                    className="w-full flex items-center gap-3 p-3 text-left"
+                  >
+                    <Truck size={16} className="text-blue-400 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium">{v.name}</div>
+                      <div className="text-xs text-gray-400">
+                        {v.capacity_weight_kg}kg
+                        {v.license_plate ? ` - ${v.license_plate}` : ''}
+                      </div>
                     </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-            {selectedVehicleId && (
-              <div className="mt-4">
-                <label className="block text-xs font-medium text-gray-500 mb-1">
-                  Conductor (opcional)
-                </label>
-                <select
-                  value={selectedDriverId ?? ''}
-                  onChange={(e) => setSelectedDriverId(e.target.value || null)}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-                >
-                  <option value="">Sin conductor</option>
-                  {drivers.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.first_name} {d.last_name}
-                      {d.default_vehicle_id === selectedVehicleId ? ' (sugerido)' : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-          </>
+                    {isSelected && <Check size={16} className="text-blue-500 shrink-0" />}
+                  </button>
+                  {isSelected && (
+                    <div className="px-3 pb-3">
+                      <label className="block text-[10px] font-medium text-gray-500 mb-1 uppercase tracking-wide">
+                        Conductor (opcional)
+                      </label>
+                      <select
+                        value={selections[v.id] ?? ''}
+                        onChange={(e) => setDriverFor(v.id, e.target.value || null)}
+                        className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      >
+                        <option value="">Sin conductor</option>
+                        {drivers.map((d) => (
+                          <option key={d.id} value={d.id}>
+                            {d.first_name} {d.last_name}
+                            {d.default_vehicle_id === v.id ? ' (sugerido)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         )}
         <div className="flex gap-2 mt-4">
           <button
@@ -1444,11 +1532,15 @@ function AddVehicleToPlanModal({
             Cancelar
           </button>
           <button
-            onClick={addVehicle}
-            disabled={!selectedVehicleId || saving}
+            onClick={addVehicles}
+            disabled={selectedIds.length === 0 || saving}
             className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 disabled:opacity-50"
           >
-            {saving ? 'Agregando...' : 'Agregar'}
+            {saving
+              ? 'Agregando...'
+              : selectedIds.length > 1
+              ? `Agregar ${selectedIds.length}`
+              : 'Agregar'}
           </button>
         </div>
       </div>
