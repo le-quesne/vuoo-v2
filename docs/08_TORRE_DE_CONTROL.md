@@ -1,30 +1,45 @@
 # 08 - Torre de Control: Dashboard Operacional en Tiempo Real
 
-> **Objetivo:** Dar al dispatcher una vista unica donde ve TODOS los conductores, TODAS las rutas del dia, y puede actuar ante problemas sin salir de la pantalla. Hoy solo puede ver un plan a la vez.
+> **Objetivo:** Dar al dispatcher una vista unica donde ve TODOS los conductores, TODAS las rutas del dia, y puede actuar ante problemas sin salir de la pantalla.
 >
 > **Depende de:** 01 (conductores), 02 (GPS tracking, status updates), 03 (notificaciones)
 >
 > **Diferencia clave:** Una pagina de tracking es una tele. La torre de control es una cabina con controles.
+>
+> **Estado:** reescrito 2026-04-16 tras refactor del PRD 07.
 
 ---
 
-## Estado Actual
+## Estado Actual (abril 2026)
 
-### Lo que existe:
-- Tab "En Vivo" en PlanDetailPage — muestra conductores de **un solo plan**
-- Supabase Realtime subscription en `driver_locations` (unica subscription en toda la app)
-- Indicador online/offline (60s threshold)
-- Velocidad del conductor en km/h
-- Mapa con markers de conductores (pulse animation)
+### Lo que YA existe (reutilizable)
 
-### Problemas:
-- **Solo se ve un plan a la vez** — si hay 5 planes hoy, hay que navegar entre cada uno
-- **No hay alertas** — si un conductor se desconecta, nadie se entera automaticamente
-- **No hay vista "hoy"** — no existe un dashboard de operaciones del dia
-- **No hay KPIs en tiempo real** — solo conteos estaticos en analytics
-- **No se puede actuar** — no se puede reasignar paradas, contactar conductor, o notificar clientes desde la vista live
-- **No hay feed de eventos** — no se ve cuando una parada se completa o falla en tiempo real
-- `plan_stops` y `routes` **no tienen Realtime** — solo `driver_locations`
+- **Mobile app (Expo) reporta ubicaciones**: `mobile/src/lib/location.ts` inserta en `driver_locations` periodicamente y en offline-first con cola local.
+- **Realtime habilitado** en las tablas criticas:
+  - `driver_locations` (migration 004).
+  - `plan_stops` (migration 005).
+  - `orders` (migration 008).
+- **`RouteMap.tsx`** ya soporta la prop `driverLocations`: markers con color por ruta, pulse animation, nombre del conductor en tooltip.
+- **Patron de badge con realtime en Sidebar** (`Sidebar.tsx` con `pending_orders`): copiar este patron para el badge de alertas.
+- **Edge function `send-notification`** (doc 03) para notificaciones a clientes/conductores desde el dispatcher.
+- **TrackingPage publica** driver_locations realtime → plantilla para consumir la subscription en web.
+
+### Lo que cambio con el PRD 07 (abril 2026)
+
+Cuando refactoreamos `PlanDetailPage.tsx` **eliminamos la tab "En Vivo"**: ese codigo que hoy existe solo en git history era la unica forma de ver conductores en tiempo real desde la web. Hoy **no hay ningun consumidor en la web** de `driver_locations`. Esto convierte a la Torre de Control en pieza **indispensable**, no nice-to-have.
+
+El codigo eliminado que sirve de punto de partida:
+- `git show 880766e:src/pages/PlanDetailPage.tsx` — contiene la logica de `driverLocations` state, subscription a postgres_changes con filtro `route_id=in.(...)`, y el panel de "En Vivo" con online/offline/sin datos.
+
+### Lo que NO existe
+
+- Pagina `/control`.
+- RPC `get_live_dashboard()` y `get_live_routes()`.
+- Realtime en `routes` (falta `alter publication supabase_realtime add table routes`).
+- Tabla `operational_incidents`.
+- Sistema de alertas (deteccion offline, paradas atrasadas, broadcast, etc.).
+- Acciones del dispatcher (reasignar en vivo, contactar con un click).
+- Badge de alertas en Sidebar.
 
 ---
 
@@ -66,24 +81,25 @@
 
 ---
 
-## KPI Bar (Header en Tiempo Real)
+## Fase 1 — MVP: Ver antes de actuar (1-2 sem)
 
-6 metricas que se actualizan cada 30 segundos:
+El objetivo es devolver al dispatcher visibilidad en tiempo real de todo el dia **sin agregar acciones todavia**. Primero que vea, despues que actue.
 
-| KPI | Calculo | Color |
-|-----|---------|-------|
-| **Conductores online** | drivers con location < 60s / total activos hoy | Verde si >80%, rojo si <50% |
-| **Entregas completadas** | plan_stops completed / total hoy | Progreso |
-| **Tasa on-time** | completadas dentro de time_window / total completadas | Verde >90%, amarillo >80%, rojo <80% |
-| **Pendientes** | plan_stops pending hoy | Amarillo si muchas quedan |
-| **Fallidas** | plan_stops incomplete + cancelled hoy | Rojo si >5% |
-| **ETA cierre** | hora estimada de ultima entrega del dia | Info |
+### 1.1 — Migracion SQL base
 
-### RPC Function para KPIs live
+`012_control_tower.sql`:
 
 ```sql
+-- Habilitar realtime en routes (faltaba)
+alter publication supabase_realtime add table routes;
+
+-- RPC: KPIs live del dia
 create or replace function get_live_dashboard(p_org_id uuid, p_date date)
-returns json as $$
+returns json
+language plpgsql
+security definer
+set search_path = public
+as $$
 declare result json;
 begin
   select json_build_object(
@@ -93,382 +109,6 @@ begin
       join drivers d on d.id = dl.driver_id
       where d.org_id = p_org_id
         and dl.recorded_at > now() - interval '60 seconds'
-    ),
-    'drivers_total', (
-      select count(distinct r.driver_id)
-      from routes r
-      join plans p on r.plan_id = p.id
-      where r.org_id = p_org_id and p.date = p_date and r.driver_id is not null
-    ),
-    'stops_total', (
-      select count(*) from plan_stops ps
-      join plans p on ps.plan_id = p.id
-      where ps.org_id = p_org_id and p.date = p_date
-    ),
-    'stops_completed', (
-      select count(*) from plan_stops ps
-      join plans p on ps.plan_id = p.id
-      where ps.org_id = p_org_id and p.date = p_date and ps.status = 'completed'
-    ),
-    'stops_failed', (
-      select count(*) from plan_stops ps
-      join plans p on ps.plan_id = p.id
-      where ps.org_id = p_org_id and p.date = p_date and ps.status in ('incomplete', 'cancelled')
-    ),
-    'stops_pending', (
-      select count(*) from plan_stops ps
-      join plans p on ps.plan_id = p.id
-      where ps.org_id = p_org_id and p.date = p_date and ps.status = 'pending'
-    )
-  ) into result;
-  return result;
-end;
-$$ language plpgsql security definer;
-```
-
----
-
-## Panel Izquierdo: Rutas Activas
-
-### Datos por conductor/ruta
-
-```typescript
-interface LiveRoute {
-  route_id: string
-  plan_name: string
-  driver: { id: string; name: string }
-  vehicle: { name: string; plate: string }
-  status: RouteStatus                       // not_started | in_transit | completed
-  stops_total: number
-  stops_completed: number
-  stops_failed: number
-  current_stop_index: number                // en cual parada va
-  next_stop: { name: string; address: string; eta: string } | null
-  estimated_completion: string              // hora estimada de fin de ruta
-  location: { lat: number; lng: number; updated_at: string } | null
-  is_online: boolean
-  delays: number                            // paradas atrasadas
-  alerts: LiveAlert[]
-}
-```
-
-### Tarjeta de conductor
-
-```
-┌──────────────────────────────────────┐
-│ 🟢 Juan Perez            en ruta     │
-│ Furgon AB-1234 · Plan: Lunes AM     │
-│                                      │
-│ ████████████░░░░ 8/12 paradas        │
-│ Completadas: 7  Fallida: 1           │
-│                                      │
-│ Siguiente: Av. Providencia 1234      │
-│ ETA: ~11:45  (en 15 min)            │
-│                                      │
-│ ⚠ 1 parada atrasada                 │
-│                                      │
-│ [Ver ruta]  [Contactar]  [Reasignar] │
-└──────────────────────────────────────┘
-```
-
-### Ordenamiento
-- Primero: conductores con alertas (rojas primero)
-- Segundo: en ruta, ordenados por % completado
-- Tercero: no iniciadas
-- Ultimo: completadas
-
-### Filtros
-- Buscar por nombre de conductor
-- Filtrar: todos / en ruta / con problemas / offline / completados
-- Filtrar por plan especifico
-
----
-
-## Mapa Central
-
-### Todos los conductores del dia en un mapa
-
-Reutilizar y extender `RouteMap.tsx`:
-
-- **Markers de conductores:** Avatar con color segun estado
-  - Verde: en ruta, on-time
-  - Amarillo: en ruta, atrasado
-  - Rojo: offline o con alerta
-  - Gris: no iniciado
-  - Azul: completado
-- **Rutas dibujadas:** Lineas de color por vehiculo (reusar ROUTE_COLORS)
-- **Paradas:**
-  - Circulo verde: completada
-  - Circulo gris: pendiente
-  - Circulo rojo: fallida
-  - Circulo amarillo: atrasada (pasada de time_window)
-- **Clustering:** Cuando hay muchos markers, agrupar automaticamente
-
-### Interacciones del mapa
-
-**Click en conductor:**
-- Popup con: nombre, vehiculo, parada actual, ETA siguiente, velocidad
-- Botones: "Ver ruta", "Contactar", "Centrar mapa"
-
-**Click en parada:**
-- Popup con: nombre, direccion, time window, status, conductor asignado
-- Si completada: ver POD (foto, firma)
-- Si fallida: ver razon
-- Boton: "Reasignar a otro conductor"
-
-**Click en ruta (linea):**
-- Resaltar ruta completa
-- Mostrar todas las paradas de esa ruta
-- Dim el resto
-
----
-
-## Sistema de Alertas
-
-### Eventos que generan alertas
-
-| Prioridad | Evento | Trigger | Auto-accion |
-|-----------|--------|---------|-------------|
-| 🔴 Alta | Conductor offline | Sin location > 5 min durante ruta activa | Toast + sonido |
-| 🔴 Alta | Entrega fallida | plan_stop.status → incomplete/cancelled | Toast + log |
-| 🔴 Alta | Vehiculo detenido | Velocidad 0 por > 15 min en ruta activa | Toast |
-| 🟡 Media | Parada atrasada | ETA > time_window_end | Badge en tarjeta |
-| 🟡 Media | Ruta no iniciada | Hora > vehicle.time_window_start + 30min y status = not_started | Toast |
-| 🟡 Media | Bateria baja conductor | battery < 0.15 | Badge |
-| 🟢 Info | Parada completada | plan_stop.status → completed | Feed silencioso |
-| 🟢 Info | Ruta completada | Todas las paradas completadas | Feed + confetti? |
-| 🟢 Info | Conductor inicio ruta | route.status → in_transit | Feed silencioso |
-
-### Feed de alertas (panel derecho o inferior)
-
-Lista cronologica de eventos del dia, filtrable por prioridad:
-
-```
-🔴 11:23 — Carlos R. offline hace 5 min (ultima pos: -33.42, -70.63)
-           [Llamar] [Ver ultima posicion]
-
-🟡 11:20 — Parada "Ñuñoa 234" atrasada 15 min (asignada a Maria S.)
-           Ventana: 10:00-11:00 | ETA actual: 11:15
-           [Notificar cliente] [Reasignar]
-
-❌ 11:15 — Maria S. falló "Las Condes 890" — No hay nadie
-           Intento #1 | [Reprogramar] [Reasignar]
-
-✅ 11:10 — Juan P. completó "Av Italia 567"
-           POD: foto ✓ firma ✓ | 2 min antes de ventana
-```
-
-### Implementacion: Supabase Realtime
-
-Agregar subscriptions que hoy no existen:
-
-```typescript
-// Subscription a cambios de status de plan_stops (hoy)
-supabase
-  .channel('live-stops')
-  .on('postgres_changes', {
-    event: 'UPDATE',
-    schema: 'public',
-    table: 'plan_stops',
-    filter: `org_id=eq.${orgId}`
-  }, (payload) => {
-    const { old: prev, new: curr } = payload
-    if (prev.status !== curr.status) {
-      addAlert({
-        type: curr.status === 'completed' ? 'info' : 'error',
-        message: `Parada ${curr.stop_id} cambio a ${curr.status}`,
-        data: curr,
-      })
-    }
-  })
-  .subscribe()
-
-// Subscription a cambios de status de routes
-supabase
-  .channel('live-routes')
-  .on('postgres_changes', {
-    event: 'UPDATE',
-    schema: 'public',
-    table: 'routes',
-    filter: `org_id=eq.${orgId}`
-  }, (payload) => {
-    // Detectar inicio/fin de ruta
-  })
-  .subscribe()
-
-// Driver locations (ya existe, extender para ALL drivers de hoy)
-supabase
-  .channel('live-drivers')
-  .on('postgres_changes', {
-    event: 'INSERT',
-    schema: 'public',
-    table: 'driver_locations'
-  }, (payload) => {
-    updateDriverPosition(payload.new)
-    checkOfflineDrivers()
-    checkStationaryDrivers()
-  })
-  .subscribe()
-```
-
-### Deteccion de offline y estacionario
-
-```typescript
-// Correr cada 30 segundos
-function checkDriverAlerts(drivers: LiveRoute[]) {
-  const now = Date.now()
-  
-  for (const driver of drivers) {
-    if (!driver.location || driver.status !== 'in_transit') continue
-    
-    const lastSeen = new Date(driver.location.updated_at).getTime()
-    const minutesAgo = (now - lastSeen) / 60000
-
-    // Offline: sin señal > 5 min
-    if (minutesAgo > 5 && !driver.alerts.find(a => a.type === 'offline')) {
-      addAlert({
-        priority: 'high',
-        type: 'offline',
-        driverId: driver.driver.id,
-        message: `${driver.driver.name} offline hace ${Math.round(minutesAgo)} min`,
-      })
-    }
-  }
-}
-```
-
----
-
-## Acciones del Dispatcher
-
-### 1. Reasignar parada
-
-Desde cualquier punto (tarjeta, mapa, alerta):
-
-```
-Click "Reasignar" en parada
-     │
-     ▼
-Modal:
-  ┌─────────────────────────────────┐
-  │  Reasignar: Av. Providencia 123 │
-  │                                 │
-  │  Asignada a: Maria S. (Ruta 2) │
-  │                                 │
-  │  Reasignar a:                   │
-  │  ○ Juan P. (3 paradas quedan)  │ ← mas cercano
-  │  ○ Carlos R. (5 paradas quedan)│
-  │  ○ Sin asignar                 │
-  │                                 │
-  │  ☑ Notificar al conductor      │
-  │  ☑ Notificar al cliente        │
-  │                                 │
-  │  [Cancelar]  [Reasignar]       │
-  └─────────────────────────────────┘
-```
-
-Accion:
-- Mover plan_stop.route_id al nuevo route
-- Push notification al conductor anterior ("Parada removida")
-- Push notification al conductor nuevo ("Nueva parada agregada")
-- Si checkbox: notificar al cliente con nuevo ETA
-- Recalcular order_index en ambas rutas
-
-### 2. Contactar conductor
-
-```
-Click "Contactar" en tarjeta de conductor
-     │
-     ▼
-Opciones:
-  [WhatsApp]  → Abre wa.me/{phone} en nueva pestaña
-  [Llamar]    → tel:{phone}
-  [Push]      → Enviar push notification custom
-```
-
-### 3. Broadcast a todos
-
-Boton en header: "Enviar mensaje a todos los conductores activos"
-
-```
-┌─────────────────────────────────┐
-│  Mensaje a conductores          │
-│                                 │
-│  Destinatarios: 8 en ruta       │
-│                                 │
-│  [________________________]     │
-│  [________________________]     │
-│                                 │
-│  Via: ☑ Push  ☐ WhatsApp       │
-│                                 │
-│  [Cancelar]  [Enviar]          │
-└─────────────────────────────────┘
-```
-
-### 4. Marcar incidente
-
-Registrar un problema para tracking/reportes:
-
-- Tipo: vehiculo averiado, accidente, clima, otro
-- Conductor afectado
-- Timestamp
-- Notas
-- Accion tomada (reasignacion, pausa, cancelacion)
-
----
-
-## Sidebar en la App
-
-### Nueva entrada en Sidebar
-
-```
-Sidebar:
-  📅 Planner
-  📍 Paradas
-  🗺️ Rutas
-  🚛 Vehiculos
-  👤 Conductores
-  📡 Control      ← NUEVO (icono: Radio/Tower/Monitor)
-  📊 Analytics
-```
-
-Destacar con badge rojo si hay alertas activas.
-
----
-
-## Realtime: Tablas a Subscribir
-
-| Tabla | Evento | Que detecta |
-|-------|--------|-------------|
-| `driver_locations` | INSERT | Posicion de conductores |
-| `plan_stops` | UPDATE | Cambio de status (completada, fallida, etc.) |
-| `routes` | UPDATE | Inicio/fin de ruta |
-
-```sql
--- Habilitar Realtime en tablas faltantes
-alter publication supabase_realtime add table routes;
--- plan_stops ya esta habilitada (doc 03)
--- driver_locations ya esta habilitada (doc 02)
-```
-
----
-
-## Migracion SQL
-
-```sql
--- 009_control_tower.sql
-
--- 1. RPC para dashboard live
-create or replace function get_live_dashboard(p_org_id uuid, p_date date)
-returns json as $$
-declare result json;
-begin
-  select json_build_object(
-    'drivers_online', (
-      select count(distinct dl.driver_id)
-      from driver_locations dl
-      join drivers d on d.id = dl.driver_id
-      where d.org_id = p_org_id and dl.recorded_at > now() - interval '60 seconds'
     ),
     'drivers_total', (
       select count(distinct r.driver_id)
@@ -502,42 +142,232 @@ begin
   ) into result;
   return result;
 end;
-$$ language plpgsql security definer;
+$$;
 
--- 2. RPC para cargar todas las rutas del dia con datos live
+grant execute on function get_live_dashboard(uuid, date) to authenticated;
+
+-- RPC: rutas del dia con datos live
 create or replace function get_live_routes(p_org_id uuid, p_date date)
-returns json as $$
+returns json
+language plpgsql
+security definer
+set search_path = public
+as $$
 begin
   return (
-    select json_agg(row_to_json(t))
+    select coalesce(json_agg(row_to_json(t)), '[]'::json)
     from (
       select
         r.id as route_id,
         r.status as route_status,
         r.total_distance_km,
         r.total_duration_minutes,
+        p.id as plan_id,
         p.name as plan_name,
         p.date as plan_date,
-        json_build_object('id', d.id, 'name', d.first_name || ' ' || d.last_name, 'phone', d.phone) as driver,
-        json_build_object('id', v.id, 'name', v.name, 'plate', v.license_plate) as vehicle,
+        case when d.id is null then null else
+          json_build_object('id', d.id, 'name', d.first_name || ' ' || d.last_name, 'phone', d.phone)
+        end as driver,
+        case when v.id is null then null else
+          json_build_object('id', v.id, 'name', v.name, 'plate', v.license_plate)
+        end as vehicle,
         (select count(*) from plan_stops ps where ps.route_id = r.id) as stops_total,
         (select count(*) from plan_stops ps where ps.route_id = r.id and ps.status = 'completed') as stops_completed,
         (select count(*) from plan_stops ps where ps.route_id = r.id and ps.status in ('incomplete', 'cancelled')) as stops_failed,
-        (select json_build_object('lat', dl.lat, 'lng', dl.lng, 'speed', dl.speed, 'battery', dl.battery, 'recorded_at', dl.recorded_at)
-         from driver_locations dl where dl.driver_id = d.id order by dl.recorded_at desc limit 1
+        (
+          select json_build_object(
+            'lat', dl.lat, 'lng', dl.lng, 'speed', dl.speed,
+            'battery', dl.battery, 'recorded_at', dl.recorded_at
+          )
+          from driver_locations dl
+          where dl.driver_id = d.id
+          order by dl.recorded_at desc
+          limit 1
         ) as last_location
       from routes r
       join plans p on r.plan_id = p.id
       left join drivers d on r.driver_id = d.id
       left join vehicles v on r.vehicle_id = v.id
       where r.org_id = p_org_id and p.date = p_date
-      order by r.status = 'in_transit' desc, r.status = 'not_started' desc
+      order by
+        (r.status = 'in_transit') desc,
+        (r.status = 'not_started') desc,
+        r.created_at
     ) t
   );
 end;
-$$ language plpgsql security definer;
+$$;
 
--- 3. Tabla de incidentes operacionales
+grant execute on function get_live_routes(uuid, date) to authenticated;
+```
+
+### 1.2 — Pagina `/control`
+
+Nuevo archivo `src/pages/ControlPage.tsx`:
+
+- Encabezado: "Torre de Control · Hoy: {fecha}" + switch de dia (hoy / mañana / ayer para revisar).
+- **KPI bar** (6 metricas del RPC `get_live_dashboard`), polling cada 30s.
+- **Panel izquierdo** (lista de rutas activas del RPC `get_live_routes`), con:
+  - Tarjeta por ruta con conductor, vehiculo, progreso (x/y paradas), estado (en ruta / no iniciada / completada / offline).
+  - Buscador por nombre de conductor.
+  - Filtro: todos / en ruta / con problemas / offline / completados.
+  - Ordenamiento: alertas rojas → en ruta → no iniciadas → completadas.
+- **Mapa central** reutilizando `RouteMap.tsx`:
+  - Mostrar TODAS las rutas del dia con sus paradas y lineas.
+  - Markers de conductores en vivo (ya soportado por el componente).
+  - Click en conductor → popup con info (Fase 1 solo lectura, sin acciones).
+  - Click en parada → popup con info (mismo criterio).
+
+### 1.3 — Routing + Sidebar
+
+- `App.tsx`: nueva ruta `/control` → `ControlPage`.
+- `Sidebar.tsx`: nueva entrada despues de "Conductores" con icono `Radio` o `Activity` de lucide-react.
+
+### 1.4 — Realtime (solo datos, sin alertas)
+
+El `/control` abre **una sola** subscription multiplexada sobre los tres eventos:
+
+```typescript
+// Todos los driver_locations de la org (filtrar por org via driver_id)
+supabase
+  .channel(`control-${orgId}`)
+  .on('postgres_changes', {
+    event: 'INSERT', schema: 'public', table: 'driver_locations'
+  }, updateDriverLocation)
+  .on('postgres_changes', {
+    event: 'UPDATE', schema: 'public', table: 'plan_stops',
+    filter: `org_id=eq.${orgId}`
+  }, updatePlanStopStatus)
+  .on('postgres_changes', {
+    event: 'UPDATE', schema: 'public', table: 'routes',
+    filter: `org_id=eq.${orgId}`
+  }, updateRouteStatus)
+  .subscribe()
+```
+
+Al recibir un evento, refrescar la ruta/conductor afectado en el estado local (sin volver a llamar al RPC).
+
+### Definicion de Done Fase 1
+
+- Nueva pagina `/control` con acceso desde sidebar.
+- KPI bar con 6 metricas cargadas via `get_live_dashboard`, refresh 30s.
+- Panel izquierdo con lista de rutas activas del dia, ordenado por prioridad.
+- Mapa con todos los conductores + rutas + paradas, actualizando en vivo.
+- Subscription realtime consolidada a `driver_locations`, `plan_stops`, `routes`.
+- Busqueda + filtros del panel izquierdo.
+- Sin acciones ni alertas todavia — solo visibilidad.
+
+---
+
+## Fase 2 — Alertas y feed de eventos (1-2 sem)
+
+### 2.1 — Tipos y deteccion
+
+```typescript
+type AlertPriority = 'high' | 'medium' | 'info'
+type AlertType =
+  | 'driver_offline'        // sin location > 5 min en ruta activa
+  | 'driver_stationary'     // velocidad 0 > 15 min en ruta activa
+  | 'stop_late'             // ETA > time_window_end
+  | 'stop_failed'           // plan_stop.status → incomplete/cancelled
+  | 'route_not_started'     // hora > vehicle.time_window_start + 30min y status = not_started
+  | 'battery_low'           // battery < 0.15
+  | 'stop_completed'        // info
+  | 'route_completed'       // info
+  | 'route_started'         // info
+
+interface LiveAlert {
+  id: string
+  priority: AlertPriority
+  type: AlertType
+  ts: number                // Date.now() cuando se genero
+  driverId?: string
+  routeId?: string
+  planStopId?: string
+  message: string
+  payload?: Record<string, unknown>
+}
+```
+
+### 2.2 — Generacion de alertas
+
+- **Alertas reactivas** (Realtime):
+  - `plan_stops.status` UPDATE → `stop_completed` / `stop_failed`.
+  - `routes.status` UPDATE → `route_started` / `route_completed`.
+- **Alertas derivadas** (timer in-memory cada 30s):
+  - `driver_offline`: `now - last_location.recorded_at > 5min` y ruta activa.
+  - `driver_stationary`: `last_location.speed === 0 por > 15min`.
+  - `route_not_started`: hora actual > `vehicle.time_window_start + 30min` y `status = not_started`.
+  - `stop_late`: ETA calculada > `time_window_end`.
+
+### 2.3 — UI
+
+- **Feed lateral** o inferior con scroll infinito (hoy primero).
+- Filtros por prioridad (rojo / amarillo / info).
+- Toast para alertas `high` con sonido opcional (Web Audio API) + switch de "silenciar".
+- **Badge rojo en Sidebar** cuando hay alertas `high` sin acknowledgear (patron identico al `pending_orders`).
+
+### 2.4 — Persistencia
+
+Las alertas derivadas se generan en memoria, no se persisten. Las reactivas son solo proyecciones de cambios en tablas, que ya existen.
+
+### Definicion de Done Fase 2
+
+- Deteccion de conductor offline (>5 min) con toast + entrada en feed.
+- Deteccion de parada atrasada con badge amarillo en la tarjeta del conductor.
+- Deteccion de ruta no iniciada a tiempo.
+- Feed cronologico de eventos del dia con filtros por prioridad.
+- Toast + sonido opcional para alertas rojas.
+- Badge en sidebar si hay alertas `high` pendientes.
+
+---
+
+## Fase 3 — Acciones del dispatcher (2 sem)
+
+### 3.1 — Reasignar parada en vivo
+
+Desde el popup del mapa o desde la tarjeta del conductor en el panel izquierdo:
+
+```
+Reasignar: Av. Providencia 123
+Asignada a: Maria S. (Ruta 2)
+
+Reasignar a:
+  ○ Juan P. (3 paradas quedan) ← mas cercano
+  ○ Carlos R. (5 paradas quedan)
+  ○ Sin asignar
+
+☑ Notificar al conductor anterior (push)
+☑ Notificar al conductor nuevo (push)
+☑ Notificar al cliente con nuevo ETA
+
+[Cancelar]  [Reasignar]
+```
+
+- Mover `plan_stops.route_id` + `vehicle_id`.
+- Recalcular `order_index` en ambas rutas.
+- Gatillar edge function `send-notification` para los 3 destinatarios segun checkboxes.
+
+### 3.2 — Contactar conductor
+
+Desde la tarjeta del conductor:
+- `[WhatsApp]` → `wa.me/${phone}`.
+- `[Llamar]` → `tel:${phone}`.
+- `[Push]` → modal con textarea + `send-notification`.
+
+### 3.3 — Broadcast
+
+Boton en header "Mensaje a conductores activos":
+- Lista de destinatarios (todos en ruta).
+- Textarea.
+- Toggle: Push / WhatsApp.
+- Envia via `send-notification` en paralelo.
+
+### 3.4 — Incidentes operacionales
+
+Nueva tabla `operational_incidents` en `013_operational_incidents.sql`:
+
+```sql
 create table operational_incidents (
   id          uuid primary key default gen_random_uuid(),
   org_id      uuid not null references organizations(id) on delete cascade,
@@ -558,63 +388,86 @@ alter table operational_incidents enable row level security;
 
 create policy "Org members manage incidents"
   on operational_incidents for all using (org_id in (select user_org_ids()));
-
--- 4. Habilitar Realtime en routes (faltaba)
-alter publication supabase_realtime add table routes;
 ```
+
+Modal "Registrar incidente" con tipo (select), conductor/ruta afectada, descripcion, accion tomada.
+
+### Definicion de Done Fase 3
+
+- Reasignar parada desde popup/tarjeta con notificaciones opcionales.
+- Contactar conductor (WhatsApp / llamada / push).
+- Broadcast a todos los conductores activos.
+- Registrar incidente con persistencia en `operational_incidents`.
+- Historico de incidentes accesible (vista simple en la misma pagina o en analytics).
+
+---
+
+## Interaccion Mapa (progresivo por fase)
+
+| Interaccion | Fase 1 | Fase 2 | Fase 3 |
+|-------------|--------|--------|--------|
+| Click conductor → popup info | ✓ | ✓ | ✓ |
+| Click parada → popup info + POD si completada | ✓ | ✓ | ✓ |
+| Click ruta (linea) → resaltar + dim otras | ✓ | ✓ | ✓ |
+| Color coding por estado (verde/amarillo/rojo/gris) | ✓ | ✓ | ✓ |
+| Badge amarillo en parada atrasada | — | ✓ | ✓ |
+| Popup de conductor: botones Contactar/Reasignar | — | — | ✓ |
+| Popup de parada: boton Reasignar | — | — | ✓ |
 
 ---
 
 ## Preguntas Abiertas
 
-1. **Pagina dedicada `/control` o reemplazar PlannerPage?**
-   - **Recomendacion:** Pagina dedicada. El planner es para planificar (futuro), el control es para operar (hoy). Funciones distintas.
+1. **Polling vs Realtime puro para KPIs**
+   - Polling cada 30s con `get_live_dashboard` es simple y predecible.
+   - Hibrido: polling para KPIs, realtime para eventos individuales → **decidido**.
 
-2. **Sonido en alertas criticas?**
-   - Un beep sutil cuando hay alerta roja mejora la reaccion
-   - **Recomendacion:** Si, con toggle para silenciar. Usar Web Audio API.
+2. **Sonido en alertas**
+   - Si, con toggle de silencio. Web Audio API. Default: silenciado; el usuario lo activa.
 
-3. **Auto-refresh de KPIs: polling o Realtime?**
-   - Polling cada 30s con `get_live_dashboard()` es mas simple y predecible
-   - Realtime para eventos individuales (parada completada, conductor offline)
-   - **Recomendacion:** Hibrido. KPIs por polling, eventos por Realtime.
+3. **Zoom de mapa**
+   - Cuando llegan muchas rutas, usar clustering de markers (Fase 3 o separada, no bloqueante para MVP).
 
-4. **Tabla de incidentes o solo alertas en memoria?**
-   - Si se quiere reportar despues ("cuantas veces se averiaron vehiculos este mes"), necesita tabla
-   - **Recomendacion:** Tabla `operational_incidents` para historial, alertas in-memory para UX
+4. **Pagina dedicada vs fusionarlo con `/planner/:id` vs `/planner`**
+   - **Decidido**: pagina dedicada `/control`. Planificar y operar son contextos distintos. El planner es para el futuro, el control es para el ahora.
+
+5. **Que pasa el fin de dia?**
+   - Default: mostrar solo hoy. Botones para ver ayer (debrief) o mañana (preview).
+   - Alertas se limpian al cambiar de dia.
 
 ---
 
-## Definicion de Done
+## Codigo reutilizable del PRD 07
 
-### Dashboard Base
-- Nueva pagina `/control` con acceso desde sidebar
-- Mapa con TODOS los conductores del dia en vivo
-- KPI bar con 6 metricas actualizandose cada 30s
-- Panel izquierdo con lista de rutas/conductores activos
-- Ordenamiento por prioridad (alertas primero)
+Lo que se elimino en el refactor del planner se reusa como base:
 
-### Realtime
-- Subscription a `driver_locations` (todos los conductores del dia)
-- Subscription a `plan_stops` (cambios de status)
-- Subscription a `routes` (inicio/fin de ruta)
-- Posiciones de conductores actualizandose en mapa en vivo
+```bash
+# Logica de subscription a driver_locations (copiar y adaptar a todos los drivers de hoy)
+git show 880766e:src/pages/PlanDetailPage.tsx | sed -n '115,190p'
 
-### Alertas
-- Deteccion de conductor offline (>5 min sin señal)
-- Deteccion de parada fallida
-- Deteccion de ruta no iniciada a tiempo
-- Feed cronologico de eventos
-- Badge en sidebar cuando hay alertas activas
+# Panel "En Vivo" (tarjeta de conductor con online/offline/sin datos)
+git show 880766e:src/pages/PlanDetailPage.tsx | sed -n '699,807p'
 
-### Acciones
-- Reasignar parada a otro conductor (con notificacion)
-- Contactar conductor (WhatsApp / llamada / push)
-- Broadcast a todos los conductores
-- Registrar incidente operacional
+# Helper formatAge ("hace X min")
+git show 880766e:src/pages/PlanDetailPage.tsx | sed -n '961,973p'
+```
 
-### Interaccion Mapa
-- Click en conductor → popup con info + acciones
-- Click en parada → popup con status + POD si completada
-- Click en ruta → resaltar ruta completa
-- Color coding por estado (verde/amarillo/rojo/gris)
+Extraer `formatAge` y el patron de "tarjeta de conductor live" a componentes reusables en la Fase 1.
+
+---
+
+## Dependencias
+
+- Realtime ya habilitado: `driver_locations`, `plan_stops`, `orders`.
+- Nueva habilitacion: `routes` (en la migracion 012).
+- Sin nuevas librerias externas para Fase 1. Fase 2 usa Web Audio API nativa.
+- Fase 3 reutiliza edge function `send-notification` existente.
+
+---
+
+## Metricas de exito
+
+- **Dispatcher open rate en la pagina**: ¿abren `/control` al llegar a la oficina? (telemetria)
+- **Tiempo a primera accion ante alerta**: desde que suena la alerta hasta click en "Reasignar" o "Contactar".
+- **% de reasignaciones exitosas** (parada completada despues de reasignar) vs % que siguen fallando.
+- **Reduccion de llamadas manuales** al conductor (antes tenian que pedir el telefono a otro canal).
