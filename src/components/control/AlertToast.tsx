@@ -34,7 +34,7 @@ function getAlertTitle(type: AlertType): string {
   }
 }
 
-function AlertToastItem({ alert, onDismiss }: AlertToastItemProps): JSX.Element {
+function AlertToastItem({ alert, onDismiss }: AlertToastItemProps) {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       onDismiss(alert.id)
@@ -85,7 +85,7 @@ function AlertToastItem({ alert, onDismiss }: AlertToastItemProps): JSX.Element 
 export default function AlertToastStack({
   alerts,
   onDismiss,
-}: AlertToastStackProps): JSX.Element | null {
+}: AlertToastStackProps) {
   if (alerts.length === 0) return null
 
   const visible = [...alerts].sort((a, b) => b.ts - a.ts).slice(0, MAX_VISIBLE)

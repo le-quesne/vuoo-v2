@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { Radio, CheckCircle2, Clock, XCircle, Truck, CheckCheck } from 'lucide-react'
 import type { LiveDashboard } from '../../lib/liveControl'
 
@@ -44,7 +45,7 @@ export default function KpiBar({ dashboard, loading }: KpiBarProps) {
   const iconClass = 'w-4 h-4 text-gray-400'
 
   const cells: Array<{
-    icon: JSX.Element
+    icon: ReactNode
     value: string
     label: string
     valueColor: string
