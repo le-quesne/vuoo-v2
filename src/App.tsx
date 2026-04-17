@@ -7,18 +7,23 @@ import {
 import { AuthProvider } from './contexts/AuthContext'
 import { RequireAuth } from './components/RequireAuth'
 import { Layout } from './components/Layout'
+import { PlannerLayout } from './components/PlannerLayout'
 import { LoginPage } from './pages/LoginPage'
 import { OnboardingPage } from './pages/OnboardingPage'
 import { PlannerPage } from './pages/PlannerPage'
+import { DayDashboardPage } from './pages/DayDashboardPage'
+import { WeekDashboardPage } from './pages/WeekDashboardPage'
+import { ControlPage } from './pages/ControlPage'
 import { PlanDetailPage } from './pages/PlanDetailPage'
 import { OrdersPage } from './pages/OrdersPage'
 import { StopsPage } from './pages/StopsPage'
-import { RoutesPage } from './pages/RoutesPage'
 import { VehiclesPage } from './pages/VehiclesPage'
 import { DriversPage } from './pages/DriversPage'
 import { UsersPage } from './pages/UsersPage'
 import { AnalyticsPage } from './pages/AnalyticsPage'
 import { NotificationSettingsPage } from './pages/NotificationSettingsPage'
+import { OrganizationSettingsPage } from './pages/OrganizationSettingsPage'
+import { SettingsLayout } from './pages/settings/SettingsLayout'
 import { AdminLayout } from './pages/admin/AdminLayout'
 import { AdminDashboard } from './pages/admin/AdminDashboard'
 import { AdminOrgDetail } from './pages/admin/AdminOrgDetail'
@@ -55,16 +60,30 @@ export default function App() {
           {/* Tenant App */}
           <Route element={<RequireAuth requireOrg />}>
             <Route element={<Layout />}>
-              <Route path="/planner" element={<PlannerPage />} />
+              <Route element={<PlannerLayout />}>
+                <Route path="/planner" element={<DayDashboardPage />} />
+                <Route path="/planner/week" element={<WeekDashboardPage />} />
+                <Route path="/planner/calendar" element={<PlannerPage />} />
+              </Route>
               <Route path="/planner/:planId" element={<PlanDetailPage />} />
+              <Route path="/control" element={<ControlPage />} />
               <Route path="/orders" element={<OrdersPage />} />
-              <Route path="/stops" element={<StopsPage />} />
-              <Route path="/routes" element={<RoutesPage />} />
-              <Route path="/vehicles" element={<VehiclesPage />} />
-              <Route path="/drivers" element={<DriversPage />} />
-              <Route path="/users" element={<UsersPage />} />
               <Route path="/analytics" element={<AnalyticsPage />} />
-              <Route path="/notifications/settings" element={<NotificationSettingsPage />} />
+              <Route path="/settings" element={<SettingsLayout />}>
+                <Route index element={<OrganizationSettingsPage />} />
+                <Route path="users" element={<UsersPage />} />
+                <Route path="notifications" element={<NotificationSettingsPage />} />
+                <Route path="places" element={<StopsPage />} />
+                <Route path="vehicles" element={<VehiclesPage />} />
+                <Route path="drivers" element={<DriversPage />} />
+              </Route>
+              {/* Backward-compat redirects */}
+              <Route path="/stops" element={<Navigate to="/settings/places" replace />} />
+              <Route path="/vehicles" element={<Navigate to="/settings/vehicles" replace />} />
+              <Route path="/drivers" element={<Navigate to="/settings/drivers" replace />} />
+              <Route path="/users" element={<Navigate to="/settings/users" replace />} />
+              <Route path="/notifications/settings" element={<Navigate to="/settings/notifications" replace />} />
+              <Route path="/routes" element={<Navigate to="/planner" replace />} />
               <Route path="*" element={<Navigate to="/planner" replace />} />
             </Route>
           </Route>

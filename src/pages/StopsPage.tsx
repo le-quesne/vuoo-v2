@@ -43,10 +43,10 @@ export function StopsPage() {
 
   return (
     <div className="flex h-screen">
-      <div className={viewMode === 'split' ? 'w-1/2 flex flex-col' : 'flex-1 flex flex-col'}>
+      <div className={viewMode === 'split' ? 'w-1/2 flex flex-col min-h-0' : 'flex-1 flex flex-col min-h-0'}>
         <div className="p-6 pb-0">
           <div className="flex items-center justify-between mb-4">
-            <h1 className="text-xl font-semibold">Paradas</h1>
+            <h1 className="text-xl font-semibold">Lugares</h1>
             <div className="flex items-center gap-2">
               <div className="flex bg-gray-100 rounded-lg p-0.5">
                 <button
@@ -113,7 +113,7 @@ export function StopsPage() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-6 pb-6">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-6">
           <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
             <table className="w-full text-sm">
               <thead>

@@ -2,37 +2,29 @@ import { useEffect, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import {
   Calendar,
-  MapPin,
   Package,
-  Route,
-  Truck,
-  Users,
-  UserCog,
   BarChart3,
-  Bell,
+  Settings,
   LogOut,
   Shield,
   ChevronsLeft,
   ChevronsRight,
+  Activity,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 
 const navItems = [
   { to: '/planner', icon: Calendar, label: 'Planner' },
+  { to: '/control', icon: Activity, label: 'Control', badgeKey: 'controlAlerts' as const },
   { to: '/orders', icon: Package, label: 'Pedidos', badgeKey: 'pendingOrders' as const },
-  { to: '/stops', icon: MapPin, label: 'Paradas' },
-  { to: '/routes', icon: Route, label: 'Rutas' },
-  { to: '/vehicles', icon: Truck, label: 'Vehiculos' },
-  { to: '/drivers', icon: Users, label: 'Conductores' },
-  { to: '/users', icon: UserCog, label: 'Usuarios' },
   { to: '/analytics', icon: BarChart3, label: 'Analytics' },
-  { to: '/notifications/settings', icon: Bell, label: 'Notificaciones' },
 ]
 
 export function Sidebar({ expanded, onToggle }: { expanded: boolean; onToggle: () => void }) {
   const { currentOrg, isSuperAdmin, signOut } = useAuth()
   const [pendingOrders, setPendingOrders] = useState(0)
+  const [controlAlerts, setControlAlerts] = useState(0)
 
   useEffect(() => {
     if (!currentOrg) return
@@ -63,7 +55,33 @@ export function Sidebar({ expanded, onToggle }: { expanded: boolean; onToggle: (
     }
   }, [currentOrg])
 
-  const badges: Record<string, number> = { pendingOrders: pendingOrders }
+  useEffect(() => {
+    if (!currentOrg) return
+    let cancelled = false
+
+    async function load() {
+      const today = new Date().toISOString().slice(0, 10)
+      const { data } = await supabase.rpc('get_live_dashboard', {
+        p_org_id: currentOrg!.id,
+        p_date: today,
+      })
+      if (cancelled || !data) return
+      const d = data as { drivers_online: number; drivers_total: number; stops_failed: number }
+      const offlineCount = Math.max(d.drivers_total - d.drivers_online, 0)
+      setControlAlerts(offlineCount + d.stops_failed)
+    }
+    load()
+    const id = setInterval(load, 30_000)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
+  }, [currentOrg])
+
+  const badges: Record<string, number> = {
+    pendingOrders,
+    controlAlerts,
+  }
 
   return (
     <aside
@@ -125,6 +143,22 @@ export function Sidebar({ expanded, onToggle }: { expanded: boolean; onToggle: (
       </nav>
 
       <div className="flex flex-col gap-1">
+        <NavLink
+          to="/settings"
+          className={({ isActive }) =>
+            `h-11 flex items-center rounded-lg transition-colors ${
+              expanded ? 'px-3 gap-3' : 'w-11 justify-center'
+            } ${
+              isActive
+                ? 'bg-blue-500/20 text-blue-400'
+                : 'text-slate-400 hover:text-white hover:bg-navy-800'
+            }`
+          }
+          title={expanded ? undefined : 'Configuracion'}
+        >
+          <Settings size={20} className="shrink-0" />
+          {expanded && <span className="text-sm truncate">Configuracion</span>}
+        </NavLink>
         {isSuperAdmin && (
           <NavLink
             to="/admin"
