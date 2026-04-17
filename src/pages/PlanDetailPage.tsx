@@ -5,63 +5,105 @@ import {
   Clock,
   Navigation,
   MapPin,
-  ChevronDown,
-  ChevronRight,
   Plus,
   ArrowLeft,
   Truck,
   X,
-  Zap,
-  Loader2,
   Search,
-  Radio,
   Link2,
   Send,
   Check,
+  Trash2,
+  Pencil,
+  Settings,
+  GripVertical,
+  MoreHorizontal,
 } from 'lucide-react'
+import {
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  useDroppable,
+  closestCorners,
+  DragOverlay,
+  type DragEndEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { RouteMap, ROUTE_COLORS } from '../components/RouteMap'
 import { PODModal } from '../components/PODModal'
-import { MAPBOX_TOKEN, fetchDirections, optimizeTrip, formatDistance, formatDuration } from '../lib/mapbox'
-import type { Plan, Route, Stop, Vehicle, Driver, PlanStopWithStop, DriverLocation, NotificationLog, Order } from '../types/database'
+import { DepotConfigModal } from '../components/DepotConfigModal'
+import { VroomWizardModal } from '../components/VroomWizardModal'
+import { ConfirmDialog } from '../components/ConfirmDialog'
+import { EditRouteModal } from '../components/EditRouteModal'
+import { notifyDriverRouteAssigned } from '../lib/notifyDriver'
+import { calculateRouteWeight, getCapacityStatus } from '../lib/capacity'
+import { MAPBOX_TOKEN } from '../lib/mapbox'
+import type { Plan, Route, Stop, Vehicle, Driver, PlanStopWithStop, NotificationLog, Order } from '../types/database'
 
-type Tab = 'overview' | 'vehicles' | 'stops' | 'live'
-
-const LIVE_THRESHOLD_MS = 60_000
+const UNASSIGNED_ID = 'unassigned'
 
 export function PlanDetailPage() {
   const { planId } = useParams<{ planId: string }>()
   const navigate = useNavigate()
+  const { currentOrg } = useAuth()
   const [plan, setPlan] = useState<Plan | null>(null)
   const [routes, setRoutes] = useState<(Route & { vehicle: Vehicle | null; driver: Driver | null; planStops: PlanStopWithStop[] })[]>([])
   const [unassignedStops, setUnassignedStops] = useState<PlanStopWithStop[]>([])
-  const [activeTab, setActiveTab] = useState<Tab>('overview')
-  const [expandedRoutes, setExpandedRoutes] = useState<Set<string>>(new Set())
   const [selectedStopId, setSelectedStopId] = useState<string | null>(null)
   const [showAddStop, setShowAddStop] = useState(false)
   const [showAddVehicle, setShowAddVehicle] = useState(false)
-  const [optimizing, setOptimizing] = useState(false)
-  const [dragState, setDragState] = useState<{ routeId: string; fromIndex: number } | null>(null)
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
-  const [optResult, setOptResult] = useState<{
-    originalDistance: number
-    originalDuration: number
-    optimizedDistance: number
-    optimizedDuration: number
-    savings: { distancePct: number; durationPct: number }
-  } | null>(null)
+  const [showVroomWizard, setShowVroomWizard] = useState(false)
+  const [showDepotModal, setShowDepotModal] = useState(false)
+  const [orgDepot, setOrgDepot] = useState<{ lat: number; lng: number; address: string | null } | null>(null)
+  const [activeDragId, setActiveDragId] = useState<string | null>(null)
+  const [deletePlanStopId, setDeletePlanStopId] = useState<string | null>(null)
+  const [deleteRouteId, setDeleteRouteId] = useState<string | null>(null)
+  const [editRouteId, setEditRouteId] = useState<string | null>(null)
+  const [menuRouteId, setMenuRouteId] = useState<string | null>(null)
+  const [renamingRouteId, setRenamingRouteId] = useState<string | null>(null)
+  const [renameDraft, setRenameDraft] = useState('')
+  const [renamingPlan, setRenamingPlan] = useState(false)
+  const [planNameDraft, setPlanNameDraft] = useState('')
 
   const [podPlanStop, setPodPlanStop] = useState<PlanStopWithStop | null>(null)
   const [notifLogs, setNotifLogs] = useState<NotificationLog[]>([])
   const [ordersByPlanStop, setOrdersByPlanStop] = useState<Map<string, Order>>(new Map())
   const [copiedId, setCopiedId] = useState<string | null>(null)
-  const [driverLocations, setDriverLocations] = useState<Record<string, DriverLocation>>({})
-  const [nowTick, setNowTick] = useState<number>(() => Date.now())
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
   useEffect(() => {
     if (planId) loadPlanData()
   }, [planId])
+
+  useEffect(() => {
+    if (!currentOrg) return
+    supabase
+      .from('organizations')
+      .select('default_depot_lat, default_depot_lng, default_depot_address')
+      .eq('id', currentOrg.id)
+      .single()
+      .then(({ data }) => {
+        if (data && data.default_depot_lat != null && data.default_depot_lng != null) {
+          setOrgDepot({
+            lat: data.default_depot_lat,
+            lng: data.default_depot_lng,
+            address: data.default_depot_address ?? null,
+          })
+        } else {
+          setOrgDepot(null)
+        }
+      })
+  }, [currentOrg])
 
   async function loadPlanData() {
     const [planRes, routesRes, planStopsRes] = await Promise.all([
@@ -101,111 +143,182 @@ export function PlanDetailPage() {
     setUnassignedStops(allPlanStops.filter((ps) => !ps.route_id))
   }
 
-  // Live tab: ticker so "hace X seg" refreshes
-  useEffect(() => {
-    if (activeTab !== 'live') return
-    const id = setInterval(() => setNowTick(Date.now()), 5000)
-    return () => clearInterval(id)
-  }, [activeTab])
+  function findContainer(planStopId: string): string | null {
+    if (unassignedStops.some((ps) => ps.id === planStopId)) return UNASSIGNED_ID
+    for (const r of routes) if (r.planStops.some((ps) => ps.id === planStopId)) return r.id
+    return null
+  }
 
-  const routeIdsKey = useMemo(
-    () => routes.map((r) => r.id).slice().sort().join(','),
-    [routes]
-  )
+  function handleDragStart(event: DragStartEvent) {
+    setActiveDragId(String(event.active.id))
+  }
 
-  // Live tab: load + subscribe to driver_locations for routes in this plan
-  useEffect(() => {
-    const routeIds = routeIdsKey ? routeIdsKey.split(',') : []
-    if (routeIds.length === 0) {
-      setDriverLocations({})
+  async function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    setActiveDragId(null)
+    if (!over) return
+
+    const activeId = String(active.id)
+    const overId = String(over.id)
+    if (activeId === overId) return
+
+    const fromContainer = findContainer(activeId)
+    if (!fromContainer) return
+
+    const toContainer = overId === UNASSIGNED_ID || routes.some((r) => r.id === overId)
+      ? overId
+      : findContainer(overId)
+    if (!toContainer) return
+
+    if (fromContainer === toContainer) {
+      const list = fromContainer === UNASSIGNED_ID
+        ? unassignedStops
+        : (routes.find((r) => r.id === fromContainer)?.planStops ?? [])
+      const oldIndex = list.findIndex((ps) => ps.id === activeId)
+      const newIndex = list.findIndex((ps) => ps.id === overId)
+      if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return
+      const reordered = arrayMove(list, oldIndex, newIndex)
+      if (fromContainer === UNASSIGNED_ID) {
+        setUnassignedStops(reordered)
+      } else {
+        setRoutes((prev) => prev.map((r) => (r.id === fromContainer ? { ...r, planStops: reordered } : r)))
+      }
+      await Promise.all(
+        reordered.map((ps, i) =>
+          supabase.from('plan_stops').update({ order_index: i }).eq('id', ps.id),
+        ),
+      )
       return
     }
 
-    let cancelled = false
+    const fromList = fromContainer === UNASSIGNED_ID
+      ? unassignedStops
+      : (routes.find((r) => r.id === fromContainer)?.planStops ?? [])
+    const toList = toContainer === UNASSIGNED_ID
+      ? unassignedStops
+      : (routes.find((r) => r.id === toContainer)?.planStops ?? [])
 
-    async function loadInitial() {
-      try {
-        const { data, error } = await supabase
-          .from('driver_locations')
-          .select('*')
-          .in('route_id', routeIds)
-          .order('recorded_at', { ascending: false })
-          .limit(500)
-        if (error || cancelled || !data) return
-        const latestByRoute: Record<string, DriverLocation> = {}
-        for (const row of data as DriverLocation[]) {
-          const rid = row.route_id ?? row.driver_id ?? row.id
-          if (!rid) continue
-          if (!latestByRoute[rid]) latestByRoute[rid] = row
-        }
-        setDriverLocations((prev) => ({ ...prev, ...latestByRoute }))
-      } catch {
-        // Table may not exist yet — safely ignore.
+    const movingStop = fromList.find((ps) => ps.id === activeId)
+    if (!movingStop) return
+
+    const overIndex = toList.findIndex((ps) => ps.id === overId)
+    const destIndex = overIndex === -1 ? toList.length : overIndex
+
+    const targetVehicleId = toContainer === UNASSIGNED_ID
+      ? null
+      : (routes.find((r) => r.id === toContainer)?.vehicle_id ?? null)
+
+    const updatedStop: PlanStopWithStop = {
+      ...movingStop,
+      route_id: toContainer === UNASSIGNED_ID ? null : toContainer,
+      vehicle_id: targetVehicleId,
+    }
+
+    const nextRoutes = routes.map((r) => ({ ...r, planStops: r.planStops.filter((ps) => ps.id !== activeId) }))
+    const nextUnassigned = unassignedStops.filter((ps) => ps.id !== activeId)
+
+    if (toContainer === UNASSIGNED_ID) {
+      nextUnassigned.splice(destIndex, 0, updatedStop)
+    } else {
+      const idx = nextRoutes.findIndex((r) => r.id === toContainer)
+      if (idx >= 0) {
+        const newStops = [...nextRoutes[idx].planStops]
+        newStops.splice(destIndex, 0, updatedStop)
+        nextRoutes[idx] = { ...nextRoutes[idx], planStops: newStops }
       }
     }
-    loadInitial()
 
-    // Realtime subscription (server-side filter accepts `col=in.(a,b,c)`)
-    const filter = `route_id=in.(${routeIds.join(',')})`
-    const channel = supabase
-      .channel(`driver-locations-plan-${planId}`)
-      .on<DriverLocation>(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'driver_locations', filter },
-        (payload) => {
-          const row = payload.new as DriverLocation | undefined
-          if (!row || !row.lat || !row.lng) return
-          const rid = row.route_id ?? row.driver_id ?? row.id
-          if (!rid) return
-          setDriverLocations((prev) => {
-            const existing = prev[rid]
-            if (existing && existing.recorded_at && row.recorded_at && existing.recorded_at > row.recorded_at) {
-              return prev
-            }
-            return { ...prev, [rid]: row }
-          })
-        }
+    setRoutes(nextRoutes)
+    setUnassignedStops(nextUnassigned)
+
+    await supabase
+      .from('plan_stops')
+      .update({
+        route_id: toContainer === UNASSIGNED_ID ? null : toContainer,
+        vehicle_id: targetVehicleId,
+      })
+      .eq('id', activeId)
+
+    const persistList = toContainer === UNASSIGNED_ID
+      ? nextUnassigned
+      : (nextRoutes.find((r) => r.id === toContainer)?.planStops ?? [])
+    await Promise.all(
+      persistList.map((ps, i) =>
+        supabase.from('plan_stops').update({ order_index: i }).eq('id', ps.id),
+      ),
+    )
+
+    if (fromContainer !== toContainer && fromContainer !== UNASSIGNED_ID) {
+      const fromPersist = nextRoutes.find((r) => r.id === fromContainer)?.planStops ?? []
+      await Promise.all(
+        fromPersist.map((ps, i) =>
+          supabase.from('plan_stops').update({ order_index: i }).eq('id', ps.id),
+        ),
       )
-      .subscribe()
-
-    return () => {
-      cancelled = true
-      supabase.removeChannel(channel)
     }
-  }, [planId, routeIdsKey])
-
-  function toggleRoute(routeId: string) {
-    setExpandedRoutes((prev) => {
-      const next = new Set(prev)
-      next.has(routeId) ? next.delete(routeId) : next.add(routeId)
-      return next
-    })
   }
 
-  async function handleReorder(routeId: string, fromIndex: number, toIndex: number) {
-    if (fromIndex === toIndex) return
+  async function confirmDeletePlanStop() {
+    if (!deletePlanStopId) return
+    await supabase.from('plan_stops').delete().eq('id', deletePlanStopId)
+    setDeletePlanStopId(null)
+    await loadPlanData()
+  }
 
-    setRoutes((prev) =>
-      prev.map((r) => {
-        if (r.id !== routeId) return r
-        const items = [...r.planStops]
-        const [moved] = items.splice(fromIndex, 1)
-        items.splice(toIndex, 0, moved)
-        return { ...r, planStops: items }
-      })
-    )
+  async function confirmDeleteRoute() {
+    if (!deleteRouteId) return
+    await supabase
+      .from('plan_stops')
+      .update({ route_id: null, vehicle_id: null, order_index: 0 })
+      .eq('route_id', deleteRouteId)
+    await supabase.from('routes').delete().eq('id', deleteRouteId)
+    setDeleteRouteId(null)
+    await loadPlanData()
+  }
 
-    // Persist new order
-    const route = routes.find((r) => r.id === routeId)
-    if (!route) return
-    const items = [...route.planStops]
-    const [moved] = items.splice(fromIndex, 1)
-    items.splice(toIndex, 0, moved)
-    await Promise.all(
-      items.map((ps, i) =>
-        supabase.from('plan_stops').update({ order_index: i }).eq('id', ps.id)
-      )
-    )
+  function startRenameRoute(routeId: string, currentName: string) {
+    setRenamingRouteId(routeId)
+    setRenameDraft(currentName)
+  }
+
+  async function commitRenameRoute() {
+    if (!renamingRouteId) return
+    const trimmed = renameDraft.trim()
+    const nextName = trimmed.length > 0 ? trimmed : null
+    setRoutes((prev) => prev.map((r) => (r.id === renamingRouteId ? { ...r, name: nextName } : r)))
+    const id = renamingRouteId
+    setRenamingRouteId(null)
+    setRenameDraft('')
+    await supabase.from('routes').update({ name: nextName }).eq('id', id)
+  }
+
+  function cancelRenameRoute() {
+    setRenamingRouteId(null)
+    setRenameDraft('')
+  }
+
+  function startRenamePlan() {
+    if (!plan) return
+    setPlanNameDraft(plan.name)
+    setRenamingPlan(true)
+  }
+
+  async function commitRenamePlan() {
+    if (!plan) return
+    const trimmed = planNameDraft.trim()
+    setRenamingPlan(false)
+    if (trimmed.length === 0 || trimmed === plan.name) {
+      setPlanNameDraft('')
+      return
+    }
+    setPlan({ ...plan, name: trimmed })
+    setPlanNameDraft('')
+    await supabase.from('plans').update({ name: trimmed }).eq('id', plan.id)
+  }
+
+  function cancelRenamePlan() {
+    setRenamingPlan(false)
+    setPlanNameDraft('')
   }
 
   const totalStops = routes.reduce((sum, r) => sum + r.planStops.length, 0) + unassignedStops.length
@@ -234,27 +347,6 @@ export function PlanDetailPage() {
         : []),
     ]
   }, [routes, unassignedStops])
-
-  // Maps used by live tab
-  const driverColorByRouteId = useMemo(() => {
-    const map: Record<string, string> = {}
-    routes.forEach((r, i) => {
-      map[r.id] = ROUTE_COLORS[i % ROUTE_COLORS.length]
-    })
-    return map
-  }, [routes])
-
-  const driverNameByRouteId = useMemo(() => {
-    const map: Record<string, string> = {}
-    routes.forEach((r) => {
-      map[r.id] = r.driver
-        ? `${r.driver.first_name} ${r.driver.last_name}`
-        : r.vehicle?.name ?? 'Conductor'
-    })
-    return map
-  }, [routes])
-
-  const liveDriverLocations = useMemo(() => Object.values(driverLocations), [driverLocations])
 
   const planStopById = useMemo(() => {
     const m = new Map<string, PlanStopWithStop>()
@@ -288,7 +380,8 @@ export function PlanDetailPage() {
     setTimeout(() => setCopiedId((prev) => (prev === planStop.id ? null : prev)), 2000)
   }
 
-  if (!plan) return <div className="p-6 text-gray-400">Cargando...</div>
+  if (!plan) return <PlanDetailSkeleton />
+
 
   return (
     <div className="flex h-screen">
@@ -305,514 +398,304 @@ export function PlanDetailPage() {
           <div className="text-xs text-gray-400">
             {plan.date ? format(new Date(plan.date), 'dd/MM/yyyy') : ''}
           </div>
-          <h2 className="text-lg font-semibold">{plan.name}</h2>
-
-          {/* Tabs */}
-          <div className="flex gap-1 mt-3 bg-gray-100 rounded-lg p-0.5">
-            {(['overview', 'vehicles', 'stops', 'live'] as Tab[]).map((tab) => {
-              const hasLive = liveDriverLocations.some(
-                (l) => l.recorded_at && nowTick - new Date(l.recorded_at).getTime() < LIVE_THRESHOLD_MS
-              )
-              return (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`flex-1 px-2 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                    activeTab === tab
-                      ? 'bg-white text-gray-900 shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  {tab === 'overview' && 'General'}
-                  {tab === 'vehicles' && `Veh. ${routes.length}`}
-                  {tab === 'stops' && `Par. ${totalStops}`}
-                  {tab === 'live' && (
-                    <span className="inline-flex items-center gap-1 justify-center">
-                      <Radio size={11} />
-                      <span>Vivo</span>
-                      {hasLive && (
-                        <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-                      )}
-                    </span>
-                  )}
-                </button>
-              )
-            })}
-          </div>
-
-          {/* Stats */}
-          <div className="flex gap-4 mt-3 text-sm text-gray-600">
-            <div className="flex items-center gap-1">
-              <Clock size={14} />
-              <span>{hours}h {mins}m</span>
+          {renamingPlan ? (
+            <input
+              autoFocus
+              value={planNameDraft}
+              onChange={(e) => setPlanNameDraft(e.target.value)}
+              onBlur={commitRenamePlan}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  void commitRenamePlan()
+                } else if (e.key === 'Escape') {
+                  e.preventDefault()
+                  cancelRenamePlan()
+                }
+              }}
+              className="w-full text-lg font-semibold px-1.5 py-0.5 border border-blue-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+            />
+          ) : (
+            <div className="flex items-center gap-1 group">
+              <h2 className="text-lg font-semibold">{plan.name}</h2>
+              <button
+                onClick={startRenamePlan}
+                className="p-1 rounded text-gray-300 hover:text-gray-600 hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity"
+                title="Renombrar plan"
+              >
+                <Pencil size={13} />
+              </button>
             </div>
-            <div className="flex items-center gap-1">
-              <Navigation size={14} />
-              <span>{totalDistance.toFixed(1)}km</span>
+          )}
+
+          {/* Stats + depot */}
+          <div className="flex items-center justify-between mt-3 gap-2">
+            <div className="flex gap-3 text-sm text-gray-600">
+              <div className="flex items-center gap-1">
+                <Clock size={14} />
+                <span>{hours}h {mins}m</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <Navigation size={14} />
+                <span>{totalDistance.toFixed(1)}km</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <MapPin size={14} />
+                <span>{totalStops}</span>
+              </div>
             </div>
+            <button
+              onClick={() => setShowDepotModal(true)}
+              className={`flex items-center gap-1 text-[11px] px-2 py-1 rounded border transition-colors shrink-0 ${
+                orgDepot
+                  ? 'border-gray-200 text-gray-500 hover:bg-gray-50'
+                  : 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
+              }`}
+              title={orgDepot?.address ?? 'Configurar depot (requerido para optimizar)'}
+            >
+              <Settings size={12} />
+              {orgDepot ? 'Depot' : 'Depot faltante'}
+            </button>
           </div>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto">
-          {activeTab === 'overview' && (
-            <div className="p-2 space-y-1">
-              {routes.map((route, routeIdx) => {
-                const color = ROUTE_COLORS[routeIdx % ROUTE_COLORS.length]
-                const tw = route.vehicle?.time_window_start && route.vehicle?.time_window_end
-                  ? `${route.vehicle.time_window_start.slice(0, 5)}-${route.vehicle.time_window_end.slice(0, 5)}`
-                  : null
-                return (
-                  <div key={route.id} className="border border-gray-100 rounded-lg overflow-hidden">
-                    <button
-                      onClick={() => toggleRoute(route.id)}
-                      className="w-full p-3 flex items-center gap-2 hover:bg-gray-50"
-                    >
-                      <div
-                        className="w-1 self-stretch rounded-full shrink-0"
-                        style={{ backgroundColor: color }}
-                      />
-                      <div className="flex-1 text-left">
-                        <div className="flex items-center justify-between">
-                          <span className="font-medium text-sm">
-                            {route.vehicle?.name ?? 'Sin vehiculo'}
-                          </span>
+        {/* Content: DndContext unified view */}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCorners}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+        >
+          <div className="flex-1 overflow-y-auto p-2 space-y-2">
+            {routes.map((route, routeIdx) => {
+              const color = ROUTE_COLORS[routeIdx % ROUTE_COLORS.length]
+              const tw = route.vehicle?.time_window_start && route.vehicle?.time_window_end
+                ? `${route.vehicle.time_window_start.slice(0, 5)}-${route.vehicle.time_window_end.slice(0, 5)}`
+                : null
+              const usedKg = calculateRouteWeight(route.planStops, ordersByPlanStop)
+              const capacity = getCapacityStatus(usedKg, route.vehicle?.capacity_weight_kg ?? null)
+              const capacityBarColor =
+                capacity?.color === 'green' ? 'bg-emerald-500'
+                : capacity?.color === 'yellow' ? 'bg-amber-500'
+                : capacity?.color === 'red' ? 'bg-red-500'
+                : 'bg-gray-300'
+
+              return (
+                <div key={route.id} className="border border-gray-100 rounded-lg overflow-hidden bg-white">
+                  {/* Route header */}
+                  <div className="p-3 flex items-start gap-2">
+                    <div className="w-1 self-stretch rounded-full shrink-0" style={{ backgroundColor: color }} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        {renamingRouteId === route.id ? (
+                          <input
+                            autoFocus
+                            value={renameDraft}
+                            onChange={(e) => setRenameDraft(e.target.value)}
+                            onBlur={commitRenameRoute}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault()
+                                void commitRenameRoute()
+                              } else if (e.key === 'Escape') {
+                                e.preventDefault()
+                                cancelRenameRoute()
+                              }
+                            }}
+                            placeholder={route.vehicle?.name ?? 'Nombre de la ruta'}
+                            className="flex-1 min-w-0 text-sm font-medium px-1.5 py-0.5 border border-blue-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                          />
+                        ) : (
+                          <div className="flex items-center gap-1 min-w-0 group">
+                            <span className="font-medium text-sm truncate">
+                              {route.name ?? route.vehicle?.name ?? 'Sin vehiculo'}
+                            </span>
+                            <button
+                              onClick={() => startRenameRoute(route.id, route.name ?? '')}
+                              className="p-0.5 rounded text-gray-300 hover:text-gray-600 hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                              title="Renombrar ruta"
+                            >
+                              <Pencil size={11} />
+                            </button>
+                          </div>
+                        )}
+                        <div className="flex items-center gap-1 shrink-0">
                           {tw && (
                             <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
                               {tw}
                             </span>
                           )}
-                        </div>
-                        <div className="text-xs text-gray-400">
-                          {route.driver
-                            ? `Conductor: ${route.driver.first_name} ${route.driver.last_name}`
-                            : 'Sin conductor'}
-                        </div>
-                        <div className="flex gap-3 text-xs text-gray-400 mt-1">
-                          <span className="flex items-center gap-1">
-                            <MapPin size={10} />
-                            {route.planStops.length}
-                          </span>
-                          <span>{(route.total_distance_km ?? 0).toFixed(1)}km</span>
-                          <span>
-                            0/{route.vehicle?.capacity_weight_kg ?? 0}kg
-                          </span>
-                        </div>
-                      </div>
-                      {expandedRoutes.has(route.id) ? (
-                        <ChevronDown size={16} className="text-gray-400" />
-                      ) : (
-                        <ChevronRight size={16} className="text-gray-400" />
-                      )}
-                    </button>
-                    {expandedRoutes.has(route.id) && (
-                      <div className="px-3 pb-3 space-y-1">
-                        {route.planStops.map((ps, i) => (
-                          <div
-                            key={ps.id}
-                            draggable
-                            onDragStart={() => setDragState({ routeId: route.id, fromIndex: i })}
-                            onDragOver={(e) => {
-                              e.preventDefault()
-                              setDragOverIndex(i)
-                            }}
-                            onDrop={() => {
-                              if (dragState && dragState.routeId === route.id) {
-                                handleReorder(route.id, dragState.fromIndex, i)
-                              }
-                              setDragState(null)
-                              setDragOverIndex(null)
-                            }}
-                            onDragEnd={() => {
-                              setDragState(null)
-                              setDragOverIndex(null)
-                            }}
-                            onClick={() => handleStopClick(ps.stop)}
-                            className={`flex items-center gap-2 p-2 text-xs rounded cursor-grab active:cursor-grabbing ${
-                              selectedStopId === ps.stop.id ? 'bg-blue-50 ring-1 ring-blue-300' :
-                              dragState?.routeId === route.id && dragOverIndex === i ? 'bg-blue-50 border-t-2 border-blue-400' :
-                              'bg-gray-50 hover:bg-gray-100'
-                            } ${dragState?.routeId === route.id && dragState.fromIndex === i ? 'opacity-40' : ''}`}
-                          >
-                            <span
-                              className="w-5 h-5 rounded-full flex items-center justify-center font-medium text-[10px] text-white shrink-0"
-                              style={{ backgroundColor: color }}
+                          <div className="relative">
+                            <button
+                              onClick={() => setMenuRouteId((id) => (id === route.id ? null : route.id))}
+                              className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700"
+                              title="Opciones"
                             >
-                              {i + 1}
-                            </span>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-1.5">
-                                <div className="font-medium truncate">{ps.stop.name}</div>
-                                {ordersByPlanStop.get(ps.id) && (
-                                  <span className="font-mono text-[10px] text-blue-600 bg-blue-50 px-1 py-px rounded shrink-0">
-                                    {ordersByPlanStop.get(ps.id)!.order_number}
-                                  </span>
-                                )}
-                              </div>
-                              <div className="text-gray-400 truncate">
-                                {ps.stop.address ?? ''}
-                              </div>
-                              {ordersByPlanStop.get(ps.id) && (
-                                <div className="text-[10px] text-gray-400 truncate">
-                                  {(() => {
-                                    const o = ordersByPlanStop.get(ps.id)!
-                                    const itemCount = o.items?.length ?? 0
-                                    const parts: string[] = []
-                                    if (itemCount > 0) parts.push(`${itemCount} item${itemCount === 1 ? '' : 's'}`)
-                                    if (o.total_weight_kg > 0) parts.push(`${o.total_weight_kg} kg`)
-                                    return parts.join(' · ')
-                                  })()}
-                                </div>
-                              )}
-                              {/* Notification log indicators */}
-                              {(notifLogsByPlanStop.get(ps.id)?.length ?? 0) > 0 && (
-                                <div className="flex items-center gap-1 mt-0.5">
-                                  {notifLogsByPlanStop.get(ps.id)!.some((l) => l.channel === 'whatsapp') && (
-                                    <span className="w-2 h-2 rounded-full bg-green-500" title="WhatsApp enviado" />
-                                  )}
-                                  {notifLogsByPlanStop.get(ps.id)!.some((l) => l.channel === 'email') && (
-                                    <span className="w-2 h-2 rounded-full bg-blue-500" title="Email enviado" />
-                                  )}
-                                  {notifLogsByPlanStop.get(ps.id)!.some((l) => l.channel === 'sms') && (
-                                    <span className="w-2 h-2 rounded-full bg-purple-500" title="SMS enviado" />
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-1 shrink-0">
-                              {ps.tracking_token && (
+                              <MoreHorizontal size={14} />
+                            </button>
+                            {menuRouteId === route.id && (
+                              <div className="absolute right-0 top-7 z-20 w-48 bg-white border border-gray-200 rounded-lg shadow-lg py-1 text-xs">
                                 <button
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    copyTrackingUrl(ps)
-                                  }}
-                                  className="p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-blue-600 transition-colors"
-                                  title="Copiar link de seguimiento"
+                                  onClick={() => { setEditRouteId(route.id); setMenuRouteId(null) }}
+                                  className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 text-left"
                                 >
-                                  {copiedId === ps.id ? (
-                                    <Check size={12} className="text-green-500" />
-                                  ) : (
-                                    <Link2 size={12} />
-                                  )}
+                                  <Pencil size={12} /> Editar vehiculo/conductor
                                 </button>
-                              )}
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  // Placeholder: invoke send-notification edge function
-                                }}
-                                className="p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-blue-600 transition-colors"
-                                title="Reenviar notificacion"
-                              >
-                                <Send size={12} />
-                              </button>
-                              <StatusBadge status={ps.status} />
-                            </div>
+                                <button
+                                  onClick={() => { setDeleteRouteId(route.id); setMenuRouteId(null) }}
+                                  className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-red-50 text-red-600 text-left"
+                                >
+                                  <Trash2 size={12} /> Eliminar ruta
+                                </button>
+                              </div>
+                            )}
                           </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-
-              {/* Unassigned */}
-              {unassignedStops.length > 0 && (
-                <div className="border border-gray-100 rounded-lg p-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-gray-500">No asignadas</span>
-                    <span className="text-xs text-gray-400">
-                      {unassignedStops.length} Paradas
-                    </span>
-                  </div>
-                  <div className="space-y-1">
-                    {unassignedStops.map((ps) => (
-                      <div
-                        key={ps.id}
-                        onClick={() => handleStopClick(ps.stop)}
-                        className="flex items-center gap-2 p-2 text-xs bg-gray-50 rounded cursor-pointer hover:bg-gray-100"
-                      >
-                        <MapPin size={12} className="text-gray-400 shrink-0" />
-                        <span className="font-medium truncate">{ps.stop.name}</span>
-                        <StatusBadge status={ps.status} />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {routes.length === 0 && unassignedStops.length === 0 && (
-                <div className="text-center py-8 text-gray-400 text-sm">
-                  <Truck size={32} className="mx-auto mb-2 opacity-40" />
-                  <p>Agrega vehiculos y paradas</p>
-                </div>
-              )}
-
-              {/* Add vehicle button */}
-              <button
-                onClick={() => setShowAddVehicle(true)}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2 text-xs text-gray-500 border border-dashed border-gray-300 rounded-lg hover:border-blue-400 hover:text-blue-600"
-              >
-                <Truck size={12} />
-                Agregar vehiculo al plan
-              </button>
-            </div>
-          )}
-
-          {activeTab === 'stops' && (
-            <div className="p-2">
-              <StopsTable
-                planStops={[
-                  ...routes.flatMap((r) =>
-                    r.planStops.map((ps) => ({
-                      ...ps,
-                      vehicleName: r.vehicle?.name ?? '-',
-                      driverName: r.driver
-                        ? `${r.driver.first_name} ${r.driver.last_name}`
-                        : '-',
-                    }))
-                  ),
-                  ...unassignedStops.map((ps) => ({ ...ps, vehicleName: '-', driverName: '-' })),
-                ]}
-                onRowClick={(ps) => {
-                  setSelectedStopId(ps.stop.id)
-                  if (ps.status === 'completed') setPodPlanStop(ps)
-                }}
-              />
-            </div>
-          )}
-
-          {activeTab === 'vehicles' && (
-            <div className="p-2 space-y-2">
-              {routes.map((r, i) => {
-                const color = ROUTE_COLORS[i % ROUTE_COLORS.length]
-                return (
-                  <div key={r.id} className="p-3 border border-gray-100 rounded-lg flex items-start gap-3">
-                    <div className="w-1 self-stretch rounded-full shrink-0" style={{ backgroundColor: color }} />
-                    <div className="flex-1">
-                      <div className="font-medium text-sm">{r.vehicle?.name ?? 'Sin vehiculo'}</div>
-                      <div className="text-xs text-gray-400 mt-1 space-y-0.5">
-                        <div>Paradas: {r.planStops.length}</div>
-                        <div>Distancia: {(r.total_distance_km ?? 0).toFixed(1)}km</div>
-                        <div>Capacidad: {r.vehicle?.capacity_weight_kg ?? 0}kg</div>
-                        <div className="flex items-center gap-1">Estado: <StatusBadge status={r.status} /></div>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-              {routes.length === 0 && (
-                <p className="text-sm text-gray-400 text-center py-4">Sin vehiculos asignados</p>
-              )}
-              <button
-                onClick={() => setShowAddVehicle(true)}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2 text-xs text-gray-500 border border-dashed border-gray-300 rounded-lg hover:border-blue-400 hover:text-blue-600"
-              >
-                <Plus size={12} />
-                Agregar vehiculo
-              </button>
-            </div>
-          )}
-
-          {activeTab === 'live' && (
-            <div className="p-2 space-y-2">
-              {routes.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-4">
-                  Sin rutas asignadas.
-                </p>
-              ) : (
-                routes.map((r, i) => {
-                  const color = ROUTE_COLORS[i % ROUTE_COLORS.length]
-                  const loc = driverLocations[r.id]
-                  const isLive =
-                    loc?.recorded_at != null &&
-                    nowTick - new Date(loc.recorded_at).getTime() < LIVE_THRESHOLD_MS
-                  const ageLabel = loc?.recorded_at ? formatAge(nowTick, loc.recorded_at) : null
-
-                  return (
-                    <div
-                      key={r.id}
-                      className="p-3 border border-gray-100 rounded-lg flex items-start gap-3"
-                    >
-                      <div
-                        className="w-1 self-stretch rounded-full shrink-0"
-                        style={{ backgroundColor: color }}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="font-medium text-sm truncate">
-                            {r.driver
-                              ? `${r.driver.first_name} ${r.driver.last_name}`
-                              : r.vehicle?.name ?? 'Sin conductor'}
-                          </div>
-                          {loc ? (
-                            isLive ? (
-                              <span className="text-[10px] font-semibold text-red-600 bg-red-50 border border-red-100 rounded-full px-2 py-0.5 flex items-center gap-1">
-                                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-                                En vivo
-                              </span>
-                            ) : (
-                              <span className="text-[10px] font-medium text-gray-500 bg-gray-100 rounded-full px-2 py-0.5">
-                                Offline
-                              </span>
-                            )
-                          ) : (
-                            <span className="text-[10px] font-medium text-gray-400 bg-gray-50 rounded-full px-2 py-0.5">
-                              Sin datos
-                            </span>
-                          )}
                         </div>
-                        <div className="text-xs text-gray-400 mt-0.5 truncate">
-                          {r.vehicle?.name ?? 'Sin vehiculo'}
-                        </div>
-                        <div className="text-xs text-gray-500 mt-1">
-                          {loc
-                            ? `Ultima actualizacion ${ageLabel}`
-                            : 'Aun sin ubicacion reportada.'}
-                        </div>
-                        {loc?.speed != null && (
-                          <div className="text-[11px] text-gray-400 mt-0.5">
-                            {Math.round(loc.speed * 3.6)} km/h
-                          </div>
+                      </div>
+                      <div className="text-xs text-gray-400">
+                        {route.driver
+                          ? `${route.driver.first_name} ${route.driver.last_name}`
+                          : 'Sin conductor'}
+                      </div>
+                      <div className="flex gap-3 text-xs text-gray-400 mt-1">
+                        <span className="flex items-center gap-1">
+                          <MapPin size={10} />
+                          {route.planStops.length}
+                        </span>
+                        <span>{(route.total_distance_km ?? 0).toFixed(1)}km</span>
+                        {route.total_duration_minutes != null && route.total_duration_minutes > 0 && (
+                          <span>
+                            {Math.floor(route.total_duration_minutes / 60)}h {route.total_duration_minutes % 60}m
+                          </span>
                         )}
                       </div>
+                      {capacity && (
+                        <div className="mt-2">
+                          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full ${capacityBarColor} transition-all`}
+                              style={{ width: `${Math.min(capacity.percent, 100)}%` }}
+                            />
+                          </div>
+                          <div className="text-[10px] text-gray-400 mt-0.5">{capacity.label}</div>
+                        </div>
+                      )}
                     </div>
-                  )
-                })
-              )}
-              <p className="text-[11px] text-gray-400 text-center mt-3">
-                Las posiciones se actualizan automaticamente cuando los conductores reportan su ubicacion.
-              </p>
-            </div>
-          )}
-        </div>
+                  </div>
 
-        {/* Optimization result */}
-        {optResult && (
-          <div className="p-3 border-t border-gray-200 bg-green-50/70">
-            <div className="flex items-center gap-2 mb-2">
-              <Zap size={14} className="text-green-600" />
-              <span className="text-xs font-semibold text-green-800">Ruta Optimizada</span>
-            </div>
-            <div className="grid grid-cols-2 gap-2 mb-2">
-              <div className="bg-white rounded-lg p-2 border border-green-100">
-                <div className="text-[10px] text-gray-500 uppercase">Distancia</div>
-                <div className="text-sm font-bold">{formatDistance(optResult.optimizedDistance)}</div>
-                {optResult.savings.distancePct > 0 && (
-                  <div className="text-[11px] text-green-600 font-medium">
-                    -{formatDistance(optResult.originalDistance - optResult.optimizedDistance)} ({optResult.savings.distancePct}%)
-                  </div>
-                )}
+                  {/* Sortable stops */}
+                  <SortableContext
+                    id={route.id}
+                    items={route.planStops.map((ps) => ps.id)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <RouteDropZone id={route.id}>
+                      {route.planStops.length === 0 && (
+                        <div className="text-[11px] text-gray-400 italic py-2 text-center border border-dashed border-gray-200 rounded">
+                          Arrastra paradas aqui
+                        </div>
+                      )}
+                      {route.planStops.map((ps, i) => (
+                        <SortablePlanStop
+                          key={ps.id}
+                          planStop={ps}
+                          order={i + 1}
+                          color={color}
+                          selected={selectedStopId === ps.stop.id}
+                          order_obj={ordersByPlanStop.get(ps.id) ?? null}
+                          notifLogs={notifLogsByPlanStop.get(ps.id) ?? []}
+                          copied={copiedId === ps.id}
+                          onSelect={() => handleStopClick(ps.stop)}
+                          onCopyLink={() => copyTrackingUrl(ps)}
+                          onDelete={() => setDeletePlanStopId(ps.id)}
+                        />
+                      ))}
+                    </RouteDropZone>
+                  </SortableContext>
+                </div>
+              )
+            })}
+
+            {/* Unassigned droppable */}
+            <div className="border border-gray-100 rounded-lg overflow-hidden bg-white">
+              <div className="p-3 flex items-center justify-between bg-gray-50">
+                <span className="text-sm font-medium text-gray-600">Sin asignar</span>
+                <span className="text-xs text-gray-400">{unassignedStops.length}</span>
               </div>
-              <div className="bg-white rounded-lg p-2 border border-green-100">
-                <div className="text-[10px] text-gray-500 uppercase">Tiempo</div>
-                <div className="text-sm font-bold">{formatDuration(optResult.optimizedDuration)}</div>
-                {optResult.savings.durationPct > 0 && (
-                  <div className="text-[11px] text-green-600 font-medium">
-                    -{formatDuration(optResult.originalDuration - optResult.optimizedDuration)} ({optResult.savings.durationPct}%)
-                  </div>
-                )}
-              </div>
+              <SortableContext
+                id={UNASSIGNED_ID}
+                items={unassignedStops.map((ps) => ps.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <RouteDropZone id={UNASSIGNED_ID}>
+                  {unassignedStops.length === 0 ? (
+                    <div className="text-[11px] text-gray-400 italic py-2 text-center border border-dashed border-gray-200 rounded">
+                      Arrastra paradas aqui para desasignar
+                    </div>
+                  ) : (
+                    unassignedStops.map((ps) => (
+                      <SortablePlanStop
+                        key={ps.id}
+                        planStop={ps}
+                        order={null}
+                        color="#9ca3af"
+                        selected={selectedStopId === ps.stop.id}
+                        order_obj={ordersByPlanStop.get(ps.id) ?? null}
+                        notifLogs={notifLogsByPlanStop.get(ps.id) ?? []}
+                        copied={copiedId === ps.id}
+                        onSelect={() => handleStopClick(ps.stop)}
+                        onCopyLink={() => copyTrackingUrl(ps)}
+                        onDelete={() => setDeletePlanStopId(ps.id)}
+                      />
+                    ))
+                  )}
+                </RouteDropZone>
+              </SortableContext>
             </div>
+
+            {routes.length === 0 && unassignedStops.length === 0 && (
+              <div className="text-center py-8 text-gray-400 text-sm">
+                <Truck size={32} className="mx-auto mb-2 opacity-40" />
+                <p>Agrega vehiculos y paradas</p>
+              </div>
+            )}
+
+            <button
+              onClick={() => setShowAddVehicle(true)}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 text-xs text-gray-500 border border-dashed border-gray-300 rounded-lg hover:border-blue-400 hover:text-blue-600"
+            >
+              <Truck size={12} />
+              Agregar vehiculo al plan
+            </button>
           </div>
-        )}
+
+          <DragOverlay>
+            {activeDragId ? (
+              (() => {
+                const ps = [...routes.flatMap((r) => r.planStops), ...unassignedStops].find(
+                  (p) => p.id === activeDragId,
+                )
+                return ps ? (
+                  <div className="flex items-center gap-2 p-2 text-xs bg-white border border-blue-300 rounded shadow-md">
+                    <GripVertical size={12} className="text-gray-400" />
+                    <div className="font-medium truncate">{ps.stop.name}</div>
+                  </div>
+                ) : null
+              })()
+            ) : null}
+          </DragOverlay>
+        </DndContext>
+
 
         {/* Bottom actions */}
         <div className="p-3 border-t border-gray-200 space-y-2">
-          {totalStops >= 2 && (
+          {totalStops >= 2 && routes.length > 0 && (
             <button
-              onClick={async () => {
-                const allPlanStops = [...routes.flatMap((r) => r.planStops), ...unassignedStops]
-                const withCoords = allPlanStops.filter((ps) => ps.stop.lat && ps.stop.lng)
-                if (withCoords.length < 2) return
-
-                // Pick the first route to assign unassigned stops to
-                const targetRoute = routes[0] ?? null
-
-                setOptimizing(true)
-                try {
-                  const coords: [number, number][] = withCoords.map((ps) => [ps.stop.lng!, ps.stop.lat!])
-                  const original = await fetchDirections(coords)
-
-                  let finalDistance = original?.distance ?? 0
-                  let finalDuration = original?.duration ?? 0
-                  let optimizedOrder: number[] | null = null
-
-                  if (withCoords.length >= 3) {
-                    const optimized = await optimizeTrip(coords)
-                    if (original && optimized) {
-                      finalDistance = optimized.distance
-                      finalDuration = optimized.duration
-                      optimizedOrder = optimized.optimizedOrder
-                      setOptResult({
-                        originalDistance: original.distance,
-                        originalDuration: original.duration,
-                        optimizedDistance: optimized.distance,
-                        optimizedDuration: optimized.duration,
-                        savings: {
-                          distancePct: original.distance > 0
-                            ? Math.round(((original.distance - optimized.distance) / original.distance) * 100) : 0,
-                          durationPct: original.duration > 0
-                            ? Math.round(((original.duration - optimized.duration) / original.duration) * 100) : 0,
-                        },
-                      })
-                    }
-                  } else if (original) {
-                    setOptResult({
-                      originalDistance: original.distance,
-                      originalDuration: original.duration,
-                      optimizedDistance: original.distance,
-                      optimizedDuration: original.duration,
-                      savings: { distancePct: 0, durationPct: 0 },
-                    })
-                  }
-
-                  // Persist: assign unassigned stops to target route + update order
-                  if (targetRoute) {
-                    // Assign unassigned plan_stops to this route
-                    const unassignedIds = unassignedStops.map((ps) => ps.id)
-                    if (unassignedIds.length > 0) {
-                      await supabase
-                        .from('plan_stops')
-                        .update({ route_id: targetRoute.id, vehicle_id: targetRoute.vehicle_id })
-                        .in('id', unassignedIds)
-                    }
-
-                    // Update order_index on all plan_stops
-                    const ordered = optimizedOrder
-                      ? optimizedOrder.map((idx) => withCoords[idx])
-                      : withCoords
-                    for (let i = 0; i < ordered.length; i++) {
-                      await supabase
-                        .from('plan_stops')
-                        .update({ order_index: i })
-                        .eq('id', ordered[i].id)
-                    }
-
-                    // Update route distance/duration
-                    await supabase
-                      .from('routes')
-                      .update({
-                        total_distance_km: Math.round((finalDistance / 1000) * 10) / 10,
-                        total_duration_minutes: Math.round(finalDuration / 60),
-                      })
-                      .eq('id', targetRoute.id)
-                  }
-
-                  // Reload data
-                  await loadPlanData()
-                } finally {
-                  setOptimizing(false)
-                }
-              }}
-              disabled={optimizing}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+              onClick={() => setShowVroomWizard(true)}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+              title="Optimiza todas las rutas del plan (multi-vehiculo, capacidad, time windows)"
             >
-              {optimizing ? (
-                <><Loader2 size={14} className="animate-spin" /> Optimizando...</>
-              ) : (
-                <><Zap size={14} /> Optimizar ruta</>
-              )}
+              Optimizar con Vuoo
             </button>
           )}
           <button
@@ -831,11 +714,56 @@ export function PlanDetailPage() {
           routeGroups={mapRouteGroups}
           onStopClick={handleStopClick}
           selectedStopId={selectedStopId}
-          driverLocations={activeTab === 'live' ? liveDriverLocations : undefined}
-          driverColorByRouteId={driverColorByRouteId}
-          driverNameByRouteId={driverNameByRouteId}
+          depot={orgDepot}
         />
       </div>
+
+      {/* Vroom Wizard */}
+      {showVroomWizard && planId && (
+        <VroomWizardModal
+          planId={planId}
+          numStops={[...routes.flatMap((r) => r.planStops), ...unassignedStops].filter(
+            (ps) => ps.stop.lat && ps.stop.lng,
+          ).length}
+          numVehicles={routes.length}
+          depotAddress={orgDepot?.address ?? null}
+          onClose={() => setShowVroomWizard(false)}
+          onApplied={() => {
+            setShowVroomWizard(false)
+            loadPlanData()
+          }}
+          onDepotMissing={() => {
+            setShowVroomWizard(false)
+            setShowDepotModal(true)
+          }}
+        />
+      )}
+
+      {/* Depot Config Modal */}
+      {showDepotModal && currentOrg && (
+        <DepotConfigModal
+          orgId={currentOrg.id}
+          onClose={() => setShowDepotModal(false)}
+          onSaved={() => {
+            setShowDepotModal(false)
+            setShowVroomWizard(true)
+            supabase
+              .from('organizations')
+              .select('default_depot_lat, default_depot_lng, default_depot_address')
+              .eq('id', currentOrg.id)
+              .single()
+              .then(({ data }) => {
+                if (data && data.default_depot_lat != null && data.default_depot_lng != null) {
+                  setOrgDepot({
+                    lat: data.default_depot_lat,
+                    lng: data.default_depot_lng,
+                    address: data.default_depot_address ?? null,
+                  })
+                }
+              })
+          }}
+        />
+      )}
 
       {/* Add Stop Modal */}
       {showAddStop && (
@@ -870,22 +798,214 @@ export function PlanDetailPage() {
       {podPlanStop && (
         <PODModal planStop={podPlanStop} onClose={() => setPodPlanStop(null)} />
       )}
+
+      {/* Edit Route Modal */}
+      {editRouteId && currentOrg && (() => {
+        const route = routes.find((r) => r.id === editRouteId)
+        if (!route) return null
+        return (
+          <EditRouteModal
+            route={{
+              id: route.id,
+              vehicle_id: route.vehicle_id,
+              driver_id: route.driver_id,
+              plan: plan ? { name: plan.name, date: plan.date } : null,
+            }}
+            orgId={currentOrg.id}
+            onClose={() => setEditRouteId(null)}
+            onSaved={() => {
+              setEditRouteId(null)
+              loadPlanData()
+            }}
+          />
+        )
+      })()}
+
+      {/* Delete confirmations */}
+      <ConfirmDialog
+        open={deletePlanStopId !== null}
+        title="Eliminar parada del plan"
+        message="Esta parada se quitara del plan. La parada sigue existiendo en la libreria de stops."
+        confirmLabel="Eliminar"
+        variant="danger"
+        onConfirm={confirmDeletePlanStop}
+        onCancel={() => setDeletePlanStopId(null)}
+      />
+      <ConfirmDialog
+        open={deleteRouteId !== null}
+        title="Eliminar ruta"
+        message="Las paradas asignadas a esta ruta quedaran sin asignar. El vehiculo y conductor se liberan."
+        confirmLabel="Eliminar ruta"
+        variant="danger"
+        onConfirm={confirmDeleteRoute}
+        onCancel={() => setDeleteRouteId(null)}
+      />
+
+      {editRouteId &&
+        currentOrg &&
+        (() => {
+          const target = routes.find((r) => r.id === editRouteId)
+          if (!target) return null
+          return (
+            <EditRouteModal
+              route={{
+                id: target.id,
+                vehicle_id: target.vehicle_id,
+                driver_id: target.driver_id,
+                plan: plan ? { name: plan.name, date: plan.date } : null,
+              }}
+              orgId={currentOrg.id}
+              onClose={() => setEditRouteId(null)}
+              onSaved={() => {
+                setEditRouteId(null)
+                loadPlanData()
+              }}
+            />
+          )
+        })()}
     </div>
   )
 }
 
-function formatAge(now: number, iso: string): string {
-  const diff = now - new Date(iso).getTime()
-  if (Number.isNaN(diff) || diff < 0) return 'justo ahora'
-  const sec = Math.floor(diff / 1000)
-  if (sec < 5) return 'justo ahora'
-  if (sec < 60) return `hace ${sec} seg`
-  const min = Math.floor(sec / 60)
-  if (min < 60) return `hace ${min} min`
-  const hr = Math.floor(min / 60)
-  if (hr < 24) return `hace ${hr} h`
-  const d = Math.floor(hr / 24)
-  return `hace ${d} d`
+type OrderLite = Order | null
+
+function SortablePlanStop({
+  planStop,
+  order,
+  color,
+  selected,
+  order_obj,
+  notifLogs,
+  copied,
+  onSelect,
+  onCopyLink,
+  onDelete,
+}: {
+  planStop: PlanStopWithStop
+  order: number | null
+  color: string
+  selected: boolean
+  order_obj: OrderLite
+  notifLogs: NotificationLog[]
+  copied: boolean
+  onSelect: () => void
+  onCopyLink: () => void
+  onDelete: () => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: planStop.id })
+  const style = { transform: CSS.Transform.toString(transform), transition }
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      onClick={onSelect}
+      className={`flex items-center gap-2 p-2 text-xs rounded cursor-pointer ${
+        selected ? 'bg-blue-50 ring-1 ring-blue-300' : 'bg-gray-50 hover:bg-gray-100'
+      } ${isDragging ? 'opacity-40' : ''}`}
+    >
+      <button
+        {...attributes}
+        {...listeners}
+        onClick={(e) => e.stopPropagation()}
+        className="p-0.5 rounded text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing"
+        title="Arrastrar"
+      >
+        <GripVertical size={12} />
+      </button>
+      {order !== null ? (
+        <span
+          className="w-5 h-5 rounded-full flex items-center justify-center font-medium text-[10px] text-white shrink-0"
+          style={{ backgroundColor: color }}
+        >
+          {order}
+        </span>
+      ) : (
+        <MapPin size={12} className="text-gray-400 shrink-0" />
+      )}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5">
+          <div className="font-medium truncate">{planStop.stop.name}</div>
+          {order_obj && (
+            <span className="font-mono text-[10px] text-blue-600 bg-blue-50 px-1 py-px rounded shrink-0">
+              {order_obj.order_number}
+            </span>
+          )}
+        </div>
+        <div className="text-gray-400 truncate">{planStop.stop.address ?? ''}</div>
+        {order_obj && (
+          <div className="text-[10px] text-gray-400 truncate">
+            {(() => {
+              const itemCount = order_obj.items?.length ?? 0
+              const parts: string[] = []
+              if (itemCount > 0) parts.push(`${itemCount} item${itemCount === 1 ? '' : 's'}`)
+              if (order_obj.total_weight_kg > 0) parts.push(`${order_obj.total_weight_kg} kg`)
+              return parts.join(' · ')
+            })()}
+          </div>
+        )}
+        {notifLogs.length > 0 && (
+          <div className="flex items-center gap-1 mt-0.5">
+            {notifLogs.some((l) => l.channel === 'whatsapp') && (
+              <span className="w-2 h-2 rounded-full bg-green-500" title="WhatsApp enviado" />
+            )}
+            {notifLogs.some((l) => l.channel === 'email') && (
+              <span className="w-2 h-2 rounded-full bg-blue-500" title="Email enviado" />
+            )}
+            {notifLogs.some((l) => l.channel === 'sms') && (
+              <span className="w-2 h-2 rounded-full bg-purple-500" title="SMS enviado" />
+            )}
+          </div>
+        )}
+      </div>
+      <div className="flex items-center gap-1 shrink-0">
+        {planStop.tracking_token && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onCopyLink()
+            }}
+            className="p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-blue-600 transition-colors"
+            title="Copiar link de seguimiento"
+          >
+            {copied ? <Check size={12} className="text-green-500" /> : <Link2 size={12} />}
+          </button>
+        )}
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            // Placeholder: send notification
+          }}
+          className="p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-blue-600 transition-colors"
+          title="Reenviar notificacion"
+        >
+          <Send size={12} />
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            onDelete()
+          }}
+          className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-600 transition-colors"
+          title="Eliminar del plan"
+        >
+          <Trash2 size={12} />
+        </button>
+        <StatusBadge status={planStop.status} />
+      </div>
+    </div>
+  )
+}
+
+function RouteDropZone({ id, children }: { id: string; children: React.ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id })
+  return (
+    <div
+      ref={setNodeRef}
+      className={`px-3 pb-3 pt-1 space-y-1 min-h-[12px] transition-colors ${isOver ? 'bg-blue-50/50' : ''}`}
+    >
+      {children}
+    </div>
+  )
 }
 
 function AddStopToPlanModal({
@@ -1227,15 +1347,31 @@ function AddVehicleToPlanModal({
   async function addVehicle() {
     if (!user || !currentOrg || !selectedVehicleId) return
     setSaving(true)
-    await supabase.from('routes').insert({
-      plan_id: planId,
-      vehicle_id: selectedVehicleId,
-      driver_id: selectedDriverId,
-      status: 'not_started',
-      user_id: user.id,
-      org_id: currentOrg.id,
-    })
+    const { data: inserted } = await supabase
+      .from('routes')
+      .insert({
+        plan_id: planId,
+        vehicle_id: selectedVehicleId,
+        driver_id: selectedDriverId,
+        status: 'not_started',
+        user_id: user.id,
+        org_id: currentOrg.id,
+      })
+      .select('id, plan:plans(name, date)')
+      .single()
     setSaving(false)
+
+    if (inserted?.id && selectedDriverId) {
+      const planLite = (inserted as { plan?: { name?: string | null; date?: string | null } | null })
+        .plan
+      void notifyDriverRouteAssigned({
+        driverId: selectedDriverId,
+        routeId: inserted.id,
+        planName: planLite?.name ?? null,
+        planDate: planLite?.date ?? null,
+      })
+    }
+
     onAdded()
   }
 
@@ -1344,49 +1480,60 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
-function StopsTable({
-  planStops,
-  onRowClick,
-}: {
-  planStops: (PlanStopWithStop & { vehicleName: string; driverName: string })[]
-  onRowClick?: (ps: PlanStopWithStop) => void
-}) {
+function PlanDetailSkeleton() {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-xs">
-        <thead>
-          <tr className="text-left text-gray-400 border-b border-gray-100">
-            <th className="p-2 font-medium">Nombre</th>
-            <th className="p-2 font-medium">Vehiculo</th>
-            <th className="p-2 font-medium">Conductor</th>
-            <th className="p-2 font-medium">Estado</th>
-            <th className="p-2 font-medium">Horarios</th>
-            <th className="p-2 font-medium">Dur.</th>
-          </tr>
-        </thead>
-        <tbody>
-          {planStops.map((ps) => (
-            <tr
-              key={ps.id}
-              onClick={() => onRowClick?.(ps)}
-              className={`border-b border-gray-50 hover:bg-gray-50 ${onRowClick ? 'cursor-pointer' : ''}`}
-            >
-              <td className="p-2 font-medium max-w-[120px] truncate">{ps.stop.name}</td>
-              <td className="p-2 text-gray-500">{ps.vehicleName}</td>
-              <td className="p-2 text-gray-500">{ps.driverName}</td>
-              <td className="p-2"><StatusBadge status={ps.status} /></td>
-              <td className="p-2 text-gray-500">
-                {ps.stop.time_window_start && ps.stop.time_window_end
-                  ? `${ps.stop.time_window_start}-${ps.stop.time_window_end}` : '-'}
-              </td>
-              <td className="p-2 text-gray-500">{ps.stop.duration_minutes} min</td>
-            </tr>
+    <div className="flex h-screen">
+      <div className="w-96 border-r border-gray-200 bg-white flex flex-col">
+        <div className="p-4 border-b border-gray-200 space-y-3">
+          <div className="h-4 w-16 bg-gray-100 rounded animate-pulse" />
+          <div className="h-3 w-20 bg-gray-100 rounded animate-pulse" />
+          <div className="h-6 w-40 bg-gray-200 rounded animate-pulse" />
+          <div className="flex items-center justify-between gap-2 pt-1">
+            <div className="flex gap-3">
+              <div className="h-4 w-14 bg-gray-100 rounded animate-pulse" />
+              <div className="h-4 w-14 bg-gray-100 rounded animate-pulse" />
+              <div className="h-4 w-10 bg-gray-100 rounded animate-pulse" />
+            </div>
+            <div className="h-6 w-16 bg-gray-100 rounded animate-pulse" />
+          </div>
+        </div>
+        <div className="flex-1 overflow-hidden p-2 space-y-2">
+          {[0, 1].map((i) => (
+            <div key={i} className="border border-gray-100 rounded-lg p-3 space-y-3 bg-white">
+              <div className="flex items-start gap-2">
+                <div className="w-1 self-stretch rounded-full bg-gray-200" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 w-32 bg-gray-200 rounded animate-pulse" />
+                  <div className="h-3 w-24 bg-gray-100 rounded animate-pulse" />
+                  <div className="flex gap-3">
+                    <div className="h-3 w-10 bg-gray-100 rounded animate-pulse" />
+                    <div className="h-3 w-12 bg-gray-100 rounded animate-pulse" />
+                    <div className="h-3 w-10 bg-gray-100 rounded animate-pulse" />
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                {[0, 1, 2].map((j) => (
+                  <div key={j} className="flex items-center gap-2 p-2 bg-gray-50 rounded">
+                    <div className="w-5 h-5 rounded-full bg-gray-200 animate-pulse" />
+                    <div className="flex-1 space-y-1">
+                      <div className="h-3 w-28 bg-gray-200 rounded animate-pulse" />
+                      <div className="h-2.5 w-40 bg-gray-100 rounded animate-pulse" />
+                    </div>
+                    <div className="h-4 w-14 bg-gray-100 rounded animate-pulse" />
+                  </div>
+                ))}
+              </div>
+            </div>
           ))}
-          {planStops.length === 0 && (
-            <tr><td colSpan={6} className="p-4 text-center text-gray-400">Sin paradas</td></tr>
-          )}
-        </tbody>
-      </table>
+        </div>
+        <div className="p-3 border-t border-gray-200 space-y-2">
+          <div className="h-9 w-full bg-gray-100 rounded-lg animate-pulse" />
+          <div className="h-9 w-full bg-gray-100 rounded-lg animate-pulse" />
+        </div>
+      </div>
+      <div className="flex-1 bg-gray-100 animate-pulse" />
     </div>
   )
 }
+

@@ -149,68 +149,95 @@ export function PlannerPage() {
   const selectedPlans = getPlansForDate(selectedDate)
   const displayPlans = filteredPlans ?? selectedPlans
 
-  return (
-    <div className="flex h-screen">
-      <div className="flex-1 flex flex-col p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => {
-                setSelectedDate(new Date())
-                setCurrentMonth(new Date())
-              }}
-              className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-100"
-            >
-              Hoy
-            </button>
-            <button
-              onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
-              className="p-1.5 hover:bg-gray-100 rounded"
-            >
-              <ChevronLeft size={18} />
-            </button>
-            <button
-              onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
-              className="p-1.5 hover:bg-gray-100 rounded"
-            >
-              <ChevronRight size={18} />
-            </button>
-            <h2 className="text-lg font-semibold capitalize">
-              {format(currentMonth, 'MMMM yyyy', { locale: es })}
-            </h2>
-          </div>
-          <div className="relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Buscar plan..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm w-56 focus:outline-none focus:ring-2 focus:ring-blue-400"
-            />
-          </div>
-        </div>
+  async function createPlanForSelected() {
+    if (!user || !currentOrg) return
+    const name = format(selectedDate, 'EEEE', { locale: es })
+    const { data } = await supabase
+      .from('plans')
+      .insert({
+        name,
+        date: format(selectedDate, 'yyyy-MM-dd'),
+        user_id: user.id,
+        org_id: currentOrg.id,
+      })
+      .select()
+      .single()
+    if (data) {
+      loadPlans()
+      navigate(`/planner/${data.id}`)
+    }
+  }
 
-        <div className="grid grid-cols-7 text-xs font-medium text-gray-500 mb-1">
-          {['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa', 'Do'].map((d) => (
-            <div key={d} className="text-center py-2">
-              {d}
-            </div>
-          ))}
-        </div>
-        <div className="flex-1 border border-gray-200 rounded-lg overflow-hidden">
-          {renderCalendarDays()}
+  return (
+    <div className="px-6 pb-6 pt-4">
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        <button
+          onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
+          className="p-2 hover:bg-gray-100 rounded-lg border border-gray-200"
+          aria-label="Mes anterior"
+        >
+          <ChevronLeft size={18} />
+        </button>
+        <button
+          onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
+          className="p-2 hover:bg-gray-100 rounded-lg border border-gray-200"
+          aria-label="Mes siguiente"
+        >
+          <ChevronRight size={18} />
+        </button>
+        <h2 className="text-2xl font-semibold capitalize text-gray-900">
+          {format(currentMonth, 'MMMM yyyy', { locale: es })}
+        </h2>
+        <button
+          onClick={() => {
+            setSelectedDate(new Date())
+            setCurrentMonth(new Date())
+          }}
+          className="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-100"
+        >
+          Hoy
+        </button>
+        <div className="relative ml-auto">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Buscar plan..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm w-56 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          />
         </div>
       </div>
 
-      {/* Right sidebar */}
-      <div className="w-80 border-l border-gray-200 bg-white p-4 flex flex-col">
-        <h3 className="text-sm font-semibold text-gray-500 mb-3">
-          {searchQuery
-            ? `Resultados: "${searchQuery}"`
-            : format(selectedDate, "d 'de' MMMM 'de' yyyy", { locale: es })}
-        </h3>
-        <div className="flex-1 space-y-2 overflow-y-auto">
+      <div className="grid grid-cols-7 text-xs font-medium text-gray-500 mb-1">
+        {['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa', 'Do'].map((d) => (
+          <div key={d} className="text-center py-2">
+            {d}
+          </div>
+        ))}
+      </div>
+      <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
+        {renderCalendarDays()}
+      </div>
+
+      <div className="mt-6">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-gray-700 capitalize">
+            {searchQuery
+              ? `Resultados: "${searchQuery}"`
+              : format(selectedDate, "EEEE d 'de' MMMM yyyy", { locale: es })}
+          </h3>
+          {!searchQuery && (
+            <button
+              onClick={createPlanForSelected}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+            >
+              <Plus size={14} />
+              Nuevo plan
+            </button>
+          )}
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
           {displayPlans.map((plan) => {
             const progress =
               plan.stopCount > 0
@@ -220,32 +247,21 @@ export function PlannerPage() {
               <div
                 key={plan.id}
                 onClick={() => navigate(`/planner/${plan.id}`)}
-                className="p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors"
+                className="p-4 bg-white border border-gray-200 rounded-lg cursor-pointer hover:border-blue-300 hover:shadow-sm transition-all"
               >
-                <div className="flex items-center gap-2 mb-1.5">
-                  <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-blue-500">
-                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                      <line x1="16" y1="2" x2="16" y2="6" />
-                      <line x1="8" y1="2" x2="8" y2="6" />
-                      <line x1="3" y1="10" x2="21" y2="10" />
-                    </svg>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium truncate">{plan.name}</div>
-                    <div className="flex items-center gap-3 text-xs text-gray-400 mt-0.5">
-                      <span className="flex items-center gap-1">
-                        <Truck size={10} />
-                        {plan.routeCount}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <MapPin size={10} />
-                        {plan.stopCount}
-                      </span>
-                    </div>
-                  </div>
+                <div className="text-sm font-semibold text-gray-900 mb-2 truncate">
+                  {plan.name}
                 </div>
-                {/* Progress bar */}
+                <div className="flex items-center gap-3 text-xs text-gray-500 mb-3">
+                  <span className="flex items-center gap-1">
+                    <Truck size={12} />
+                    {plan.routeCount}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <MapPin size={12} />
+                    {plan.stopCount}
+                  </span>
+                </div>
                 <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-blue-500 rounded-full transition-all"
@@ -256,35 +272,11 @@ export function PlannerPage() {
             )
           })}
           {displayPlans.length === 0 && (
-            <p className="text-sm text-gray-400 text-center mt-8">
+            <p className="text-sm text-gray-400 col-span-full py-4">
               {searchQuery ? 'Sin resultados' : 'Sin planes para este dia'}
             </p>
           )}
         </div>
-        <button
-          onClick={async () => {
-            if (!user || !currentOrg) return
-            const name = format(selectedDate, 'EEEE', { locale: es })
-            const { data } = await supabase
-              .from('plans')
-              .insert({
-                name,
-                date: format(selectedDate, 'yyyy-MM-dd'),
-                user_id: user.id,
-                org_id: currentOrg.id,
-              })
-              .select()
-              .single()
-            if (data) {
-              loadPlans()
-              navigate(`/planner/${data.id}`)
-            }
-          }}
-          className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 transition-colors"
-        >
-          <Plus size={16} />
-          Crear un plan nuevo
-        </button>
       </div>
     </div>
   )

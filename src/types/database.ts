@@ -19,6 +19,9 @@ export interface Organization {
   name: string
   slug: string
   created_at: string
+  default_depot_lat: number | null
+  default_depot_lng: number | null
+  default_depot_address: string | null
 }
 
 export interface OrganizationMember {
@@ -43,6 +46,9 @@ export interface Vehicle {
   avg_consumption: number | null
   time_window_start: string | null
   time_window_end: string | null
+  depot_lat: number | null
+  depot_lng: number | null
+  depot_address: string | null
   created_at: string
   user_id: string
   org_id: string
@@ -132,6 +138,7 @@ export interface Route {
   status: RouteStatus
   total_distance_km: number | null
   total_duration_minutes: number | null
+  name: string | null
   created_at: string
   user_id: string
   org_id: string

@@ -32,6 +32,7 @@ interface RouteMapProps {
   driverLocations?: DriverLocation[]
   driverColorByRouteId?: Record<string, string>
   driverNameByRouteId?: Record<string, string>
+  depot?: { lat: number; lng: number; address: string | null } | null
 }
 
 export function RouteMap({
@@ -42,10 +43,12 @@ export function RouteMap({
   driverLocations,
   driverColorByRouteId,
   driverNameByRouteId,
+  depot,
 }: RouteMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<mapboxgl.Map | null>(null)
   const markersRef = useRef<mapboxgl.Marker[]>([])
+  const depotMarkerRef = useRef<mapboxgl.Marker | null>(null)
   const driverMarkersRef = useRef<mapboxgl.Marker[]>([])
   const mapLoadedRef = useRef(false)
   const onStopClickRef = useRef(onStopClick)
@@ -142,6 +145,11 @@ export function RouteMap({
         })
       }
 
+      if (depot?.lat != null && depot?.lng != null) {
+        bounds.extend([depot.lng, depot.lat])
+        hasPoints = true
+      }
+
       if (hasPoints) {
         map.fitBounds(bounds, { padding: 70, duration: 0 })
       }
@@ -154,7 +162,59 @@ export function RouteMap({
       map.on('load', handler)
       return () => { map.off('load', handler) }
     }
-  }, [routeDataKey, selectedStopId])
+  }, [routeDataKey, selectedStopId, depot?.lat, depot?.lng])
+
+  // Depot marker (persistent, distinct from stops)
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+
+    function drawDepot(map: mapboxgl.Map) {
+      if (depotMarkerRef.current) {
+        depotMarkerRef.current.remove()
+        depotMarkerRef.current = null
+      }
+      if (!depot || depot.lat == null || depot.lng == null) return
+
+      const el = document.createElement('div')
+      el.style.cssText = `
+        width: 36px; height: 36px; border-radius: 8px;
+        display: flex; align-items: center; justify-content: center;
+        background: #4f46e5;
+        border: 3px solid white;
+        box-shadow: 0 3px 10px rgba(79, 70, 229, 0.5);
+        cursor: pointer;
+      `
+      el.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+          <polyline points="9 22 9 12 15 12 15 22"/>
+        </svg>
+      `
+
+      const popup = new mapboxgl.Popup({ offset: 22, closeButton: false }).setHTML(`
+        <div style="font-family: system-ui; padding: 2px;">
+          <div style="font-weight: 600; font-size: 13px; color: #4f46e5; margin-bottom: 2px;">Depot</div>
+          ${depot.address ? `<div style="font-size: 12px; color: #444;">${depot.address}</div>` : ''}
+        </div>
+      `)
+
+      const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+        .setLngLat([depot.lng, depot.lat])
+        .setPopup(popup)
+        .addTo(map)
+
+      depotMarkerRef.current = marker
+    }
+
+    if (mapLoadedRef.current) {
+      drawDepot(map)
+    } else {
+      const handler = () => drawDepot(map)
+      map.on('load', handler)
+      return () => { map.off('load', handler) }
+    }
+  }, [depot?.lat, depot?.lng, depot?.address])
 
   // Draw driver location markers (distinctive, dynamic)
   useEffect(() => {
@@ -271,9 +331,21 @@ export function RouteMap({
       for (let groupIdx = 0; groupIdx < routeGroups.length; groupIdx++) {
         const group = routeGroups[groupIdx]
         const stopsWithCoords = group.stops.filter((s) => s.lat && s.lng)
-        if (stopsWithCoords.length < 2) continue
+        if (stopsWithCoords.length < 1) continue
 
-        const coords: [number, number][] = stopsWithCoords.map((s) => [s.lng!, s.lat!])
+        // Include depot as start/end of route line if configured.
+        const coords: [number, number][] = []
+        if (depot?.lat != null && depot?.lng != null) {
+          coords.push([depot.lng, depot.lat])
+        }
+        for (const s of stopsWithCoords) {
+          coords.push([s.lng!, s.lat!])
+        }
+        if (depot?.lat != null && depot?.lng != null) {
+          coords.push([depot.lng, depot.lat])
+        }
+        if (coords.length < 2) continue
+
         const directions = await fetchDirections(coords)
 
         if (cancelled) return
@@ -324,7 +396,7 @@ export function RouteMap({
 
     drawRouteLines(map)
     return () => { cancelled = true }
-  }, [routeDataKey, showRouteLines])
+  }, [routeDataKey, showRouteLines, depot?.lat, depot?.lng])
 
   return <div ref={containerRef} className="w-full h-full" />
 }
