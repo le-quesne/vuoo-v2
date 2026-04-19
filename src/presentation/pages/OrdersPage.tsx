@@ -25,54 +25,19 @@ import type {
   Order,
   OrderItem,
   OrderStatus,
-  OrderSource,
   OrderPriority,
   Plan,
 } from '@/data/types/database'
-
-const PAGE_SIZE = 25
-
-type StatusFilter = 'all' | OrderStatus
-
-const STATUS_META: Record<OrderStatus, { label: string; classes: string; dot: string }> = {
-  pending:    { label: 'Pendiente',  classes: 'bg-amber-50 text-amber-700 border-amber-200',   dot: 'bg-amber-400' },
-  scheduled:  { label: 'Programado', classes: 'bg-blue-50 text-blue-700 border-blue-200',      dot: 'bg-blue-400' },
-  in_transit: { label: 'En ruta',    classes: 'bg-indigo-50 text-indigo-700 border-indigo-200', dot: 'bg-indigo-400' },
-  delivered:  { label: 'Entregado',  classes: 'bg-emerald-50 text-emerald-700 border-emerald-200', dot: 'bg-emerald-400' },
-  failed:     { label: 'Fallido',    classes: 'bg-red-50 text-red-700 border-red-200',          dot: 'bg-red-400' },
-  cancelled:  { label: 'Cancelado',  classes: 'bg-gray-100 text-gray-600 border-gray-200',      dot: 'bg-gray-400' },
-  returned:   { label: 'Devuelto',   classes: 'bg-orange-50 text-orange-700 border-orange-200', dot: 'bg-orange-400' },
-}
-
-const SOURCE_LABEL: Record<OrderSource, string> = {
-  manual:   'Manual',
-  csv:      'CSV',
-  shopify:  'Shopify',
-  vtex:     'VTEX',
-  api:      'API',
-  whatsapp: 'WhatsApp',
-}
-
-const PRIORITY_LABEL: Record<OrderPriority, string> = {
-  urgent: 'Urgente',
-  high:   'Alta',
-  normal: 'Normal',
-  low:    'Baja',
-}
-
-function formatDate(iso: string | null): string {
-  if (!iso) return '-'
-  const d = new Date(iso + (iso.length === 10 ? 'T00:00:00' : ''))
-  return d.toLocaleDateString('es-CL', { day: '2-digit', month: 'short' })
-}
-
-function statusCounts(orders: Order[]) {
-  const counts: Record<OrderStatus, number> = {
-    pending: 0, scheduled: 0, in_transit: 0, delivered: 0, failed: 0, cancelled: 0, returned: 0,
-  }
-  for (const o of orders) counts[o.status] += 1
-  return counts
-}
+import {
+  PAGE_SIZE,
+  STATUS_META,
+  SOURCE_LABEL,
+  PRIORITY_LABEL,
+  formatOrderDate as formatDate,
+  statusCounts,
+  parseCsv,
+  type StatusFilter,
+} from '@/presentation/features/orders/utils'
 
 export function OrdersPage() {
   const { currentOrg } = useAuth()
@@ -1295,37 +1260,6 @@ type CsvRow = {
   error?: string
   warning?: string
   geocoded?: boolean
-}
-
-function parseCsv(text: string): Record<string, string>[] {
-  const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0)
-  if (lines.length === 0) return []
-  const headers = splitCsvLine(lines[0]).map((h) => h.trim().toLowerCase())
-  return lines.slice(1).map((line) => {
-    const values = splitCsvLine(line)
-    const row: Record<string, string> = {}
-    headers.forEach((h, i) => { row[h] = (values[i] ?? '').trim() })
-    return row
-  })
-}
-
-function splitCsvLine(line: string): string[] {
-  const out: string[] = []
-  let cur = ''
-  let inQuotes = false
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i]
-    if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') { cur += '"'; i++ }
-      else inQuotes = !inQuotes
-    } else if (ch === ',' && !inQuotes) {
-      out.push(cur); cur = ''
-    } else {
-      cur += ch
-    }
-  }
-  out.push(cur)
-  return out
 }
 
 async function geocode(address: string): Promise<{ lat: number; lng: number } | null> {
