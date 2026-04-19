@@ -10,9 +10,9 @@ import {
   Tooltip,
   Legend,
 } from 'recharts'
-import { useDriverPerformance } from '@/application/hooks/useAnalyticsData'
-import { ChartCard } from '../../components/analytics/ChartCard'
-import { formatNumber, formatDistance, formatPercent } from '@/application/utils/analyticsFormat'
+import { useDriverPerformance } from '@/presentation/features/analytics/hooks/useAnalyticsData'
+import { ChartCard } from '@/presentation/features/analytics/components/ChartCard'
+import { formatNumber, formatDistance, formatPercent } from '@/presentation/features/analytics/utils/analyticsFormat'
 import { exportToCSV } from '@/application/utils/csvExport'
 import type { DriverPerformanceRow } from '@/data/types/database'
 

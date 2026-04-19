@@ -12,9 +12,9 @@ import {
   Tooltip,
   Legend,
 } from 'recharts'
-import { useAnalyticsSummary, useDailyTrend, useFeedbackSummary } from '@/application/hooks/useAnalyticsData'
-import { KPICard } from '../../components/analytics/KPICard'
-import { ChartCard } from '../../components/analytics/ChartCard'
+import { useAnalyticsSummary, useDailyTrend, useFeedbackSummary } from '@/presentation/features/analytics/hooks/useAnalyticsData'
+import { KPICard } from '@/presentation/features/analytics/components/KPICard'
+import { ChartCard } from '@/presentation/features/analytics/components/ChartCard'
 import {
   formatNumber,
   formatDistance,
@@ -22,7 +22,7 @@ import {
   formatCurrency,
   formatPercent,
   calculateDelta,
-} from '@/application/utils/analyticsFormat'
+} from '@/presentation/features/analytics/utils/analyticsFormat'
 import { exportToCSV } from '@/application/utils/csvExport'
 
 const DEFAULT_PRICE_PER_KM = 450

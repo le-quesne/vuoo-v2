@@ -15,10 +15,10 @@ import {
 import { parseISO, format } from 'date-fns'
 import { supabase } from '@/application/lib/supabase'
 import { useAuth } from '@/application/hooks/useAuth'
-import { useAnalyticsSummary, useDailyTrend } from '@/application/hooks/useAnalyticsData'
-import { KPICard } from '../../components/analytics/KPICard'
-import { ChartCard } from '../../components/analytics/ChartCard'
-import { formatDistance, formatDuration, formatPercent } from '@/application/utils/analyticsFormat'
+import { useAnalyticsSummary, useDailyTrend } from '@/presentation/features/analytics/hooks/useAnalyticsData'
+import { KPICard } from '@/presentation/features/analytics/components/KPICard'
+import { ChartCard } from '@/presentation/features/analytics/components/ChartCard'
+import { formatDistance, formatDuration, formatPercent } from '@/presentation/features/analytics/utils/analyticsFormat'
 import { exportToCSV } from '@/application/utils/csvExport'
 
 interface Props {

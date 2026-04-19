@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Calendar } from 'lucide-react'
-import type { DatePreset } from '@/application/hooks/useAnalyticsFilters'
+import type { DatePreset } from '@/presentation/features/analytics/hooks/useAnalyticsFilters'
 
 interface Props {
   from: string

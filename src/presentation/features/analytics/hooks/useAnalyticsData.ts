@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/application/lib/supabase'
-import { useAuth } from './useAuth'
+import { useAuth } from '@/application/hooks/useAuth'
 import type {
   AnalyticsSummary,
   DailyTrendRow,
