@@ -3,7 +3,7 @@ import { Plus, Search, MapPin, Map as MapIcon, List, Download, ChevronLeft, Chev
 import { supabase } from '@/application/lib/supabase'
 import { useAuth } from '@/application/hooks/useAuth'
 import { MAPBOX_TOKEN } from '@/application/lib/mapbox'
-import { SimpleMap } from '../components/RouteMap'
+import { SimpleMap } from '@/presentation/components/RouteMap'
 import type { Stop } from '@/data/types/database'
 
 const PAGE_SIZE = 20
