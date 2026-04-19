@@ -10,8 +10,6 @@ import {
   Truck,
   X,
   Search,
-  Link2,
-  Send,
   Check,
   Trash2,
   Pencil,
@@ -25,7 +23,6 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
-  useDroppable,
   closestCorners,
   DragOverlay,
   type DragEndEvent,
@@ -33,45 +30,30 @@ import {
 } from '@dnd-kit/core'
 import {
   SortableContext,
-  useSortable,
   verticalListSortingStrategy,
   arrayMove,
 } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
 import { supabase } from '@/application/lib/supabase'
 import { useAuth } from '@/application/hooks/useAuth'
 import { RouteMap, ROUTE_COLORS } from '@/presentation/components/RouteMap'
-import { PODModal } from '@/presentation/features/plans/components/PODModal'
-import { DepotConfigModal } from '@/presentation/features/plans/components/DepotConfigModal'
+import {
+  PODModal,
+  DepotConfigModal,
+  EditRouteModal,
+  ActivityTimeline,
+  PlanDetailSkeleton,
+  RouteDropZone,
+  SortablePlanStop,
+} from '@/presentation/features/plans/components'
 import { VroomWizardModal } from '@/presentation/features/planner/components/VroomWizardModal'
 import { ConfirmDialog } from '@/presentation/components/ConfirmDialog'
-import { EditRouteModal } from '@/presentation/features/plans/components/EditRouteModal'
-import { ActivityTimeline } from '@/presentation/features/plans/components/ActivityTimeline'
 import { notifyDriverRouteAssigned } from '@/data/services/notifyDriver.services'
 import { calculateRouteWeight, getCapacityStatus } from '@/presentation/features/plans/utils/capacity'
+import { routePlannedKm, routeTraveledKm } from '@/presentation/features/plans/utils/routeMetrics'
 import { MAPBOX_TOKEN, fetchDirections } from '@/application/lib/mapbox'
 import type { Plan, Route, Stop, Vehicle, Driver, PlanStopWithStop, NotificationLog, Order } from '@/data/types/database'
 
 const UNASSIGNED_ID = 'unassigned'
-
-function routePlannedKm(
-  route: { id: string; total_distance_km: number | null },
-  fetched: Record<string, number>,
-): number {
-  if (route.total_distance_km && route.total_distance_km > 0) return route.total_distance_km
-  return fetched[route.id] ?? 0
-}
-
-function routeTraveledKm(
-  route: { id: string; total_distance_km: number | null; planStops: PlanStopWithStop[] },
-  fetched: Record<string, number>,
-): number {
-  const total = routePlannedKm(route, fetched)
-  const stops = route.planStops.length
-  if (stops === 0 || total === 0) return 0
-  const completed = route.planStops.filter((ps) => ps.status === 'completed').length
-  return (completed / stops) * total
-}
 
 export function PlanDetailPage() {
   const { planId } = useParams<{ planId: string }>()
@@ -998,146 +980,7 @@ export function PlanDetailPage() {
   )
 }
 
-type OrderLite = Order | null
 
-function SortablePlanStop({
-  planStop,
-  order,
-  color,
-  selected,
-  order_obj,
-  notifLogs,
-  copied,
-  onSelect,
-  onCopyLink,
-  onDelete,
-}: {
-  planStop: PlanStopWithStop
-  order: number | null
-  color: string
-  selected: boolean
-  order_obj: OrderLite
-  notifLogs: NotificationLog[]
-  copied: boolean
-  onSelect: () => void
-  onCopyLink: () => void
-  onDelete: () => void
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: planStop.id })
-  const style = { transform: CSS.Transform.toString(transform), transition }
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      onClick={onSelect}
-      className={`flex items-center gap-2 p-2 text-xs rounded cursor-pointer ${
-        selected ? 'bg-blue-50 ring-1 ring-blue-300' : 'bg-gray-50 hover:bg-gray-100'
-      } ${isDragging ? 'opacity-40' : ''}`}
-    >
-      <button
-        {...attributes}
-        {...listeners}
-        onClick={(e) => e.stopPropagation()}
-        className="p-0.5 rounded text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing"
-        title="Arrastrar"
-      >
-        <GripVertical size={12} />
-      </button>
-      {order !== null ? (
-        <span
-          className="w-5 h-5 rounded-full flex items-center justify-center font-medium text-[10px] text-white shrink-0"
-          style={{ backgroundColor: color }}
-        >
-          {order}
-        </span>
-      ) : (
-        <MapPin size={12} className="text-gray-400 shrink-0" />
-      )}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5">
-          <div className="font-medium truncate">{planStop.stop.name}</div>
-          {order_obj && (
-            <span className="font-mono text-[10px] text-blue-600 bg-blue-50 px-1 py-px rounded shrink-0">
-              {order_obj.order_number}
-            </span>
-          )}
-        </div>
-        <div className="text-gray-400 truncate">{planStop.stop.address ?? ''}</div>
-        {order_obj && (
-          <div className="text-[10px] text-gray-400 truncate">
-            {(() => {
-              const itemCount = order_obj.items?.length ?? 0
-              const parts: string[] = []
-              if (itemCount > 0) parts.push(`${itemCount} item${itemCount === 1 ? '' : 's'}`)
-              if (order_obj.total_weight_kg > 0) parts.push(`${order_obj.total_weight_kg} kg`)
-              return parts.join(' · ')
-            })()}
-          </div>
-        )}
-        {notifLogs.length > 0 && (
-          <div className="flex items-center gap-1 mt-0.5">
-            {notifLogs.some((l) => l.channel === 'whatsapp') && (
-              <span className="w-2 h-2 rounded-full bg-green-500" title="WhatsApp enviado" />
-            )}
-            {notifLogs.some((l) => l.channel === 'email') && (
-              <span className="w-2 h-2 rounded-full bg-blue-500" title="Email enviado" />
-            )}
-            {notifLogs.some((l) => l.channel === 'sms') && (
-              <span className="w-2 h-2 rounded-full bg-purple-500" title="SMS enviado" />
-            )}
-          </div>
-        )}
-      </div>
-      <div className="flex items-center gap-1 shrink-0">
-        {planStop.tracking_token && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onCopyLink()
-            }}
-            className="p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-blue-600 transition-colors"
-            title="Copiar link de seguimiento"
-          >
-            {copied ? <Check size={12} className="text-green-500" /> : <Link2 size={12} />}
-          </button>
-        )}
-        <button
-          onClick={(e) => {
-            e.stopPropagation()
-            // Placeholder: send notification
-          }}
-          className="p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-blue-600 transition-colors"
-          title="Reenviar notificacion"
-        >
-          <Send size={12} />
-        </button>
-        <button
-          onClick={(e) => {
-            e.stopPropagation()
-            onDelete()
-          }}
-          className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-600 transition-colors"
-          title="Eliminar del plan"
-        >
-          <Trash2 size={12} />
-        </button>
-        <StatusBadge status={planStop.status} />
-      </div>
-    </div>
-  )
-}
-
-function RouteDropZone({ id, children }: { id: string; children: React.ReactNode }) {
-  const { setNodeRef, isOver } = useDroppable({ id })
-  return (
-    <div
-      ref={setNodeRef}
-      className={`px-3 pb-3 pt-1 space-y-1 min-h-[12px] transition-colors ${isOver ? 'bg-blue-50/50' : ''}`}
-    >
-      {children}
-    </div>
-  )
-}
 
 function AddStopToPlanModal({
   planId,
@@ -1612,84 +1455,5 @@ function AddVehicleToPlanModal({
   )
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const styles: Record<string, string> = {
-    pending: 'bg-yellow-100 text-yellow-700',
-    completed: 'bg-green-100 text-green-700',
-    cancelled: 'bg-red-100 text-red-700',
-    incomplete: 'bg-orange-100 text-orange-700',
-    not_started: 'bg-gray-100 text-gray-600',
-    in_transit: 'bg-blue-100 text-blue-700',
-  }
-  const labels: Record<string, string> = {
-    pending: 'Pendiente',
-    completed: 'Completada',
-    cancelled: 'Cancelada',
-    incomplete: 'Incompleta',
-    not_started: 'No empezada',
-    in_transit: 'En transito',
-  }
-  return (
-    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap ${styles[status] ?? 'bg-gray-100 text-gray-600'}`}>
-      {labels[status] ?? status}
-    </span>
-  )
-}
 
-function PlanDetailSkeleton() {
-  return (
-    <div className="flex h-screen">
-      <div className="w-96 border-r border-gray-200 bg-white flex flex-col">
-        <div className="p-4 border-b border-gray-200 space-y-3">
-          <div className="h-4 w-16 bg-gray-100 rounded animate-pulse" />
-          <div className="h-3 w-20 bg-gray-100 rounded animate-pulse" />
-          <div className="h-6 w-40 bg-gray-200 rounded animate-pulse" />
-          <div className="flex items-center justify-between gap-2 pt-1">
-            <div className="flex gap-3">
-              <div className="h-4 w-14 bg-gray-100 rounded animate-pulse" />
-              <div className="h-4 w-14 bg-gray-100 rounded animate-pulse" />
-              <div className="h-4 w-10 bg-gray-100 rounded animate-pulse" />
-            </div>
-            <div className="h-6 w-16 bg-gray-100 rounded animate-pulse" />
-          </div>
-        </div>
-        <div className="flex-1 overflow-hidden p-2 space-y-2">
-          {[0, 1].map((i) => (
-            <div key={i} className="border border-gray-100 rounded-lg p-3 space-y-3 bg-white">
-              <div className="flex items-start gap-2">
-                <div className="w-1 self-stretch rounded-full bg-gray-200" />
-                <div className="flex-1 space-y-2">
-                  <div className="h-4 w-32 bg-gray-200 rounded animate-pulse" />
-                  <div className="h-3 w-24 bg-gray-100 rounded animate-pulse" />
-                  <div className="flex gap-3">
-                    <div className="h-3 w-10 bg-gray-100 rounded animate-pulse" />
-                    <div className="h-3 w-12 bg-gray-100 rounded animate-pulse" />
-                    <div className="h-3 w-10 bg-gray-100 rounded animate-pulse" />
-                  </div>
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                {[0, 1, 2].map((j) => (
-                  <div key={j} className="flex items-center gap-2 p-2 bg-gray-50 rounded">
-                    <div className="w-5 h-5 rounded-full bg-gray-200 animate-pulse" />
-                    <div className="flex-1 space-y-1">
-                      <div className="h-3 w-28 bg-gray-200 rounded animate-pulse" />
-                      <div className="h-2.5 w-40 bg-gray-100 rounded animate-pulse" />
-                    </div>
-                    <div className="h-4 w-14 bg-gray-100 rounded animate-pulse" />
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="p-3 border-t border-gray-200 space-y-2">
-          <div className="h-9 w-full bg-gray-100 rounded-lg animate-pulse" />
-          <div className="h-9 w-full bg-gray-100 rounded-lg animate-pulse" />
-        </div>
-      </div>
-      <div className="flex-1 bg-gray-100 animate-pulse" />
-    </div>
-  )
-}
 
