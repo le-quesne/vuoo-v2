@@ -1,27 +1,14 @@
 import { useState, useEffect } from 'react'
-import { Plus, Search, Pencil, Trash2, AlertTriangle } from 'lucide-react'
+import { Plus, Search, Pencil, Trash2 } from 'lucide-react'
 import { supabase } from '@/application/lib/supabase'
 import { useAuth } from '@/application/hooks/useAuth'
-import type { Driver, DriverAvailability, DriverStatus, Vehicle } from '@/data/types/database'
-
-const AVAILABILITY_META: Record<DriverAvailability, { label: string; dot: string; text: string; bg: string }> = {
-  online: { label: 'En línea', dot: 'bg-emerald-500', text: 'text-emerald-700', bg: 'bg-emerald-50' },
-  on_break: { label: 'En pausa', dot: 'bg-amber-500', text: 'text-amber-700', bg: 'bg-amber-50' },
-  busy: { label: 'Ocupado', dot: 'bg-blue-500', text: 'text-blue-700', bg: 'bg-blue-50' },
-  off_shift: { label: 'Fuera jornada', dot: 'bg-gray-400', text: 'text-gray-600', bg: 'bg-gray-100' },
-}
-
-function AvailabilityBadge({ availability }: { availability: DriverAvailability }) {
-  const meta = AVAILABILITY_META[availability] ?? AVAILABILITY_META.off_shift
-  return (
-    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${meta.bg} ${meta.text}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
-      {meta.label}
-    </span>
-  )
-}
-
-const AVATAR_COLORS = ['#10b981', '#6366f1', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#f97316']
+import type { Driver, DriverStatus, Vehicle } from '@/data/types/database'
+import {
+  AvailabilityBadge,
+  DriverAvatar,
+  DriverStatusBadge as StatusBadge,
+  LicenseBadge,
+} from '@/presentation/features/drivers/components'
 
 const WEEK_DAYS = [
   { value: 1, label: 'Lun' },
@@ -32,60 +19,6 @@ const WEEK_DAYS = [
   { value: 6, label: 'Sab' },
   { value: 0, label: 'Dom' },
 ]
-
-function DriverAvatar({ first, last, index }: { first: string; last: string; index: number }) {
-  const initials = `${(first[0] ?? '').toUpperCase()}${(last[0] ?? '').toUpperCase()}`
-  const color = AVATAR_COLORS[index % AVATAR_COLORS.length]
-  return (
-    <div
-      className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
-      style={{ backgroundColor: color }}
-    >
-      {initials}
-    </div>
-  )
-}
-
-function StatusBadge({ status }: { status: DriverStatus }) {
-  const styles: Record<DriverStatus, string> = {
-    active: 'bg-green-50 text-green-700',
-    inactive: 'bg-gray-100 text-gray-600',
-    on_leave: 'bg-yellow-50 text-yellow-700',
-  }
-  const labels: Record<DriverStatus, string> = {
-    active: 'Activo',
-    inactive: 'Inactivo',
-    on_leave: 'Con permiso',
-  }
-  return (
-    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${styles[status]}`}>
-      {labels[status]}
-    </span>
-  )
-}
-
-function LicenseBadge({ expiry }: { expiry: string | null }) {
-  if (!expiry) return <span className="text-gray-400">-</span>
-  const days = Math.floor((new Date(expiry).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
-  const formatted = new Date(expiry).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' })
-  if (days < 0) {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-700">
-        <AlertTriangle size={12} />
-        Vencida
-      </span>
-    )
-  }
-  if (days < 30) {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-50 text-yellow-700">
-        <AlertTriangle size={12} />
-        Por vencer ({days}d)
-      </span>
-    )
-  }
-  return <span className="text-gray-500">{formatted}</span>
-}
 
 export function DriversPage() {
   const [drivers, setDrivers] = useState<Driver[]>([])
