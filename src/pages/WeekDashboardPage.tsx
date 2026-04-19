@@ -12,9 +12,9 @@ import {
 } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { ChevronLeft, ChevronRight, Plus, Truck, MapPin } from 'lucide-react'
-import { supabase } from '../lib/supabase'
-import { useAuth } from '../hooks/useAuth'
-import type { Plan } from '../types/database'
+import { supabase } from '@/application/lib/supabase'
+import { useAuth } from '@/application/hooks/useAuth'
+import type { Plan } from '@/data/types/database'
 
 interface PlanWithCounts extends Plan {
   routeCount: number

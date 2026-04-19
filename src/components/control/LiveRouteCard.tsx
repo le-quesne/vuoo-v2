@@ -16,8 +16,8 @@ import {
   getStateColor,
   type LiveRoute,
   type LiveRouteState,
-} from '../../lib/liveControl'
-import type { Stop } from '../../types/database'
+} from '@/data/services/liveControl.services'
+import type { Stop } from '@/data/types/database'
 
 interface LiveRouteCardProps {
   route: LiveRoute

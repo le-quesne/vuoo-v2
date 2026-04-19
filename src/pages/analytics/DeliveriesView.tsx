@@ -13,14 +13,14 @@ import {
   Tooltip,
   Legend,
 } from 'recharts'
-import { supabase } from '../../lib/supabase'
-import { useAuth } from '../../hooks/useAuth'
-import { useAnalyticsSummary, useCancellationReasons } from '../../hooks/useAnalyticsData'
+import { supabase } from '@/application/lib/supabase'
+import { useAuth } from '@/application/hooks/useAuth'
+import { useAnalyticsSummary, useCancellationReasons } from '@/application/hooks/useAnalyticsData'
 import { KPICard } from '../../components/analytics/KPICard'
 import { ChartCard } from '../../components/analytics/ChartCard'
-import { formatNumber } from '../../lib/analyticsFormat'
-import { exportToCSV } from '../../lib/csvExport'
-import type { PlanStop, Stop } from '../../types/database'
+import { formatNumber } from '@/application/utils/analyticsFormat'
+import { exportToCSV } from '@/application/utils/csvExport'
+import type { PlanStop, Stop } from '@/data/types/database'
 
 interface Props {
   from: string

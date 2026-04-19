@@ -10,11 +10,11 @@ import {
   Tooltip,
   Legend,
 } from 'recharts'
-import { useDriverPerformance } from '../../hooks/useAnalyticsData'
+import { useDriverPerformance } from '@/application/hooks/useAnalyticsData'
 import { ChartCard } from '../../components/analytics/ChartCard'
-import { formatNumber, formatDistance, formatPercent } from '../../lib/analyticsFormat'
-import { exportToCSV } from '../../lib/csvExport'
-import type { DriverPerformanceRow } from '../../types/database'
+import { formatNumber, formatDistance, formatPercent } from '@/application/utils/analyticsFormat'
+import { exportToCSV } from '@/application/utils/csvExport'
+import type { DriverPerformanceRow } from '@/data/types/database'
 
 interface Props {
   from: string

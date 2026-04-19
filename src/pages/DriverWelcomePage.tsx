@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
-import { useAuth } from '../hooks/useAuth'
+import { supabase } from '@/application/lib/supabase'
+import { useAuth } from '@/application/hooks/useAuth'
 
 const MOBILE_SCHEME = 'vuoo://'
 const IOS_STORE = 'https://apps.apple.com/app/vuoo/id000000000'

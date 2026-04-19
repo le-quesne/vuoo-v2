@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Send, Users, X, Loader2 } from 'lucide-react'
-import type { LiveRoute, LiveDriver } from '../../lib/liveControl'
-import { notifyDriversCustom } from '../../lib/notifyDriver'
+import type { LiveRoute, LiveDriver } from '@/data/services/liveControl.services'
+import { notifyDriversCustom } from '@/data/services/notifyDriver.services'
 
 interface BroadcastModalProps {
   routes: LiveRoute[]

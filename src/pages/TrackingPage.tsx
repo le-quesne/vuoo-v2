@@ -19,8 +19,8 @@ import {
 } from 'lucide-react'
 import { format, formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { supabase } from '../lib/supabase'
-import { MAPBOX_TOKEN, MAP_STYLE } from '../lib/mapbox'
+import { supabase } from '@/application/lib/supabase'
+import { MAPBOX_TOKEN, MAP_STYLE } from '@/application/lib/mapbox'
 
 mapboxgl.accessToken = MAPBOX_TOKEN
 

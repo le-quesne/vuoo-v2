@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { Plus, Search, Pencil, Trash2, AlertTriangle } from 'lucide-react'
-import { supabase } from '../lib/supabase'
-import { useAuth } from '../hooks/useAuth'
-import type { Driver, DriverAvailability, DriverStatus, Vehicle } from '../types/database'
+import { supabase } from '@/application/lib/supabase'
+import { useAuth } from '@/application/hooks/useAuth'
+import type { Driver, DriverAvailability, DriverStatus, Vehicle } from '@/data/types/database'
 
 const AVAILABILITY_META: Record<DriverAvailability, { label: string; dot: string; text: string; bg: string }> = {
   online: { label: 'En línea', dot: 'bg-emerald-500', text: 'text-emerald-700', bg: 'bg-emerald-50' },

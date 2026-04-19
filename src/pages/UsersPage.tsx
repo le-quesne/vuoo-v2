@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Plus, Trash2, Search } from 'lucide-react'
-import { supabase } from '../lib/supabase'
-import { useAuth } from '../hooks/useAuth'
-import type { OrgRole } from '../types/database'
+import { supabase } from '@/application/lib/supabase'
+import { useAuth } from '@/application/hooks/useAuth'
+import type { OrgRole } from '@/data/types/database'
 
 interface MemberRow {
   id: string

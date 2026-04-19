@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Building2, Users, MapPin, Calendar, Truck } from 'lucide-react'
-import { supabase } from '../../lib/supabase'
+import { supabase } from '@/application/lib/supabase'
 
 interface OrgStat {
   org_id: string

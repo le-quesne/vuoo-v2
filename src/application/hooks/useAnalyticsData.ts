@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase } from '@/application/lib/supabase'
 import { useAuth } from './useAuth'
 import type {
   AnalyticsSummary,
@@ -7,7 +7,7 @@ import type {
   DriverPerformanceRow,
   CancellationReasonRow,
   FeedbackSummary,
-} from '../types/database'
+} from '@/data/types/database'
 
 interface State<T> {
   data: T

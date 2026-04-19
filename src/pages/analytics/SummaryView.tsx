@@ -12,7 +12,7 @@ import {
   Tooltip,
   Legend,
 } from 'recharts'
-import { useAnalyticsSummary, useDailyTrend, useFeedbackSummary } from '../../hooks/useAnalyticsData'
+import { useAnalyticsSummary, useDailyTrend, useFeedbackSummary } from '@/application/hooks/useAnalyticsData'
 import { KPICard } from '../../components/analytics/KPICard'
 import { ChartCard } from '../../components/analytics/ChartCard'
 import {
@@ -22,8 +22,8 @@ import {
   formatCurrency,
   formatPercent,
   calculateDelta,
-} from '../../lib/analyticsFormat'
-import { exportToCSV } from '../../lib/csvExport'
+} from '@/application/utils/analyticsFormat'
+import { exportToCSV } from '@/application/utils/csvExport'
 
 const DEFAULT_PRICE_PER_KM = 450
 

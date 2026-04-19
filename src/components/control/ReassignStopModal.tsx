@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Loader2, X } from 'lucide-react'
-import { supabase } from '../../lib/supabase'
-import { notifyDriverStopReassigned } from '../../lib/notifyDriver'
+import { supabase } from '@/application/lib/supabase'
+import { notifyDriverStopReassigned } from '@/data/services/notifyDriver.services'
 
 export interface ReassignCandidateRoute {
   route_id: string

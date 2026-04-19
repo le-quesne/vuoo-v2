@@ -12,7 +12,7 @@ import {
   AlertTriangle,
   ChevronLeft,
 } from 'lucide-react'
-import { supabase } from '../lib/supabase'
+import { supabase } from '@/application/lib/supabase'
 
 type Mode = 'efficiency' | 'balance_stops' | 'balance_time' | 'consolidate'
 

@@ -1,6 +1,6 @@
 import { useSearchParams } from 'react-router-dom'
 import { LayoutDashboard, Package, Users, Truck, Star, Activity } from 'lucide-react'
-import { useAnalyticsFilters } from '../hooks/useAnalyticsFilters'
+import { useAnalyticsFilters } from '@/application/hooks/useAnalyticsFilters'
 import { DateRangeFilter } from '../components/analytics/DateRangeFilter'
 import { SummaryView } from './analytics/SummaryView'
 import { DeliveriesView } from './analytics/DeliveriesView'

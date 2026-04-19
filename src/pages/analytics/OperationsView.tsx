@@ -13,13 +13,13 @@ import {
   Legend,
 } from 'recharts'
 import { parseISO, format } from 'date-fns'
-import { supabase } from '../../lib/supabase'
-import { useAuth } from '../../hooks/useAuth'
-import { useAnalyticsSummary, useDailyTrend } from '../../hooks/useAnalyticsData'
+import { supabase } from '@/application/lib/supabase'
+import { useAuth } from '@/application/hooks/useAuth'
+import { useAnalyticsSummary, useDailyTrend } from '@/application/hooks/useAnalyticsData'
 import { KPICard } from '../../components/analytics/KPICard'
 import { ChartCard } from '../../components/analytics/ChartCard'
-import { formatDistance, formatDuration, formatPercent } from '../../lib/analyticsFormat'
-import { exportToCSV } from '../../lib/csvExport'
+import { formatDistance, formatDuration, formatPercent } from '@/application/utils/analyticsFormat'
+import { exportToCSV } from '@/application/utils/csvExport'
 
 interface Props {
   from: string

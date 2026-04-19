@@ -13,8 +13,8 @@ import {
   Volume2,
   VolumeX,
 } from 'lucide-react'
-import { supabase } from '../lib/supabase'
-import { useAuth } from '../hooks/useAuth'
+import { supabase } from '@/application/lib/supabase'
+import { useAuth } from '@/application/hooks/useAuth'
 import { RouteMap, ROUTE_COLORS } from '../components/RouteMap'
 import KpiBar from '../components/control/KpiBar'
 import { LiveRouteCard } from '../components/control/LiveRouteCard'
@@ -36,9 +36,9 @@ import {
   type LiveDashboard,
   type LiveLocation,
   type LiveAlert,
-} from '../lib/liveControl'
-import { isAlertSoundMuted, setAlertSoundMuted, playAlertBeep } from '../lib/alertSound'
-import type { Stop, DriverLocation, DriverAvailability, RouteStatus } from '../types/database'
+} from '@/data/services/liveControl.services'
+import { isAlertSoundMuted, setAlertSoundMuted, playAlertBeep } from '@/application/lib/alertSound'
+import type { Stop, DriverLocation, DriverAvailability, RouteStatus } from '@/data/types/database'
 
 type FilterKey = 'all' | 'in_transit' | 'problems' | 'offline' | 'completed'
 type PlanStopEntry = { planStopId: string; status: string; stop: Stop }

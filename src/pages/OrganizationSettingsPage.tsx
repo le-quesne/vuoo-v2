@@ -1,8 +1,8 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { MapPin, Save, Loader2, Check, Trash2 } from 'lucide-react'
-import { supabase } from '../lib/supabase'
-import { useAuth } from '../hooks/useAuth'
-import { MAPBOX_TOKEN } from '../lib/mapbox'
+import { supabase } from '@/application/lib/supabase'
+import { useAuth } from '@/application/hooks/useAuth'
+import { MAPBOX_TOKEN } from '@/application/lib/mapbox'
 
 type Suggestion = { place_name: string; center: [number, number] }
 

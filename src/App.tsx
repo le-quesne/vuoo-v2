@@ -4,7 +4,7 @@ import {
   Route,
   Navigate,
 } from 'react-router-dom'
-import { AuthProvider } from './contexts/AuthContext'
+import { AuthProvider } from '@/application/contexts/AuthContext'
 import { RequireAuth } from './components/RequireAuth'
 import { Layout } from './components/Layout'
 import { PlannerLayout } from './components/PlannerLayout'

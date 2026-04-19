@@ -18,9 +18,9 @@ import {
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react'
-import { supabase } from '../lib/supabase'
-import { useAuth } from '../hooks/useAuth'
-import { MAPBOX_TOKEN } from '../lib/mapbox'
+import { supabase } from '@/application/lib/supabase'
+import { useAuth } from '@/application/hooks/useAuth'
+import { MAPBOX_TOKEN } from '@/application/lib/mapbox'
 import type {
   Order,
   OrderItem,
@@ -28,7 +28,7 @@ import type {
   OrderSource,
   OrderPriority,
   Plan,
-} from '../types/database'
+} from '@/data/types/database'
 
 const PAGE_SIZE = 25
 

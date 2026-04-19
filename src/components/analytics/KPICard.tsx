@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react'
-import type { Delta } from '../../lib/analyticsFormat'
+import type { Delta } from '@/application/utils/analyticsFormat'
 
 interface Props {
   label: string

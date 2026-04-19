@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { AlertTriangle, Wrench, X, Loader2 } from 'lucide-react'
-import type { LiveRoute } from '../../lib/liveControl'
-import { supabase } from '../../lib/supabase'
+import type { LiveRoute } from '@/data/services/liveControl.services'
+import { supabase } from '@/application/lib/supabase'
 
 type IncidentType =
   | 'vehicle_breakdown'

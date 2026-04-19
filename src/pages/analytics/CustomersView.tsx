@@ -11,13 +11,13 @@ import {
   Cell,
 } from 'recharts'
 import { format, parseISO } from 'date-fns'
-import { supabase } from '../../lib/supabase'
-import { useAuth } from '../../hooks/useAuth'
-import { useAnalyticsSummary, useFeedbackSummary } from '../../hooks/useAnalyticsData'
+import { supabase } from '@/application/lib/supabase'
+import { useAuth } from '@/application/hooks/useAuth'
+import { useAnalyticsSummary, useFeedbackSummary } from '@/application/hooks/useAnalyticsData'
 import { KPICard } from '../../components/analytics/KPICard'
 import { ChartCard } from '../../components/analytics/ChartCard'
-import { formatNumber, formatPercent } from '../../lib/analyticsFormat'
-import { exportToCSV } from '../../lib/csvExport'
+import { formatNumber, formatPercent } from '@/application/utils/analyticsFormat'
+import { exportToCSV } from '@/application/utils/csvExport'
 
 interface Props {
   from: string

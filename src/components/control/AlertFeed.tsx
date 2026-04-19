@@ -11,8 +11,8 @@ import {
   WifiOff,
   XCircle,
 } from 'lucide-react'
-import type { LiveAlert, AlertPriority, AlertType } from '../../lib/liveControl'
-import { formatAge } from '../../lib/liveControl'
+import type { LiveAlert, AlertPriority, AlertType } from '@/data/services/liveControl.services'
+import { formatAge } from '@/data/services/liveControl.services'
 
 interface AlertFeedProps {
   alerts: LiveAlert[]

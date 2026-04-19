@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Plus, Search, MapPin, Map as MapIcon, List, Download, ChevronLeft, ChevronRight, X, Trash2, Pencil, User, Phone } from 'lucide-react'
-import { supabase } from '../lib/supabase'
-import { useAuth } from '../hooks/useAuth'
-import { MAPBOX_TOKEN } from '../lib/mapbox'
+import { supabase } from '@/application/lib/supabase'
+import { useAuth } from '@/application/hooks/useAuth'
+import { MAPBOX_TOKEN } from '@/application/lib/mapbox'
 import { SimpleMap } from '../components/RouteMap'
-import type { Stop } from '../types/database'
+import type { Stop } from '@/data/types/database'
 
 const PAGE_SIZE = 20
 

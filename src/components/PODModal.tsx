@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { X, MapPin, Clock, MessageSquare, Image as ImageIcon, PenLine } from 'lucide-react'
-import { supabase } from '../lib/supabase'
-import type { PlanStopWithStop } from '../types/database'
+import { supabase } from '@/application/lib/supabase'
+import type { PlanStopWithStop } from '@/data/types/database'
 
 interface PODModalProps {
   planStop: PlanStopWithStop

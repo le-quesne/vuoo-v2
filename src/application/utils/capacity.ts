@@ -1,4 +1,4 @@
-import type { Order, PlanStopWithStop } from '../types/database'
+import type { Order, PlanStopWithStop } from '@/data/types/database'
 
 export function calculateRouteWeight(
   planStops: PlanStopWithStop[],

@@ -1,7 +1,7 @@
 import { createContext, useEffect, useState, useCallback, useRef } from 'react'
 import type { User } from '@supabase/supabase-js'
-import { supabase } from '../lib/supabase'
-import type { Organization, OrganizationMember, OrgRole } from '../types/database'
+import { supabase } from '@/application/lib/supabase'
+import type { Organization, OrganizationMember, OrgRole } from '@/data/types/database'
 
 type MembershipRow = OrganizationMember & { organization: Organization }
 

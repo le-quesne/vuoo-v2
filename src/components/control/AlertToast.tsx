@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { AlertTriangle, X } from 'lucide-react'
-import type { AlertType, LiveAlert } from '../../lib/liveControl'
+import type { AlertType, LiveAlert } from '@/data/services/liveControl.services'
 
 const MAX_VISIBLE = 3
 const AUTO_DISMISS_MS = 8000

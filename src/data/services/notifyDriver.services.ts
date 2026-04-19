@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+import { supabase } from '@/application/lib/supabase'
 
 interface NotifyDriverRouteAssignedArgs {
   driverId: string

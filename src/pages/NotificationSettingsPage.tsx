@@ -13,8 +13,8 @@ import {
   Send,
   Zap,
 } from 'lucide-react'
-import { supabase } from '../lib/supabase'
-import { useAuth } from '../hooks/useAuth'
+import { supabase } from '@/application/lib/supabase'
+import { useAuth } from '@/application/hooks/useAuth'
 
 interface NotificationSettings {
   // Channels

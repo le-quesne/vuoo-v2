@@ -1,4 +1,4 @@
-import type { DriverAvailability, RouteStatus } from '../types/database'
+import type { DriverAvailability, RouteStatus } from '@/data/types/database'
 
 export interface LiveLocation {
   lat: number

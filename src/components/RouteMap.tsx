@@ -1,8 +1,8 @@
 import { useEffect, useRef, useMemo } from 'react'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
-import { MAPBOX_TOKEN, MAP_STYLE, DEFAULT_CENTER, DEFAULT_ZOOM, fetchDirections } from '../lib/mapbox'
-import type { Stop, DriverLocation } from '../types/database'
+import { MAPBOX_TOKEN, MAP_STYLE, DEFAULT_CENTER, DEFAULT_ZOOM, fetchDirections } from '@/application/lib/mapbox'
+import type { Stop, DriverLocation } from '@/data/types/database'
 
 mapboxgl.accessToken = MAPBOX_TOKEN
 

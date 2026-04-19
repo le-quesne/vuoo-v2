@@ -9,12 +9,12 @@ import {
   CartesianGrid,
   Tooltip,
 } from 'recharts'
-import { supabase } from '../../lib/supabase'
-import { useAuth } from '../../hooks/useAuth'
+import { supabase } from '@/application/lib/supabase'
+import { useAuth } from '@/application/hooks/useAuth'
 import { KPICard } from '../../components/analytics/KPICard'
 import { ChartCard } from '../../components/analytics/ChartCard'
-import { formatNumber, formatDistance, formatCurrency } from '../../lib/analyticsFormat'
-import { exportToCSV } from '../../lib/csvExport'
+import { formatNumber, formatDistance, formatCurrency } from '@/application/utils/analyticsFormat'
+import { exportToCSV } from '@/application/utils/csvExport'
 
 const FUEL_PRICE_CLP = 1200
 

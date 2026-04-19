@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Truck, User, X, Loader2 } from 'lucide-react'
-import { supabase } from '../lib/supabase'
-import { notifyDriverRouteAssigned } from '../lib/notifyDriver'
+import { supabase } from '@/application/lib/supabase'
+import { notifyDriverRouteAssigned } from '@/data/services/notifyDriver.services'
 
 interface EditRouteModalProps {
   route: {
