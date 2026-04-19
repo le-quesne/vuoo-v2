@@ -16,14 +16,14 @@ import {
 import { supabase } from '@/application/lib/supabase'
 import { useAuth } from '@/application/hooks/useAuth'
 import { RouteMap, ROUTE_COLORS } from '@/presentation/components/RouteMap'
-import KpiBar from '@/presentation/components/control/KpiBar'
-import { LiveRouteCard } from '@/presentation/components/control/LiveRouteCard'
-import AlertFeed from '@/presentation/components/control/AlertFeed'
-import AlertToastStack from '@/presentation/components/control/AlertToast'
-import BroadcastModal from '@/presentation/components/control/BroadcastModal'
-import IncidentModal from '@/presentation/components/control/IncidentModal'
-import ContactDriverMenu from '@/presentation/components/control/ContactDriverMenu'
-import { ReassignStopModal } from '@/presentation/components/control/ReassignStopModal'
+import KpiBar from '@/presentation/features/control/components/KpiBar'
+import { LiveRouteCard } from '@/presentation/features/control/components/LiveRouteCard'
+import AlertFeed from '@/presentation/features/control/components/AlertFeed'
+import AlertToastStack from '@/presentation/features/control/components/AlertToast'
+import BroadcastModal from '@/presentation/features/control/components/BroadcastModal'
+import IncidentModal from '@/presentation/features/control/components/IncidentModal'
+import ContactDriverMenu from '@/presentation/features/control/components/ContactDriverMenu'
+import { ReassignStopModal } from '@/presentation/features/control/components/ReassignStopModal'
 import {
   sortLiveRoutes,
   getLiveRouteState,
