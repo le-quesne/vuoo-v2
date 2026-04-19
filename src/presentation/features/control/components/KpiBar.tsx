@@ -1,3 +1,4 @@
+import type { JSX } from 'react'
 import { Radio, CheckCircle2, Clock, XCircle, Truck, CheckCheck } from 'lucide-react'
 import type { LiveDashboard } from '@/data/services/liveControl.services'
 

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, type JSX } from 'react'
 import { AlertTriangle, X } from 'lucide-react'
 import type { AlertType, LiveAlert } from '@/data/services/liveControl.services'
 

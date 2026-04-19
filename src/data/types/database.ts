@@ -156,12 +156,13 @@ export interface DriverLocation {
   route_id: string | null
   lat: number
   lng: number
-  accuracy: number | null
+  accuracy?: number | null
   speed: number | null
   heading: number | null
   battery: number | null
   recorded_at: string
   created_at: string
+  org_id?: string | null
 }
 
 export interface NotificationPreferences {

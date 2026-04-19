@@ -206,7 +206,7 @@ export function ControlPage() {
       .in('route_id', routeIds)
       .order('order_index')
     const grouped: Record<string, PlanStopEntry[]> = {}
-    for (const row of (stops ?? []) as Array<{
+    for (const row of (stops ?? []) as unknown as Array<{
       id: string
       route_id: string
       status: string
@@ -492,24 +492,24 @@ export function ControlPage() {
 
   const mapDriverLocations = useMemo<DriverLocation[]>(() => {
     const now = new Date().toISOString()
-    return routesLive
-      .map((r) => {
-        if (!r.last_location || !r.driver) return null
-        return {
-          id: `${r.route_id}-loc`,
-          driver_id: r.driver.id,
-          route_id: r.route_id,
-          lat: r.last_location.lat,
-          lng: r.last_location.lng,
-          speed: r.last_location.speed,
-          battery: r.last_location.battery,
-          heading: null,
-          recorded_at: r.last_location.recorded_at,
-          created_at: r.last_location.recorded_at ?? now,
-          org_id: orgId ?? '',
-        } satisfies DriverLocation
+    const result: DriverLocation[] = []
+    for (const r of routesLive) {
+      if (!r.last_location || !r.driver) continue
+      result.push({
+        id: `${r.route_id}-loc`,
+        driver_id: r.driver.id,
+        route_id: r.route_id,
+        lat: r.last_location.lat,
+        lng: r.last_location.lng,
+        speed: r.last_location.speed,
+        battery: r.last_location.battery,
+        heading: null,
+        recorded_at: r.last_location.recorded_at,
+        created_at: r.last_location.recorded_at ?? now,
+        org_id: orgId ?? '',
       })
-      .filter((x): x is DriverLocation => x !== null)
+    }
+    return result
   }, [routesLive, orgId])
 
   const driverColorByRouteId = useMemo(() => {
