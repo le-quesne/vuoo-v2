@@ -18,6 +18,9 @@ import { AnalyticsPage } from '@/presentation/pages/AnalyticsPage';
 import { NotificationSettingsPage } from '@/presentation/pages/NotificationSettingsPage';
 import { OrganizationSettingsPage } from '@/presentation/pages/OrganizationSettingsPage';
 import { SettingsLayout } from '@/presentation/pages/settings/SettingsLayout';
+import { ApiTokensPage } from '@/presentation/pages/settings/ApiTokensPage';
+import { CustomersPage } from '@/presentation/pages/CustomersPage';
+import { StopsDuplicatesPage } from '@/presentation/pages/StopsDuplicatesPage';
 import { AdminLayout } from '@/presentation/pages/admin/AdminLayout';
 import { AdminDashboard } from '@/presentation/pages/admin/AdminDashboard';
 import { AdminOrgDetail } from '@/presentation/pages/admin/AdminOrgDetail';
@@ -66,9 +69,12 @@ export function AppRouter() {
               <Route index element={<OrganizationSettingsPage />} />
               <Route path="users" element={<UsersPage />} />
               <Route path="notifications" element={<NotificationSettingsPage />} />
+              <Route path="customers" element={<CustomersPage />} />
               <Route path="places" element={<StopsPage />} />
+              <Route path="duplicates" element={<StopsDuplicatesPage />} />
               <Route path="vehicles" element={<VehiclesPage />} />
               <Route path="drivers" element={<DriversPage />} />
+              <Route path="api-tokens" element={<ApiTokensPage />} />
             </Route>
             {/* Backward-compat redirects */}
             <Route path="/stops" element={<Navigate to="/settings/places" replace />} />

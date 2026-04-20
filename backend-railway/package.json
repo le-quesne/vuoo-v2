@@ -1,0 +1,27 @@
+{
+  "name": "vuoo-routing-extensions",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Scaffold para endpoints Fase B/D del PRD 12 (geocoding, orders API, import, api-tokens). Se despliega al proyecto Railway `vuoo-rutas`.",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p .",
+    "start": "node dist/server.js",
+    "typecheck": "tsc -p . --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.14.0",
+    "@supabase/supabase-js": "^2.101.1",
+    "hono": "^4.7.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.9.3"
+  }
+}

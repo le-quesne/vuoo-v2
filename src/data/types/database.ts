@@ -1,4 +1,5 @@
 export type StopStatus = 'pending' | 'completed' | 'cancelled' | 'incomplete'
+export type StopServiceType = 'delivery' | 'pickup' | 'both'
 export type RouteStatus = 'not_started' | 'in_transit' | 'completed'
 export type FuelType = 'gasoline' | 'diesel' | 'electric' | 'hybrid'
 export type OrgRole = 'owner' | 'admin' | 'member'
@@ -14,6 +15,9 @@ export type OrderStatus =
   | 'returned'
 export type OrderSource = 'manual' | 'csv' | 'shopify' | 'vtex' | 'api' | 'whatsapp'
 export type OrderPriority = 'urgent' | 'high' | 'normal' | 'low'
+export type MatchQuality = 'high' | 'medium' | 'low' | 'none'
+export type GeocodingProvider = 'mapbox' | 'google' | 'manual'
+export type ImportTemplateSource = 'csv' | 'xlsx' | 'shopify' | 'vtex' | 'api' | 'whatsapp'
 
 export interface Organization {
   id: string
@@ -53,6 +57,10 @@ export interface Vehicle {
   created_at: string
   user_id: string
   org_id: string
+  // Fase A (PRD 12)
+  skills: string[]
+  volume_m3: number | null
+  max_stops: number | null
 }
 
 export interface Driver {
@@ -107,6 +115,17 @@ export interface Stop {
   created_at: string
   user_id: string
   org_id: string
+  // Fase A (PRD 12)
+  customer_id: string | null
+  address_hash: string | null
+  geocoding_confidence: number | null
+  geocoding_provider: GeocodingProvider | null
+  is_curated: boolean
+  priority: number
+  required_skills: string[]
+  service_type: StopServiceType
+  last_used_at: string | null
+  use_count: number
 }
 
 export interface PlanStop {
@@ -270,6 +289,70 @@ export interface Order {
   created_by: string | null
   created_at: string
   updated_at: string
+  // Fase A (PRD 12)
+  customer_id: string | null
+  match_quality: MatchQuality | null
+  match_review_needed: boolean
+}
+
+// =============================================
+// Fase A (PRD 12) — customers + infra del flujo pedido→ruta
+// =============================================
+
+export interface Customer {
+  id: string
+  org_id: string
+  customer_code: string | null
+  name: string
+  email: string | null
+  phone: string | null
+  default_time_window_start: string | null
+  default_time_window_end: string | null
+  default_service_minutes: number | null
+  default_required_skills: string[]
+  notes: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface ImportTemplate {
+  id: string
+  org_id: string
+  name: string
+  source: ImportTemplateSource
+  column_map: Record<string, string[]>
+  defaults: Record<string, unknown>
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface GeocodingCacheEntry {
+  id: string
+  org_id: string
+  address_hash: string
+  address_raw: string
+  lat: number
+  lng: number
+  confidence: number | null
+  provider: GeocodingProvider
+  hit_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface OrgApiToken {
+  id: string
+  org_id: string
+  name: string
+  token_hash: string
+  token_prefix: string
+  scopes: string[]
+  last_used_at: string | null
+  revoked_at: string | null
+  created_at: string
+  created_by: string | null
 }
 
 export interface TrackingResponse {
@@ -434,6 +517,42 @@ export interface Database {
         Update: Partial<Order>
         Relationships: []
       }
+      customers: {
+        Row: Customer
+        Insert: Omit<Customer, 'id' | 'created_at' | 'updated_at'> & {
+          id?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Customer>
+        Relationships: []
+      }
+      import_templates: {
+        Row: ImportTemplate
+        Insert: Omit<ImportTemplate, 'id' | 'created_at' | 'updated_at'> & {
+          id?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<ImportTemplate>
+        Relationships: []
+      }
+      geocoding_cache: {
+        Row: GeocodingCacheEntry
+        Insert: Omit<GeocodingCacheEntry, 'id' | 'created_at' | 'updated_at'> & {
+          id?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<GeocodingCacheEntry>
+        Relationships: []
+      }
+      org_api_tokens: {
+        Row: OrgApiToken
+        Insert: Omit<OrgApiToken, 'id' | 'created_at'> & { id?: string; created_at?: string }
+        Update: Partial<OrgApiToken>
+        Relationships: []
+      }
     }
     Views: Record<string, never>
     Functions: {
@@ -476,6 +595,43 @@ export interface Database {
       get_feedback_summary: {
         Args: { p_org_id: string; p_from?: string | null; p_to?: string | null }
         Returns: FeedbackSummary
+      }
+      vuoo_normalize_address: {
+        Args: { addr: string }
+        Returns: string
+      }
+      match_stop_for_order: {
+        Args: {
+          p_org_id: string
+          p_address: string
+          p_customer_name: string | null
+          p_customer_id: string | null
+          p_lat: number | null
+          p_lng: number | null
+        }
+        Returns: { stop_id: string | null; match_quality: MatchQuality; should_create_new: boolean }[]
+      }
+      assign_orders_to_plan: {
+        Args: { p_order_ids: string[]; p_plan_id: string; p_allow_override?: boolean }
+        Returns: {
+          order_id: string
+          stop_id: string | null
+          plan_stop_id: string | null
+          action: string
+          match_quality: MatchQuality | null
+        }[]
+      }
+      unassign_orders_from_plan: {
+        Args: { p_order_ids: string[]; p_plan_id: string }
+        Returns: number
+      }
+      merge_stops: {
+        Args: { p_loser_id: string; p_winner_id: string }
+        Returns: null
+      }
+      is_org_admin: {
+        Args: { p_org_id: string }
+        Returns: boolean
       }
     }
     Enums: {

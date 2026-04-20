@@ -62,6 +62,7 @@ export function PlanDetailPage() {
   const [routes, setRoutes] = useState<(Route & { vehicle: Vehicle | null; driver: Driver | null; planStops: PlanStopWithStop[] })[]>([])
   const [unassignedStops, setUnassignedStops] = useState<PlanStopWithStop[]>([])
   const [selectedStopId, setSelectedStopId] = useState<string | null>(null)
+  const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null)
   const [showAddStop, setShowAddStop] = useState(false)
   const [showAddVehicle, setShowAddVehicle] = useState(false)
   const [showVroomWizard, setShowVroomWizard] = useState(false)
@@ -427,10 +428,17 @@ export function PlanDetailPage() {
 
   function handleStopClick(stop: Stop) {
     setSelectedStopId(stop.id)
+    const owningRoute = routes.find((r) => r.planStops.some((ps) => ps.stop.id === stop.id))
+    setSelectedRouteId(owningRoute?.id ?? 'unassigned')
     const ps = planStopById.get(stop.id)
     if (ps && ps.status === 'completed') {
       setPodPlanStop(ps)
     }
+  }
+
+  function handleRouteSelect(routeId: string) {
+    setSelectedRouteId((prev) => (prev === routeId ? null : routeId))
+    setSelectedStopId(null)
   }
 
   const notifLogsByPlanStop = useMemo(() => {
@@ -564,10 +572,22 @@ export function PlanDetailPage() {
                 : capacity?.color === 'red' ? 'bg-red-500'
                 : 'bg-gray-300'
 
+              const isRouteSelected = selectedRouteId === route.id
               return (
-                <div key={route.id} className="border border-gray-100 rounded-lg overflow-hidden bg-white">
+                <div
+                  key={route.id}
+                  className={[
+                    'border rounded-lg overflow-hidden bg-white transition-shadow',
+                    isRouteSelected
+                      ? 'border-blue-400 ring-2 ring-blue-200 shadow-sm'
+                      : 'border-gray-100',
+                  ].join(' ')}
+                >
                   {/* Route header */}
-                  <div className="p-3 flex items-start gap-2">
+                  <div
+                    className="p-3 flex items-start gap-2 cursor-pointer hover:bg-gray-50/60"
+                    onClick={() => handleRouteSelect(route.id)}
+                  >
                     <div className="w-1 self-stretch rounded-full shrink-0" style={{ backgroundColor: color }} />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
@@ -577,6 +597,7 @@ export function PlanDetailPage() {
                             value={renameDraft}
                             onChange={(e) => setRenameDraft(e.target.value)}
                             onBlur={commitRenameRoute}
+                            onClick={(e) => e.stopPropagation()}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') {
                                 e.preventDefault()
@@ -595,7 +616,7 @@ export function PlanDetailPage() {
                               {route.name ?? route.vehicle?.name ?? 'Sin vehiculo'}
                             </span>
                             <button
-                              onClick={() => startRenameRoute(route.id, route.name ?? '')}
+                              onClick={(e) => { e.stopPropagation(); startRenameRoute(route.id, route.name ?? '') }}
                               className="p-0.5 rounded text-gray-300 hover:text-gray-600 hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
                               title="Renombrar ruta"
                             >
@@ -611,7 +632,7 @@ export function PlanDetailPage() {
                           )}
                           <div className="relative">
                             <button
-                              onClick={() => setMenuRouteId((id) => (id === route.id ? null : route.id))}
+                              onClick={(e) => { e.stopPropagation(); setMenuRouteId((id) => (id === route.id ? null : route.id)) }}
                               className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700"
                               title="Opciones"
                             >
@@ -620,13 +641,13 @@ export function PlanDetailPage() {
                             {menuRouteId === route.id && (
                               <div className="absolute right-0 top-7 z-20 w-48 bg-white border border-gray-200 rounded-lg shadow-lg py-1 text-xs">
                                 <button
-                                  onClick={() => { setEditRouteId(route.id); setMenuRouteId(null) }}
+                                  onClick={(e) => { e.stopPropagation(); setEditRouteId(route.id); setMenuRouteId(null) }}
                                   className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 text-left"
                                 >
                                   <Pencil size={12} /> Editar vehiculo/conductor
                                 </button>
                                 <button
-                                  onClick={() => { setDeleteRouteId(route.id); setMenuRouteId(null) }}
+                                  onClick={(e) => { e.stopPropagation(); setDeleteRouteId(route.id); setMenuRouteId(null) }}
                                   className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-red-50 text-red-600 text-left"
                                 >
                                   <Trash2 size={12} /> Eliminar ruta
@@ -798,6 +819,7 @@ export function PlanDetailPage() {
           routeGroups={mapRouteGroups}
           onStopClick={handleStopClick}
           selectedStopId={selectedStopId}
+          selectedRouteId={selectedRouteId}
           depot={orgDepot}
         />
       </div>

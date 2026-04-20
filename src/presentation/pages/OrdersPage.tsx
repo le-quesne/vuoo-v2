@@ -8,6 +8,7 @@ import {
   Calendar,
   ChevronLeft,
   ChevronRight,
+  Sparkles,
 } from 'lucide-react'
 import { supabase } from '@/application/lib/supabase'
 import { useAuth } from '@/application/hooks/useAuth'
@@ -24,8 +25,9 @@ import {
   StatusTab,
   OrderModal,
   ScheduleOrdersModal,
-  ImportCsvModal,
 } from '@/presentation/features/orders/components'
+import { ImportWizard } from '@/presentation/features/orders/components/ImportWizard'
+import { useOneClickOptimize } from '@/presentation/features/planner/hooks'
 
 export function OrdersPage() {
   const { currentOrg } = useAuth()
@@ -42,6 +44,23 @@ export function OrdersPage() {
   const [showSchedule, setShowSchedule] = useState(false)
 
   const [reloadTick, setReloadTick] = useState(0)
+
+  const oneClick = useOneClickOptimize(currentOrg?.id ?? '')
+
+  const handleOptimizeDay = useCallback(async () => {
+    if (!currentOrg) return
+    const today = new Date().toISOString().slice(0, 10)
+    const res = await oneClick.execute(today)
+    if (res.success) {
+      const { plan, assignReport } = res.data
+      alert(
+        `Plan del día listo: ${assignReport.created} nuevas + ${assignReport.merged} mergeadas. Abre el plan ${plan.id} para revisar.`,
+      )
+      setReloadTick((t) => t + 1)
+    } else {
+      alert(`No se pudo optimizar: ${res.error}`)
+    }
+  }, [currentOrg, oneClick])
 
   useEffect(() => {
     if (!currentOrg) return
@@ -134,6 +153,15 @@ export function OrdersPage() {
             <h1 className="text-xl font-semibold">Pedidos</h1>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={handleOptimizeDay}
+              disabled={oneClick.isRunning}
+              className="flex items-center gap-2 px-3 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Crea/usa plan de hoy, asigna pedidos pendientes y optimiza rutas"
+            >
+              <Sparkles size={16} />
+              {oneClick.isRunning ? 'Optimizando...' : 'Optimizar día'}
+            </button>
             <button
               onClick={() => setShowImport(true)}
               className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50"
@@ -335,12 +363,17 @@ export function OrdersPage() {
           onDeleted={() => { setEditing(null); reload() }}
         />
       )}
-      {showImport && (
-        <ImportCsvModal
-          onClose={() => setShowImport(false)}
-          onImported={() => { setShowImport(false); reload() }}
-        />
-      )}
+      <ImportWizard
+        open={showImport}
+        onClose={() => { setShowImport(false); reload() }}
+        onComplete={(report) => {
+          // Refresca la tabla en el fondo; el wizard sigue abierto mostrando
+          // el resumen hasta que el usuario cierre con "Ir a pedidos".
+          console.log('[ImportWizard] report recibido:', report)
+          reload()
+        }}
+      />
+
       {showSchedule && (
         <ScheduleOrdersModal
           orders={selectedOrders}

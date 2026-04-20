@@ -152,17 +152,6 @@ export function ControlPage() {
     return m;
   }, [routes]);
 
-  const selectedRoute = useMemo(
-    () => routes.find((r) => r.route_id === selectedRouteId) ?? null,
-    [routes, selectedRouteId],
-  );
-
-  const selectedStopId = useMemo(() => {
-    if (!selectedRoute) return null;
-    const first = planStopsByRoute[selectedRoute.route_id]?.[0];
-    return first?.stop.id ?? null;
-  }, [selectedRoute, planStopsByRoute]);
-
   const handleSelectRoute = useCallback((id: string) => {
     setSelectedRouteId((prev) => (prev === id ? null : id));
   }, []);
@@ -230,7 +219,7 @@ export function ControlPage() {
             driverLocations={mapDriverLocations}
             driverColorByRouteId={routeColorById}
             driverNameByRouteId={driverNameByRouteId}
-            selectedStopId={selectedStopId}
+            selectedRouteId={selectedRouteId}
             depot={orgDepot}
           />
         </div>

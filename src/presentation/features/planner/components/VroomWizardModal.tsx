@@ -13,6 +13,7 @@ import {
   ChevronLeft,
 } from 'lucide-react'
 import { supabase } from '@/application/lib/supabase'
+import { optimize as optimizeVroom } from '@/data/services/vroom'
 
 type Mode = 'efficiency' | 'balance_stops' | 'balance_time' | 'consolidate'
 
@@ -24,7 +25,7 @@ type VroomRoute = {
   ordered_plan_stop_ids: string[]
 }
 
-type VroomResponse = {
+export type VroomResponse = {
   summary: { cost: number; routes: number; unassigned: number; duration: number }
   routes: VroomRoute[]
   unassigned: Array<{ plan_stop_id: string | null; reason: string }>
@@ -92,6 +93,8 @@ export function VroomWizardModal({
   onClose,
   onApplied,
   onDepotMissing,
+  initialPreview,
+  initialMode,
 }: {
   planId: string
   numStops: number
@@ -100,50 +103,41 @@ export function VroomWizardModal({
   onClose: () => void
   onApplied: () => void
   onDepotMissing: () => void
+  /**
+   * Preview precalculado (ej. desde `useOneClickOptimize`). Si viene,
+   * el wizard abre directamente en el step 'result' y omite config/preview.
+   */
+  initialPreview?: VroomResponse
+  /** Modo seleccionado cuando viene un `initialPreview`. */
+  initialMode?: Mode
 }) {
   const [step, setStep] = useState<'config' | 'preview' | 'running' | 'result' | 'applying'>(
-    'config',
+    initialPreview ? 'result' : 'config',
   )
-  const [mode, setMode] = useState<Mode>('efficiency')
+  const [mode, setMode] = useState<Mode>(initialMode ?? 'efficiency')
   const [returnToDepot, setReturnToDepot] = useState(true)
-  const [result, setResult] = useState<VroomResponse | null>(null)
+  const [result, setResult] = useState<VroomResponse | null>(initialPreview ?? null)
   const [error, setError] = useState<string | null>(null)
 
   async function handleOptimize() {
     setStep('running')
     setError(null)
-    try {
-      const { data, error: fnErr } = await supabase.functions.invoke('optimize-routes-vroom', {
-        body: { plan_id: planId, mode, return_to_depot: returnToDepot },
-      })
 
-      if (fnErr) {
-        const details = await fnErr.context?.json?.().catch(() => null)
-        if (details?.error === 'No depot configured') {
-          onDepotMissing()
-          return
-        }
-        setError(details?.message ?? details?.error ?? fnErr.message ?? 'Error desconocido')
-        setStep('config')
+    const res = await optimizeVroom({ plan_id: planId, mode, return_to_depot: returnToDepot })
+
+    if (!res.success) {
+      // Semántica compatible con la vieja Edge Function ("No depot configured").
+      if (/no\s*depot/i.test(res.error)) {
+        onDepotMissing()
         return
       }
-
-      if (!data || data.error) {
-        if (data?.error === 'No depot configured') {
-          onDepotMissing()
-          return
-        }
-        setError(data?.message ?? data?.error ?? 'Respuesta inesperada')
-        setStep('config')
-        return
-      }
-
-      setResult(data as VroomResponse)
-      setStep('result')
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error de red')
+      setError(res.error)
       setStep('config')
+      return
     }
+
+    setResult(res.data)
+    setStep('result')
   }
 
   async function handleApply() {

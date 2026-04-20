@@ -1,3 +1,9 @@
-// TODO(fase-6b): extraer hooks usePlanner, useVroomOptimization desde
-// PlannerPage.tsx, DayDashboardPage.tsx, WeekDashboardPage.tsx.
-export {};
+export { useOneClickOptimize } from './useOneClickOptimize';
+export type {
+  OneClickOptimizeResult,
+  UseOneClickOptimizeReturn,
+  VroomPreview,
+} from './useOneClickOptimize';
+
+export { useOpportunisticReoptimize } from './useOpportunisticReoptimize';
+export type { UseOpportunisticReoptimizeReturn } from './useOpportunisticReoptimize';

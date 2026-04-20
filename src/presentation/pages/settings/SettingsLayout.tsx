@@ -5,9 +5,12 @@ const tabs = [
   { to: '/settings', label: 'General', end: true },
   { to: '/settings/users', label: 'Usuarios' },
   { to: '/settings/notifications', label: 'Notificaciones' },
+  { to: '/settings/customers', label: 'Clientes' },
   { to: '/settings/places', label: 'Lugares' },
+  { to: '/settings/duplicates', label: 'Duplicados' },
   { to: '/settings/vehicles', label: 'Vehiculos' },
   { to: '/settings/drivers', label: 'Conductores' },
+  { to: '/settings/api-tokens', label: 'API & Integraciones' },
 ]
 
 export function SettingsLayout() {

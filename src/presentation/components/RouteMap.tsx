@@ -29,6 +29,7 @@ interface RouteMapProps {
   showRouteLines?: boolean
   onStopClick?: (stop: Stop) => void
   selectedStopId?: string | null
+  selectedRouteId?: string | null
   driverLocations?: DriverLocation[]
   driverColorByRouteId?: Record<string, string>
   driverNameByRouteId?: Record<string, string>
@@ -40,6 +41,7 @@ export function RouteMap({
   showRouteLines = true,
   onStopClick,
   selectedStopId,
+  selectedRouteId,
   driverLocations,
   driverColorByRouteId,
   driverNameByRouteId,
@@ -47,7 +49,14 @@ export function RouteMap({
 }: RouteMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<mapboxgl.Map | null>(null)
-  const markersRef = useRef<mapboxgl.Marker[]>([])
+  const markersRef = useRef<Array<{
+    marker: mapboxgl.Marker
+    inner: HTMLDivElement
+    stopId: string
+    routeId: string
+    color: string
+  }>>([])
+  const routeLayerIdsRef = useRef<Array<{ routeId: string; borderId: string; layerId: string }>>([])
   const depotMarkerRef = useRef<mapboxgl.Marker | null>(null)
   const driverMarkersRef = useRef<mapboxgl.Marker[]>([])
   const mapLoadedRef = useRef(false)
@@ -90,37 +99,44 @@ export function RouteMap({
     }
   }, [])
 
-  // Update markers (sync)
+  // Create / replace markers only when the underlying data changes.
+  // Selection (selectedStopId / selectedRouteId) is applied in a separate effect
+  // that mutates styles in-place — avoids destroying and recreating markers on
+  // every click (which caused a visual "jiggle").
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
 
     function drawMarkers(map: mapboxgl.Map) {
-      markersRef.current.forEach((m) => m.remove())
+      markersRef.current.forEach(({ marker }) => marker.remove())
       markersRef.current = []
-
-      const bounds = new mapboxgl.LngLatBounds()
-      let hasPoints = false
 
       for (const group of routeGroups) {
         const stopsWithCoords = group.stops.filter((s) => s.lat && s.lng)
 
         stopsWithCoords.forEach((stop, i) => {
-          const isSelected = selectedStopId === stop.id
+          // Outer element is owned by Mapbox (it applies transform: translate here).
+          // Keep our visual styles (including scale) on an inner wrapper to avoid
+          // overriding Mapbox's position transform.
           const el = document.createElement('div')
-          el.style.cssText = `
+          el.style.cssText = `width: 30px; height: 30px;`
+
+          const inner = document.createElement('div')
+          inner.style.cssText = `
             width: 30px; height: 30px; border-radius: 50%;
             display: flex; align-items: center; justify-content: center;
             font-size: 12px; font-weight: 700; color: white;
             background: ${group.color};
             border: 2.5px solid white;
-            box-shadow: ${isSelected ? `0 0 0 3px ${group.color}40, 0 2px 8px rgba(0,0,0,0.3)` : '0 2px 8px rgba(0,0,0,0.3)'};
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
             cursor: pointer;
-            ${isSelected ? 'transform: scale(1.3);' : ''}
+            transition: transform 150ms ease, opacity 150ms ease, box-shadow 150ms ease;
+            opacity: 1;
           `
-          el.textContent = String(i + 1)
+          inner.textContent = String(i + 1)
+          el.appendChild(inner)
 
-          el.addEventListener('click', (e) => {
+          inner.addEventListener('click', (e) => {
             e.stopPropagation()
             onStopClickRef.current?.(stop)
           })
@@ -139,19 +155,14 @@ export function RouteMap({
             .setPopup(popup)
             .addTo(map)
 
-          markersRef.current.push(marker)
-          bounds.extend([stop.lng!, stop.lat!])
-          hasPoints = true
+          markersRef.current.push({
+            marker,
+            inner,
+            stopId: stop.id,
+            routeId: group.routeId,
+            color: group.color,
+          })
         })
-      }
-
-      if (depot?.lat != null && depot?.lng != null) {
-        bounds.extend([depot.lng, depot.lat])
-        hasPoints = true
-      }
-
-      if (hasPoints) {
-        map.fitBounds(bounds, { padding: 70, duration: 0 })
       }
     }
 
@@ -162,7 +173,20 @@ export function RouteMap({
       map.on('load', handler)
       return () => { map.off('load', handler) }
     }
-  }, [routeDataKey, selectedStopId, depot?.lat, depot?.lng])
+  }, [routeDataKey])
+
+  // Apply selection styles in-place (no re-creation, no jiggle)
+  useEffect(() => {
+    for (const { inner, stopId, routeId, color } of markersRef.current) {
+      const isSelected = selectedStopId === stopId
+      const isDimmed = !!selectedRouteId && routeId !== selectedRouteId
+      inner.style.opacity = isDimmed ? '0.35' : '1'
+      inner.style.transform = isSelected ? 'scale(1.35)' : ''
+      inner.style.boxShadow = isSelected
+        ? `0 0 0 3px ${color}40, 0 2px 8px rgba(0,0,0,0.3)`
+        : '0 2px 8px rgba(0,0,0,0.3)'
+    }
+  }, [selectedStopId, selectedRouteId, routeDataKey])
 
   // Depot marker (persistent, distinct from stops)
   useEffect(() => {
@@ -301,7 +325,9 @@ export function RouteMap({
     }
   }, [driverLocations, driverColorByRouteId, driverNameByRouteId])
 
-  // Fetch and draw route lines (async) — only when showRouteLines is true
+  // Fetch and draw route lines (async) — only when the underlying data changes.
+  // Selection dimming is applied via setPaintProperty in a separate effect,
+  // so clicking a route doesn't re-trigger a Directions API fetch.
   useEffect(() => {
     if (!showRouteLines) return
 
@@ -319,14 +345,15 @@ export function RouteMap({
       if (cancelled) return
 
       // Clear old route layers/sources
-      for (let i = 0; i < 20; i++) {
-        const borderId = `route-border-${i}`
-        const layerId = `route-line-${i}`
-        const sourceId = `route-src-${i}`
+      for (const { borderId, layerId } of routeLayerIdsRef.current) {
         if (map.getLayer(borderId)) map.removeLayer(borderId)
         if (map.getLayer(layerId)) map.removeLayer(layerId)
+      }
+      for (const { routeId } of routeLayerIdsRef.current) {
+        const sourceId = `route-src-${routeId}`
         if (map.getSource(sourceId)) map.removeSource(sourceId)
       }
+      routeLayerIdsRef.current = []
 
       for (let groupIdx = 0; groupIdx < routeGroups.length; groupIdx++) {
         const group = routeGroups[groupIdx]
@@ -351,9 +378,9 @@ export function RouteMap({
         if (cancelled) return
 
         if (directions) {
-          const sourceId = `route-src-${groupIdx}`
-          const borderId = `route-border-${groupIdx}`
-          const layerId = `route-line-${groupIdx}`
+          const sourceId = `route-src-${group.routeId}`
+          const borderId = `route-border-${group.routeId}`
+          const layerId = `route-line-${group.routeId}`
 
           map.addSource(sourceId, {
             type: 'geojson',
@@ -390,6 +417,8 @@ export function RouteMap({
             },
             layout: { 'line-cap': 'round', 'line-join': 'round' },
           })
+
+          routeLayerIdsRef.current.push({ routeId: group.routeId, borderId, layerId })
         }
       }
     }
@@ -397,6 +426,99 @@ export function RouteMap({
     drawRouteLines(map)
     return () => { cancelled = true }
   }, [routeDataKey, showRouteLines, depot?.lat, depot?.lng])
+
+  // Apply selection dimming to existing route layers (no redraw, no re-fetch)
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapLoadedRef.current) return
+
+    for (const { routeId, borderId, layerId } of routeLayerIdsRef.current) {
+      const isActive = !!selectedRouteId && routeId === selectedRouteId
+      const isDimmed = !!selectedRouteId && routeId !== selectedRouteId
+      if (map.getLayer(borderId)) {
+        map.setPaintProperty(borderId, 'line-opacity', isDimmed ? 0.2 : 0.8)
+        map.setPaintProperty(borderId, 'line-width', isActive ? 7 : 6)
+      }
+      if (map.getLayer(layerId)) {
+        map.setPaintProperty(layerId, 'line-opacity', isDimmed ? 0.25 : 0.9)
+        map.setPaintProperty(layerId, 'line-width', isActive ? 5 : 3.5)
+      }
+    }
+  }, [selectedRouteId, routeDataKey])
+
+  // Fit/fly to focus selection (stop > route > all)
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+
+    function focus(map: mapboxgl.Map) {
+      // Priority 1: fly to selected stop
+      if (selectedStopId) {
+        for (const group of routeGroups) {
+          const stop = group.stops.find((s) => s.id === selectedStopId)
+          if (stop && stop.lat != null && stop.lng != null) {
+            map.flyTo({
+              center: [stop.lng, stop.lat],
+              zoom: Math.max(map.getZoom(), 14),
+              duration: 700,
+              essential: true,
+            })
+            return
+          }
+        }
+      }
+
+      // Priority 2: fit bounds to selected route (+ depot)
+      if (selectedRouteId) {
+        const group = routeGroups.find((g) => g.routeId === selectedRouteId)
+        if (group) {
+          const bounds = new mapboxgl.LngLatBounds()
+          let has = false
+          for (const s of group.stops) {
+            if (s.lat != null && s.lng != null) {
+              bounds.extend([s.lng, s.lat])
+              has = true
+            }
+          }
+          if (depot?.lat != null && depot?.lng != null) {
+            bounds.extend([depot.lng, depot.lat])
+            has = true
+          }
+          if (has) {
+            map.fitBounds(bounds, { padding: 90, duration: 600, maxZoom: 15 })
+            return
+          }
+        }
+      }
+
+      // Priority 3: fit bounds to everything
+      const bounds = new mapboxgl.LngLatBounds()
+      let has = false
+      for (const group of routeGroups) {
+        for (const s of group.stops) {
+          if (s.lat != null && s.lng != null) {
+            bounds.extend([s.lng, s.lat])
+            has = true
+          }
+        }
+      }
+      if (depot?.lat != null && depot?.lng != null) {
+        bounds.extend([depot.lng, depot.lat])
+        has = true
+      }
+      if (has) {
+        map.fitBounds(bounds, { padding: 70, duration: 0 })
+      }
+    }
+
+    if (mapLoadedRef.current) {
+      focus(map)
+    } else {
+      const handler = () => focus(map)
+      map.on('load', handler)
+      return () => { map.off('load', handler) }
+    }
+  }, [routeDataKey, selectedStopId, selectedRouteId, depot?.lat, depot?.lng])
 
   return <div ref={containerRef} className="w-full h-full" />
 }
