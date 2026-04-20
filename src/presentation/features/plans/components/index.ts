@@ -6,3 +6,5 @@ export { StatusBadge } from './StatusBadge';
 export { PlanDetailSkeleton } from './PlanDetailSkeleton';
 export { RouteDropZone } from './RouteDropZone';
 export { SortablePlanStop } from './SortablePlanStop';
+export { AddStopToPlanModal } from './AddStopToPlanModal';
+export { AddVehicleToPlanModal } from './AddVehicleToPlanModal';
