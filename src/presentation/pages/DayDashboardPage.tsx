@@ -2,9 +2,11 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { format, addDays, subDays, isToday } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { ChevronLeft, ChevronRight, Plus, Truck, MapPin } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, Truck, MapPin, Trash2 } from 'lucide-react'
 import { supabase } from '@/application/lib/supabase'
 import { useAuth } from '@/application/hooks/useAuth'
+import { plansService } from '@/data/services/plans'
+import { ConfirmDialog } from '@/presentation/components/ConfirmDialog'
 import type { Plan } from '@/data/types/database'
 
 interface PlanWithCounts extends Plan {
@@ -18,6 +20,8 @@ export function DayDashboardPage() {
   const [plans, setPlans] = useState<PlanWithCounts[]>([])
   const [unassignedCount, setUnassignedCount] = useState<number>(0)
   const [loading, setLoading] = useState<boolean>(false)
+  const [deleteTarget, setDeleteTarget] = useState<PlanWithCounts | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const navigate = useNavigate()
   const { user, currentOrg } = useAuth()
 
@@ -89,6 +93,18 @@ export function DayDashboardPage() {
     }
   }
 
+  async function confirmDelete() {
+    if (!deleteTarget) return
+    setDeleteError(null)
+    const res = await plansService.deletePlan(deleteTarget.id)
+    if (!res.success) {
+      setDeleteError(res.error)
+      return
+    }
+    setPlans((prev) => prev.filter((p) => p.id !== deleteTarget.id))
+    setDeleteTarget(null)
+  }
+
   const isSelectedToday = isToday(selectedDate)
   const weekday = format(selectedDate, 'EEEE', { locale: es })
   const dateLabel = format(selectedDate, "d MMM yyyy", { locale: es })
@@ -135,9 +151,20 @@ export function DayDashboardPage() {
           return (
             <div
               key={plan.id}
-              className="p-5 bg-white border border-gray-200 rounded-lg hover:border-blue-300 hover:shadow-sm transition-all flex flex-col"
+              className="group relative p-5 bg-white border border-gray-200 rounded-lg hover:border-blue-300 hover:shadow-sm transition-all flex flex-col"
             >
-              <h3 className="text-lg font-semibold text-gray-900 mb-2 truncate">
+              <button
+                onClick={() => {
+                  setDeleteError(null)
+                  setDeleteTarget(plan)
+                }}
+                aria-label={`Eliminar ${plan.name}`}
+                title="Eliminar plan"
+                className="absolute top-2 right-2 p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+              >
+                <Trash2 size={16} />
+              </button>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2 truncate pr-8">
                 {plan.name}
               </h3>
               <div className="flex items-center gap-4 text-sm text-gray-500 mb-4">
@@ -206,6 +233,27 @@ export function DayDashboardPage() {
       {loading && plans.length === 0 && (
         <div className="mt-6 text-center text-sm text-gray-400">Cargando...</div>
       )}
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        variant="danger"
+        title="Eliminar plan"
+        message={
+          deleteTarget
+            ? (deleteTarget.stopCount > 0 || deleteTarget.routeCount > 0
+                ? `¿Eliminar "${deleteTarget.name}"?\n\nEste plan tiene ${deleteTarget.routeCount} ruta${deleteTarget.routeCount === 1 ? '' : 's'} y ${deleteTarget.stopCount} parada${deleteTarget.stopCount === 1 ? '' : 's'} que también se eliminarán. Esta acción no se puede deshacer.`
+                : `¿Eliminar "${deleteTarget.name}"?\n\nEsta acción no se puede deshacer.`) +
+              (deleteError ? `\n\nError: ${deleteError}` : '')
+            : ''
+        }
+        confirmLabel="Eliminar"
+        cancelLabel="Cancelar"
+        onConfirm={confirmDelete}
+        onCancel={() => {
+          setDeleteTarget(null)
+          setDeleteError(null)
+        }}
+      />
     </div>
   )
 }
