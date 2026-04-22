@@ -9,15 +9,15 @@ import {
   Shield,
   ChevronsLeft,
   ChevronsRight,
-  Activity,
 } from 'lucide-react'
 import { supabase } from '@/application/lib/supabase'
 import { useAuth } from '@/application/hooks/useAuth'
+import { ControlTowerIcon } from './ControlTowerIcon'
 
 const navItems = [
   { to: '/planner', icon: Calendar, label: 'Planner' },
   { to: '/orders', icon: Package, label: 'Pedidos', badgeKey: 'pendingOrders' as const },
-  { to: '/control', icon: Activity, label: 'Control', badgeKey: 'controlAlerts' as const },
+  { to: '/control', icon: ControlTowerIcon, label: 'Control', badgeKey: 'controlAlerts' as const },
   { to: '/analytics', icon: BarChart3, label: 'Analytics' },
 ]
 
