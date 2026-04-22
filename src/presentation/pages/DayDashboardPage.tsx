@@ -248,6 +248,7 @@ export function DayDashboardPage() {
         }
         confirmLabel="Eliminar"
         cancelLabel="Cancelar"
+        confirmText="ELIMINAR"
         onConfirm={confirmDelete}
         onCancel={() => {
           setDeleteTarget(null)

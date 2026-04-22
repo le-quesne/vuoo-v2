@@ -8,6 +8,7 @@ interface ConfirmDialogProps {
   confirmLabel?: string
   cancelLabel?: string
   variant?: 'danger' | 'default'
+  confirmText?: string
   onConfirm: () => void | Promise<void>
   onCancel: () => void
 }
@@ -19,10 +20,12 @@ export function ConfirmDialog({
   confirmLabel = 'Confirmar',
   cancelLabel = 'Cancelar',
   variant = 'default',
+  confirmText,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
   const [loading, setLoading] = useState(false)
+  const [typed, setTyped] = useState('')
 
   useEffect(() => {
     if (!open) return
@@ -34,8 +37,15 @@ export function ConfirmDialog({
   }, [open, loading, onCancel])
 
   useEffect(() => {
-    if (!open) setLoading(false)
+    if (!open) {
+      setLoading(false)
+      setTyped('')
+    }
   }, [open])
+
+  const requiresText = typeof confirmText === 'string' && confirmText.length > 0
+  const textMatches = requiresText ? typed.trim() === confirmText : true
+  const confirmDisabled = loading || !textMatches
 
   if (!open) return null
 
@@ -87,6 +97,23 @@ export function ConfirmDialog({
 
         <div className="p-5">
           <p className="text-sm text-gray-600 whitespace-pre-line">{message}</p>
+          {requiresText && (
+            <div className="mt-4">
+              <label className="block text-xs text-gray-600 mb-1">
+                Para confirmar, escribe{' '}
+                <span className="font-mono font-semibold text-gray-900">{confirmText}</span>
+              </label>
+              <input
+                type="text"
+                value={typed}
+                onChange={(e) => setTyped(e.target.value)}
+                disabled={loading}
+                autoFocus
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent disabled:opacity-50"
+                placeholder={confirmText}
+              />
+            </div>
+          )}
         </div>
 
         <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-100 bg-gray-50 rounded-b-xl">
@@ -99,8 +126,8 @@ export function ConfirmDialog({
           </button>
           <button
             onClick={handleConfirm}
-            disabled={loading}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white rounded-lg disabled:opacity-50 ${confirmClasses}`}
+            disabled={confirmDisabled}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed ${confirmClasses}`}
           >
             {loading && <Loader2 size={14} className="animate-spin" />}
             {confirmLabel}
