@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Sparkles,
+  Trash2,
 } from 'lucide-react'
 import { supabase } from '@/application/lib/supabase'
 import { useAuth } from '@/application/hooks/useAuth'
@@ -28,6 +29,8 @@ import {
 } from '@/presentation/features/orders/components'
 import { ImportWizard } from '@/presentation/features/orders/components/ImportWizard'
 import { useOneClickOptimize } from '@/presentation/features/planner/hooks'
+import { ConfirmDialog } from '@/presentation/components/ConfirmDialog'
+import { deleteOrders } from '@/data/services/orders'
 
 export function OrdersPage() {
   const { currentOrg } = useAuth()
@@ -42,6 +45,8 @@ export function OrdersPage() {
   const [editing, setEditing] = useState<Order | null>(null)
   const [showImport, setShowImport] = useState(false)
   const [showSchedule, setShowSchedule] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<{ ids: string[]; isBulk: boolean } | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const [reloadTick, setReloadTick] = useState(0)
 
@@ -89,6 +94,23 @@ export function OrdersPage() {
   }, [currentOrg, page, statusFilter, reloadTick])
 
   const reload = useCallback(() => setReloadTick((t) => t + 1), [])
+
+  async function confirmDelete() {
+    if (!deleteTarget) return
+    setDeleteError(null)
+    const res = await deleteOrders(deleteTarget.ids)
+    if (!res.success) {
+      setDeleteError(res.error)
+      return
+    }
+    setSelected((prev) => {
+      const next = new Set(prev)
+      deleteTarget.ids.forEach((id) => next.delete(id))
+      return next
+    })
+    setDeleteTarget(null)
+    reload()
+  }
 
   function changeStatusFilter(next: StatusFilter) {
     setStatusFilter(next)
@@ -206,17 +228,29 @@ export function OrdersPage() {
             />
           </div>
 
-          {selectedOrders.length > 0 && (
+          {selected.size > 0 && (
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-500">
-                {selectedOrders.length} seleccionado{selectedOrders.length === 1 ? '' : 's'}
+                {selected.size} seleccionado{selected.size === 1 ? '' : 's'}
               </span>
+              {selectedOrders.length > 0 && (
+                <button
+                  onClick={() => setShowSchedule(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-lg text-sm font-medium hover:bg-emerald-600"
+                >
+                  <Calendar size={16} />
+                  Programar seleccion
+                </button>
+              )}
               <button
-                onClick={() => setShowSchedule(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-lg text-sm font-medium hover:bg-emerald-600"
+                onClick={() => {
+                  setDeleteError(null)
+                  setDeleteTarget({ ids: Array.from(selected), isBulk: true })
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-medium hover:bg-red-600"
               >
-                <Calendar size={16} />
-                Programar seleccion
+                <Trash2 size={16} />
+                Eliminar ({selected.size})
               </button>
             </div>
           )}
@@ -310,12 +344,25 @@ export function OrdersPage() {
                         </span>
                       </td>
                       <td className="p-3">
-                        <button
-                          onClick={() => setEditing(o)}
-                          className="p-1.5 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50 opacity-0 group-hover:opacity-100 transition-opacity"
-                        >
-                          <Pencil size={14} />
-                        </button>
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => setEditing(o)}
+                            className="p-1.5 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50"
+                            title="Editar pedido"
+                          >
+                            <Pencil size={14} />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setDeleteError(null)
+                              setDeleteTarget({ ids: [o.id], isBulk: false })
+                            }}
+                            className="p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50"
+                            title="Eliminar pedido"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   )
@@ -385,6 +432,29 @@ export function OrdersPage() {
           }}
         />
       )}
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        variant="danger"
+        title={deleteTarget?.isBulk ? `Eliminar ${deleteTarget.ids.length} pedido${deleteTarget.ids.length === 1 ? '' : 's'}` : 'Eliminar pedido'}
+        message={
+          deleteTarget
+            ? deleteTarget.isBulk
+              ? `¿Eliminar los ${deleteTarget.ids.length} pedido${deleteTarget.ids.length === 1 ? '' : 's'} seleccionado${deleteTarget.ids.length === 1 ? '' : 's'}? Esta acción no se puede deshacer.` +
+                (deleteError ? `\n\nError: ${deleteError}` : '')
+              : `¿Eliminar este pedido? Esta acción no se puede deshacer.` +
+                (deleteError ? `\n\nError: ${deleteError}` : '')
+            : ''
+        }
+        confirmLabel="Eliminar"
+        cancelLabel="Cancelar"
+        confirmText="ELIMINAR"
+        onConfirm={confirmDelete}
+        onCancel={() => {
+          setDeleteTarget(null)
+          setDeleteError(null)
+        }}
+      />
     </div>
   )
 }
