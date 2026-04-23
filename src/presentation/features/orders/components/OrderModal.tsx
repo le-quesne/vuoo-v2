@@ -3,6 +3,8 @@ import { AlertCircle, Clock, Package, Plus, X, Trash2, User as UserIcon, MapPin,
 import { supabase } from '@/application/lib/supabase';
 import { useAuth } from '@/application/hooks/useAuth';
 import { AddressAutocomplete } from '@/presentation/components/AddressAutocomplete';
+import { ConfirmDialog } from '@/presentation/components/ConfirmDialog';
+import { deleteOrders } from '@/data/services/orders';
 import type { Order, OrderItem, OrderPriority } from '@/data/types/database';
 import {
   PRIORITY_LABEL,
@@ -32,7 +34,8 @@ export function OrderModal({
     order?.lat != null && order?.lng != null ? { lat: order.lat, lng: order.lng } : null,
   )
   const [saving, setSaving] = useState(false)
-  const [deleting, setDeleting] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [tagDraft, setTagDraft] = useState('')
   const [error, setError] = useState<string | null>(null)
 
@@ -125,15 +128,12 @@ export function OrderModal({
 
   async function handleDelete() {
     if (!order) return
-    if (order.status !== 'pending') {
-      alert('Solo se pueden eliminar pedidos en estado pendiente. Cancela el pedido en su lugar.')
+    setDeleteError(null)
+    const res = await deleteOrders([order.id])
+    if (!res.success) {
+      setDeleteError(res.error)
       return
     }
-    if (!confirm('Eliminar este pedido? Esta accion no se puede deshacer.')) return
-    setDeleting(true)
-    const { error: delErr } = await supabase.from('orders').delete().eq('id', order.id)
-    setDeleting(false)
-    if (delErr) { setError(delErr.message); return }
     onDeleted?.()
   }
 
@@ -389,13 +389,12 @@ export function OrderModal({
         </div>
 
         <div className="flex gap-2 px-6 py-4 border-t border-gray-100 sticky bottom-0 bg-white">
-          {mode === 'edit' && order?.status === 'pending' && (
+          {mode === 'edit' && (
             <button
               type="button"
-              onClick={handleDelete}
-              disabled={deleting}
-              className="p-2 border border-red-200 rounded-lg text-red-500 hover:bg-red-50 disabled:opacity-50"
-              title="Eliminar"
+              onClick={() => { setDeleteError(null); setShowDeleteConfirm(true) }}
+              className="p-2 border border-red-200 rounded-lg text-red-500 hover:bg-red-50"
+              title="Eliminar pedido"
             >
               <Trash2 size={16} />
             </button>
@@ -416,6 +415,21 @@ export function OrderModal({
           </button>
         </div>
       </form>
+
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        variant="danger"
+        title="Eliminar pedido"
+        message={
+          `¿Eliminar el pedido ${order?.order_number}? Esta acción no se puede deshacer.` +
+          (deleteError ? `\n\nError: ${deleteError}` : '')
+        }
+        confirmLabel="Eliminar"
+        cancelLabel="Cancelar"
+        confirmText="ELIMINAR"
+        onConfirm={handleDelete}
+        onCancel={() => { setShowDeleteConfirm(false); setDeleteError(null) }}
+      />
     </div>
   )
 }
