@@ -119,10 +119,12 @@ serve(async (req) => {
       )
     }
 
-    // Caller debe ser miembro de la org
+    // Caller debe ser owner o admin de la org. Drivers/members no pueden
+    // crear nuevos drivers (vector de escalación lateral si la cuenta del
+    // miembro está comprometida).
     const { data: membership, error: membershipError } = await adminClient
       .from('organization_members')
-      .select('org_id, role')
+      .select('role')
       .eq('org_id', org_id)
       .eq('user_id', callerId)
       .maybeSingle()
@@ -133,9 +135,9 @@ serve(async (req) => {
         500,
       )
     }
-    if (!membership) {
+    if (!membership || (membership.role !== 'owner' && membership.role !== 'admin')) {
       return jsonResponse(
-        { error: 'No autorizado: no eres miembro de esta organizacion' },
+        { error: 'No autorizado: solo owners o admins pueden crear conductores' },
         403,
       )
     }
@@ -285,14 +287,44 @@ serve(async (req) => {
       emailError = 'Resend API key not configured'
     }
 
+    // Si el email se envió OK, no devolvemos credenciales en el response.
+    // El admin no las necesita y exponerlas en JSON las hace visibles a
+    // proxies, logs HTTP y cualquier `console.log(response)` accidental.
+    if (emailSent) {
+      return jsonResponse(
+        {
+          driver,
+          email_sent: true,
+          email_error: null,
+        },
+        200,
+      )
+    }
+
+    // Email falló: el admin necesita una forma de darle acceso al driver
+    // manualmente. Generamos un magic link single-use (preferido) en lugar
+    // de devolver el password en plaintext, que quedaría en cualquier log.
+    let recoveryLink: string | null = null
+    try {
+      const { data: linkData } = await adminClient.auth.admin.generateLink({
+        type: 'magiclink',
+        email,
+      })
+      recoveryLink = linkData?.properties?.action_link ?? null
+    } catch {
+      // Si generateLink falla, dejamos recoveryLink null y devolvemos
+      // temp_password como fallback de último recurso.
+    }
+
     return jsonResponse(
       {
         driver,
-        email_sent: emailSent,
+        email_sent: false,
         email_error: emailError,
-        // Siempre devolvemos la temp_password para que el admin pueda
-        // entregarla manualmente si el email fallo.
-        temp_password: tempPassword,
+        // Preferimos magic link single-use sobre password permanente. Solo
+        // expone temp_password si Supabase no pudo generar el link.
+        recovery_link: recoveryLink,
+        temp_password: recoveryLink ? null : tempPassword,
       },
       200,
     )
