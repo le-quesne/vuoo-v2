@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { Upload, FileText, Download, AlertCircle } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import { readSheet } from 'read-excel-file/browser';
 import { parseCsv } from '@/presentation/features/orders/utils/csv';
 import { CANONICAL_COLUMNS, CANONICAL_LABELS } from '../types/import.types';
 import type { WizardState } from '../types/import.types';
@@ -19,22 +19,17 @@ async function parseXlsx(file: File): Promise<{
   headers: string[];
   rows: Record<string, string>[];
 }> {
-  const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, { type: 'array' });
-  const sheetName = wb.SheetNames[0];
-  if (!sheetName) return { headers: [], rows: [] };
-  const sheet = wb.Sheets[sheetName];
-  const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
-    defval: '',
-  });
-  if (rawRows.length === 0) return { headers: [], rows: [] };
-  const headers = Object.keys(rawRows[0]).map((h) => h.trim());
-  const rows = rawRows.map((r) => {
+  const sheet = await readSheet(file);
+  if (sheet.length === 0) return { headers: [], rows: [] };
+  const [headerRow, ...dataRows] = sheet;
+  const headers = headerRow.map((h) => (h == null ? '' : String(h).trim()));
+  if (headers.length === 0) return { headers: [], rows: [] };
+  const rows = dataRows.map((row) => {
     const out: Record<string, string> = {};
-    for (const h of headers) {
-      const val = r[h];
+    headers.forEach((h, idx) => {
+      const val = row[idx];
       out[h] = val == null ? '' : String(val).trim();
-    }
+    });
     return out;
   });
   return { headers, rows };
@@ -45,7 +40,7 @@ async function parseFile(file: File): Promise<{
   rows: Record<string, string>[];
 }> {
   const ext = file.name.toLowerCase().split('.').pop();
-  if (ext === 'xlsx' || ext === 'xls') {
+  if (ext === 'xlsx') {
     return parseXlsx(file);
   }
   const text = await file.text();
@@ -156,7 +151,7 @@ export function Step1FileDrop({ state, onFileLoaded }: Step1FileDropProps) {
         <input
           ref={inputRef}
           type="file"
-          accept=".csv,.xlsx,.xls,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           className="hidden"
           onChange={(e) => {
             const f = e.target.files?.[0];

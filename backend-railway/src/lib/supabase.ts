@@ -40,6 +40,10 @@ export const supabaseServiceRole: SupabaseClient | null = SUPABASE_SERVICE_ROLE_
   : null;
 
 /**
- * Alias backward-compat. Usar `supabaseServiceRole` o `supabaseFromJWT` explícitamente.
+ * Alias explícito al cliente service-role. NO usar para queries del usuario:
+ * bypassea RLS. Las rutas autenticadas deben usar `supabaseFromJWT(authHeader)`
+ * para que la RLS aplique. Solo usar este alias cuando la ruta autentica vía
+ * `org_api_tokens` (donde no hay JWT del usuario) y se filtra `org_id`
+ * manualmente en cada query.
  */
-export const supabase = supabaseServiceRole ?? supabaseAnon;
+export const supabaseUnsafeServiceRole: SupabaseClient | null = supabaseServiceRole;

@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
-import { supabase } from '@/lib/supabase';
-import { requireScope } from '@/middleware/auth';
+import { supabaseUnsafeServiceRole } from '../lib/supabase.js';
+import { requireScope } from '../middleware/auth.js';
 
 export const ordersApiRoutes = new Hono();
 
@@ -53,6 +53,16 @@ const OrderSchema = z.object({
  */
 ordersApiRoutes.post('/', requireScope('orders:write'), async (c) => {
   const auth = c.var.auth;
+  const db = supabaseUnsafeServiceRole;
+  if (!db) {
+    return c.json(
+      {
+        error: 'service_role_not_configured',
+        detail: 'Este endpoint requiere SUPABASE_SERVICE_ROLE_KEY. Provisionalo en Railway.',
+      },
+      501,
+    );
+  }
   const idempotencyKey = c.req.header('Idempotency-Key');
   if (!idempotencyKey) {
     return c.json({ error: 'missing_idempotency_key' }, 400);
@@ -68,7 +78,7 @@ ordersApiRoutes.post('/', requireScope('orders:write'), async (c) => {
   const externalIdKey = `idem:${hashIdemKey(auth.orgId, idempotencyKey)}`;
 
   // Dedupe: si ya existe una order con este external_id en la org, devuelve la existente.
-  const { data: existing } = await supabase
+  const { data: existing } = await db
     .from('orders')
     .select('id, stop_id, match_quality')
     .eq('org_id', auth.orgId)
@@ -88,7 +98,7 @@ ordersApiRoutes.post('/', requireScope('orders:write'), async (c) => {
   }
 
   // match_stop_for_order (Fase B).
-  const { data: matchRows, error: matchErr } = await supabase.rpc(
+  const { data: matchRows, error: matchErr } = await db.rpc(
     'match_stop_for_order',
     {
       p_org_id: auth.orgId,
@@ -111,7 +121,7 @@ ordersApiRoutes.post('/', requireScope('orders:write'), async (c) => {
 
   let stopId = match.stop_id;
   if (match.should_create_new) {
-    const { data: newStop, error: sErr } = await supabase
+    const { data: newStop, error: sErr } = await db
       .from('stops')
       .insert({
         org_id: auth.orgId,
@@ -131,7 +141,7 @@ ordersApiRoutes.post('/', requireScope('orders:write'), async (c) => {
     stopId = newStop.id;
   }
 
-  const { data: order, error: oErr } = await supabase
+  const { data: order, error: oErr } = await db
     .from('orders')
     .insert({
       org_id: auth.orgId,
