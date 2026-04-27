@@ -1,9 +1,12 @@
 import { useCallback, useRef, useState } from 'react';
-import { Upload, FileText, Download, AlertCircle } from 'lucide-react';
-import { readSheet } from 'read-excel-file/browser';
-import { parseCsv } from '@/presentation/features/orders/utils/csv';
+import { Upload, FileText, Download, AlertCircle, AlertTriangle } from 'lucide-react';
 import { CANONICAL_COLUMNS, CANONICAL_LABELS } from '../types/import.types';
 import type { WizardState } from '../types/import.types';
+import { parseFile, ParseError } from '../utils/parsing';
+import {
+  MAX_FILE_SIZE_BYTES,
+  FILE_SIZE_WARNING_BYTES,
+} from '../constants';
 
 interface Step1FileDropProps {
   state: WizardState;
@@ -12,43 +15,14 @@ interface Step1FileDropProps {
     fileName: string;
     headers: string[];
     rawRows: Record<string, string>[];
+    warnings: string[];
   }) => void;
 }
 
-async function parseXlsx(file: File): Promise<{
-  headers: string[];
-  rows: Record<string, string>[];
-}> {
-  const sheet = await readSheet(file);
-  if (sheet.length === 0) return { headers: [], rows: [] };
-  const [headerRow, ...dataRows] = sheet;
-  const headers = headerRow.map((h) => (h == null ? '' : String(h).trim()));
-  if (headers.length === 0) return { headers: [], rows: [] };
-  const rows = dataRows.map((row) => {
-    const out: Record<string, string> = {};
-    headers.forEach((h, idx) => {
-      const val = row[idx];
-      out[h] = val == null ? '' : String(val).trim();
-    });
-    return out;
-  });
-  return { headers, rows };
-}
-
-async function parseFile(file: File): Promise<{
-  headers: string[];
-  rows: Record<string, string>[];
-}> {
-  const ext = file.name.toLowerCase().split('.').pop();
-  if (ext === 'xlsx') {
-    return parseXlsx(file);
-  }
-  const text = await file.text();
-  const rows = parseCsv(text);
-  if (rows.length === 0) return { headers: [], rows: [] };
-  // parseCsv ya lowercasea los headers, reconstruimos preservando esos keys.
-  const headers = Object.keys(rows[0]);
-  return { headers, rows };
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function buildSampleCsv(): string {
@@ -71,9 +45,9 @@ function buildSampleCsv(): string {
   return `${header}\n${example}\n`;
 }
 
-function downloadSample() {
+function downloadCsvTemplate() {
   const csv = buildSampleCsv();
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -82,27 +56,71 @@ function downloadSample() {
   URL.revokeObjectURL(url);
 }
 
+const ROUTING_BASE = import.meta.env.VITE_ROUTING_BASE_URL as string | undefined;
+
+async function downloadXlsxTemplate(): Promise<{ ok: boolean; error?: string }> {
+  if (!ROUTING_BASE) {
+    return { ok: false, error: 'VITE_ROUTING_BASE_URL no configurada' };
+  }
+  try {
+    const res = await fetch(`${ROUTING_BASE}/templates/orders.xlsx`);
+    if (!res.ok) {
+      return { ok: false, error: `HTTP ${res.status}` };
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'plantilla_pedidos_vuoo.xlsx';
+    a.click();
+    URL.revokeObjectURL(url);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Error de red' };
+  }
+}
+
 export function Step1FileDrop({ state, onFileLoaded }: Step1FileDropProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
   const [isParsing, setIsParsing] = useState(false);
+  const [xlsxDlError, setXlsxDlError] = useState<string | null>(null);
+  const [parseWarnings, setParseWarnings] = useState<string[]>([]);
 
   const handleFile = useCallback(
     async (file: File) => {
       setParseError(null);
+      setParseWarnings([]);
+
+      if (file.size > MAX_FILE_SIZE_BYTES) {
+        setParseError(
+          `El archivo pesa ${formatBytes(file.size)}; máximo permitido ${formatBytes(MAX_FILE_SIZE_BYTES)}.`,
+        );
+        return;
+      }
+
       setIsParsing(true);
       try {
-        const { headers, rows } = await parseFile(file);
-        if (headers.length === 0 || rows.length === 0) {
+        const result = await parseFile(file);
+        if (result.headers.length === 0 || result.rows.length === 0) {
           setParseError('El archivo está vacío o no tiene filas de datos.');
           return;
         }
-        onFileLoaded({ file, fileName: file.name, headers, rawRows: rows });
+        onFileLoaded({
+          file,
+          fileName: file.name,
+          headers: result.headers,
+          rawRows: result.rows,
+          warnings: result.warnings,
+        });
+        setParseWarnings(result.warnings);
       } catch (e) {
-        setParseError(
-          e instanceof Error ? e.message : 'No se pudo leer el archivo',
-        );
+        if (e instanceof ParseError) {
+          setParseError(e.message);
+        } else {
+          setParseError(e instanceof Error ? e.message : 'No se pudo leer el archivo');
+        }
       } finally {
         setIsParsing(false);
       }
@@ -114,11 +132,18 @@ export function Step1FileDrop({ state, onFileLoaded }: Step1FileDropProps) {
     (e: React.DragEvent<HTMLDivElement>) => {
       e.preventDefault();
       setIsDragging(false);
-      const file = e.dataTransfer.files?.[0];
-      if (file) void handleFile(file);
+      const files = e.dataTransfer.files;
+      if (!files || files.length === 0) return;
+      if (files.length > 1) {
+        setParseError('Soltá un solo archivo a la vez.');
+        return;
+      }
+      void handleFile(files[0]);
     },
     [handleFile],
   );
+
+  const isLargeFile = state.file && state.file.size > FILE_SIZE_WARNING_BYTES;
 
   return (
     <div className="space-y-5">
@@ -163,7 +188,7 @@ export function Step1FileDrop({ state, onFileLoaded }: Step1FileDropProps) {
           {isParsing ? 'Leyendo archivo…' : 'Soltá el archivo o hacé clic para buscarlo'}
         </div>
         <div className="text-xs text-gray-400 mt-1">
-          CSV, XLSX — hasta ~10 MB
+          CSV, XLSX — hasta {formatBytes(MAX_FILE_SIZE_BYTES)}
         </div>
       </div>
 
@@ -173,9 +198,29 @@ export function Step1FileDrop({ state, onFileLoaded }: Step1FileDropProps) {
           <div className="flex-1">
             <div className="font-medium text-emerald-900">{state.fileName}</div>
             <div className="text-xs text-emerald-700">
-              {state.rawRows.length} fila{state.rawRows.length === 1 ? '' : 's'} detectadas — {state.headers.length} columnas
+              {state.rawRows.length} fila{state.rawRows.length === 1 ? '' : 's'} detectadas — {state.headers.length} columnas — {formatBytes(state.file.size)}
             </div>
           </div>
+        </div>
+      )}
+
+      {isLargeFile && !parseError && (
+        <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+          <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+          <span>
+            Archivo grande ({formatBytes(state.file!.size)}). El procesamiento puede tardar varios segundos.
+          </span>
+        </div>
+      )}
+
+      {parseWarnings.length > 0 && (
+        <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+          <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+          <ul className="space-y-0.5 list-disc list-inside">
+            {parseWarnings.map((w, i) => (
+              <li key={i}>{w}</li>
+            ))}
+          </ul>
         </div>
       )}
 
@@ -183,6 +228,13 @@ export function Step1FileDrop({ state, onFileLoaded }: Step1FileDropProps) {
         <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
           <AlertCircle size={16} className="shrink-0 mt-0.5" />
           <span>{parseError}</span>
+        </div>
+      )}
+
+      {xlsxDlError && (
+        <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+          <AlertCircle size={16} className="shrink-0 mt-0.5" />
+          <span>No pudimos descargar la plantilla XLSX: {xlsxDlError}. Probá con la CSV.</span>
         </div>
       )}
 
@@ -196,13 +248,26 @@ export function Step1FileDrop({ state, onFileLoaded }: Step1FileDropProps) {
               Descargá la plantilla con todas las columnas canónicas de Vuoo.
             </p>
           </div>
-          <button
-            onClick={downloadSample}
-            className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-          >
-            <Download size={14} />
-            Descargar plantilla
-          </button>
+          <div className="flex gap-2 shrink-0">
+            <button
+              onClick={async () => {
+                setXlsxDlError(null);
+                const r = await downloadXlsxTemplate();
+                if (!r.ok) setXlsxDlError(r.error ?? 'Error');
+              }}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            >
+              <Download size={14} />
+              XLSX
+            </button>
+            <button
+              onClick={downloadCsvTemplate}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            >
+              <Download size={14} />
+              CSV
+            </button>
+          </div>
         </div>
 
         <div className="mt-3 rounded-lg bg-gray-50 p-3 text-xs text-gray-600">

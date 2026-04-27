@@ -6,6 +6,7 @@ import { useAuth } from '@/application/hooks/useAuth';
 import type { Order, Plan } from '@/data/types/database';
 import { formatOrderDate as formatDate } from '../utils';
 import { Field } from './FormUi';
+import { assignToPlan } from '@/data/services/orders/orders.services';
 
 export function ScheduleOrdersModal({
   orders,
@@ -80,87 +81,15 @@ export function ScheduleOrdersModal({
       return
     }
 
-    for (const order of orders) {
-      let stopId = order.stop_id
-      if (!stopId) {
-        let stopQuery = supabase
-          .from('stops')
-          .select('id')
-          .eq('org_id', currentOrg.id)
-          .limit(1)
-        if (order.lat != null && order.lng != null) {
-          stopQuery = stopQuery
-            .gte('lat', order.lat - 0.0005)
-            .lte('lat', order.lat + 0.0005)
-            .gte('lng', order.lng - 0.0005)
-            .lte('lng', order.lng + 0.0005)
-        } else {
-          stopQuery = stopQuery.eq('address', order.address)
-        }
-        const { data: existingStop } = await stopQuery.maybeSingle()
-
-        if (existingStop) {
-          stopId = (existingStop as { id: string }).id
-        } else {
-          const { data: newStop, error: stopErr } = await supabase
-            .from('stops')
-            .insert({
-              name: order.customer_name,
-              address: order.address,
-              lat: order.lat,
-              lng: order.lng,
-              duration_minutes: order.service_duration_minutes,
-              weight_kg: order.total_weight_kg || null,
-              time_window_start: order.time_window_start,
-              time_window_end: order.time_window_end,
-              customer_name: order.customer_name,
-              customer_phone: order.customer_phone,
-              customer_email: order.customer_email,
-              delivery_instructions: order.delivery_instructions,
-              user_id: user.id,
-              org_id: currentOrg.id,
-            })
-            .select()
-            .single()
-          if (stopErr || !newStop) {
-            setError(`Error creando parada para ${order.customer_name}: ${stopErr?.message}`)
-            setSaving(false)
-            return
-          }
-          stopId = (newStop as { id: string }).id
-        }
-      }
-
-      const { data: planStop, error: psErr } = await supabase
-        .from('plan_stops')
-        .insert({
-          stop_id: stopId,
-          plan_id: targetPlanId,
-          status: 'pending',
-          delivery_attempts: 0,
-          org_id: currentOrg.id,
-        })
-        .select()
-        .single()
-      if (psErr || !planStop) {
-        setError(`Error asignando ${order.order_number}: ${psErr?.message}`)
-        setSaving(false)
-        return
-      }
-
-      const { error: upErr } = await supabase
-        .from('orders')
-        .update({
-          stop_id: stopId,
-          plan_stop_id: (planStop as { id: string }).id,
-          status: 'scheduled',
-        })
-        .eq('id', order.id)
-      if (upErr) {
-        setError(`Error actualizando ${order.order_number}: ${upErr.message}`)
-        setSaving(false)
-        return
-      }
+    // Asignación bulk: una sola transacción server-side via RPC
+    // `assign_orders_to_plan` (mig 023). Reemplaza el loop N×4-round-trips
+    // que hacía que los pedidos saltaran de Pendientes a Programado uno por uno.
+    const orderIds = orders.map((o) => o.id)
+    const res = await assignToPlan(orderIds, targetPlanId, false)
+    if (!res.success) {
+      setError(res.error)
+      setSaving(false)
+      return
     }
 
     setSaving(false)

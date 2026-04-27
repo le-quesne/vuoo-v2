@@ -13,6 +13,7 @@ export type MatchQuality = 'high' | 'medium' | 'low' | 'none';
  */
 export const CANONICAL_COLUMNS = [
   'customer_name',
+  'customer_code',
   'customer_phone',
   'customer_email',
   'address',
@@ -32,6 +33,7 @@ export type CanonicalColumn = (typeof CANONICAL_COLUMNS)[number];
 /** Etiquetas legibles en español para la UI de mapping. */
 export const CANONICAL_LABELS: Record<CanonicalColumn, string> = {
   customer_name: 'Nombre del cliente',
+  customer_code: 'Código del cliente',
   customer_phone: 'Teléfono',
   customer_email: 'Email',
   address: 'Dirección',
@@ -46,8 +48,14 @@ export const CANONICAL_LABELS: Record<CanonicalColumn, string> = {
   order_number: 'N° de pedido',
 };
 
-/** Columnas obligatorias — sin estas no podemos crear el order. */
-export const REQUIRED_COLUMNS: CanonicalColumn[] = ['customer_name', 'address'];
+/** Columnas obligatorias siempre. customer_name nunca se omite. */
+export const REQUIRED_COLUMNS: CanonicalColumn[] = ['customer_name'];
+
+/**
+ * Una de estas debe estar mapeada — si falta address, exigimos customer_code
+ * para que el backend pueda resolver vía catálogo de clientes/stops.
+ */
+export const REQUIRED_EITHER_OR: CanonicalColumn[] = ['address', 'customer_code'];
 
 /**
  * Mapeo columna canónica → header del archivo CSV.
@@ -101,6 +109,9 @@ export interface ImportReport {
   };
 }
 
+/** Política global para matches medium en Step 3 (D11). */
+export type MediumPolicy = 'reuse' | 'create_new';
+
 /** Estado global del wizard, compartido entre steps via context. */
 export interface WizardState {
   step: 1 | 2 | 3 | 4;
@@ -115,6 +126,12 @@ export interface WizardState {
   importProgress: number;
   importReport: ImportReport | null;
   error: string | null;
+  /** Política default para matches medium. Override individual sigue disponible. */
+  mediumPolicy: MediumPolicy;
+  /** order_numbers que ya existen en la DB (D4 dedup vs DB). */
+  dedupExisting: string[];
+  /** Acción del user sobre los duplicados: 'ignore' (default) skipea esas filas. */
+  dedupAction: 'ignore';
 }
 
 export function emptyMapping(): MappingConfig {

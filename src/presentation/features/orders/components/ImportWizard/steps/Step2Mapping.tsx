@@ -9,6 +9,7 @@ import {
   CANONICAL_COLUMNS,
   CANONICAL_LABELS,
   REQUIRED_COLUMNS,
+  REQUIRED_EITHER_OR,
 } from '../types/import.types';
 import { useColumnAutoDetect, useImportTemplate } from '../hooks';
 import type { ImportTemplate } from '../hooks';
@@ -44,16 +45,39 @@ export function Step2Mapping({
     [state.mapping],
   );
 
+  const missingEitherOr = useMemo(() => {
+    const anyMapped = REQUIRED_EITHER_OR.some((c) => !!state.mapping[c]);
+    return anyMapped ? [] : REQUIRED_EITHER_OR;
+  }, [state.mapping]);
+
   function updateMapping(col: CanonicalColumn, header: string | null) {
     onMappingChange({ ...state.mapping, [col]: header });
   }
 
   function applyTemplate(tpl: ImportTemplate) {
-    // Si alguna columna de la plantilla no existe en el CSV actual, la dejamos null.
+    // Match case-insensitive + normalizado (acentos, separadores) para plantillas
+    // viejas que guardaron headers lowercased. Si una columna de la plantilla
+    // no encuentra match en el CSV actual, queda null.
+    const normalize = (s: string): string =>
+      s.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '_');
+    const headerByNorm = new Map<string, string>();
+    for (const h of state.headers) {
+      headerByNorm.set(normalize(h), h);
+    }
     const next: MappingConfig = { ...state.mapping };
     for (const col of CANONICAL_COLUMNS) {
       const tplHeader = tpl.columnMap[col];
-      next[col] = tplHeader && state.headers.includes(tplHeader) ? tplHeader : null;
+      if (!tplHeader) {
+        next[col] = null;
+        continue;
+      }
+      // Match exacto primero, fallback a normalizado.
+      if (state.headers.includes(tplHeader)) {
+        next[col] = tplHeader;
+      } else {
+        const matched = headerByNorm.get(normalize(tplHeader));
+        next[col] = matched ?? null;
+      }
     }
     onMappingChange(next);
     onTemplateSelected(tpl.id);
@@ -195,6 +219,17 @@ export function Step2Mapping({
           <span>
             Faltan columnas obligatorias:{' '}
             {missingRequired.map((c) => CANONICAL_LABELS[c]).join(', ')}
+          </span>
+        </div>
+      )}
+      {missingEitherOr.length > 0 && (
+        <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+          <AlertCircle size={16} className="shrink-0 mt-0.5" />
+          <span>
+            Tenés que mapear al menos una de:{' '}
+            <strong>{missingEitherOr.map((c) => CANONICAL_LABELS[c]).join(' o ')}</strong>.
+            Si no traés dirección en el archivo, el código del cliente sirve para resolverla
+            desde el catálogo (o dejarla pendiente para completar después).
           </span>
         </div>
       )}

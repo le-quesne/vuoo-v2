@@ -11,6 +11,7 @@ export function orderFromRow(row: OrderRow): Order {
     customerName: row.customer_name,
     customerPhone: row.customer_phone,
     customerEmail: row.customer_email,
+    customerCode: row.customer_code,
     address: row.address,
     lat: row.lat,
     lng: row.lng,
