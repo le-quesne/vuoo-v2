@@ -16,6 +16,16 @@ const ALIASES: Record<CanonicalColumn, string[]> = {
     'nombre_completo',
     'razon_social',
   ],
+  customer_code: [
+    'customer_code',
+    'codigo',
+    'codigo_cliente',
+    'cod_cliente',
+    'cod',
+    'code',
+    'id_cliente',
+    'rut',
+  ],
   customer_phone: ['customer_phone', 'telefono', 'phone', 'celular', 'movil'],
   customer_email: ['customer_email', 'email', 'correo', 'mail'],
   address: [

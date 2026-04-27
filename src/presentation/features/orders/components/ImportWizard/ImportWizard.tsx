@@ -1,21 +1,26 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { X, ChevronLeft, ChevronRight, Check } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Check, RotateCcw } from 'lucide-react';
 import type {
   ImportReport,
   MappingConfig,
+  MediumPolicy,
   PreviewRow,
   WizardState,
 } from './types/import.types';
-import { emptyMapping, REQUIRED_COLUMNS } from './types/import.types';
+import { emptyMapping, REQUIRED_COLUMNS, REQUIRED_EITHER_OR } from './types/import.types';
 import { Step1FileDrop } from './steps/Step1FileDrop';
 import { Step2Mapping } from './steps/Step2Mapping';
 import { Step3Preview } from './steps/Step3Preview';
 import { Step4Confirm } from './steps/Step4Confirm';
+import { useImportRecovery } from './hooks/useImportRecovery';
+import { useAuth } from '@/application/hooks/useAuth';
 
 export interface ImportWizardProps {
   open: boolean;
   onClose: () => void;
   onComplete: (report: ImportReport) => void;
+  /** Opcional. Si se provee, Step4 muestra CTA "Asignar a un plan" tras import OK. */
+  onAssignToPlan?: (orderIds: string[]) => void;
   defaultTemplateId?: string;
 }
 
@@ -40,6 +45,9 @@ function initialState(defaultTemplateId?: string): WizardState {
     importProgress: 0,
     importReport: null,
     error: null,
+    mediumPolicy: 'reuse',
+    dedupExisting: [],
+    dedupAction: 'ignore',
   };
 }
 
@@ -53,13 +61,42 @@ export function ImportWizard(props: ImportWizardProps) {
 function ImportWizardInner({
   onClose,
   onComplete,
+  onAssignToPlan,
   defaultTemplateId,
 }: ImportWizardProps) {
+  const { currentOrg } = useAuth();
+  const recovery = useImportRecovery(currentOrg?.id);
   const [state, setState] = useState<WizardState>(() =>
     initialState(defaultTemplateId),
   );
   const [confirmClose, setConfirmClose] = useState(false);
+  const [recoverable, setRecoverable] = useState<ReturnType<typeof recovery.load>>(null);
+  const [recoveryDismissed, setRecoveryDismissed] = useState(false);
   const open = true;
+
+  // Detectar snapshot recuperable al montar.
+  useEffect(() => {
+    const snap = recovery.load();
+    if (snap) setRecoverable(snap);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentOrg?.id]);
+
+  // Auto-save cada 5s mientras hay progreso real (file cargado + sin reporte).
+  useEffect(() => {
+    recovery.startAutosave(() => {
+      if (!state.file || state.importReport) return null;
+      return {
+        step: state.step,
+        fileName: state.fileName,
+        headers: state.headers,
+        rawRows: state.rawRows,
+        mapping: state.mapping,
+        templateId: state.templateId,
+        previewRows: state.previewRows,
+      };
+    });
+    return () => recovery.stopAutosave();
+  }, [recovery, state]);
 
   const hasProgress = useMemo(
     () => state.file !== null && !state.importReport,
@@ -69,7 +106,9 @@ function ImportWizardInner({
   const canAdvance = useMemo(() => {
     if (state.step === 1) return state.rawRows.length > 0;
     if (state.step === 2) {
-      return REQUIRED_COLUMNS.every((c) => !!state.mapping[c]);
+      const hasRequired = REQUIRED_COLUMNS.every((c) => !!state.mapping[c]);
+      const hasEitherOr = REQUIRED_EITHER_OR.some((c) => !!state.mapping[c]);
+      return hasRequired && hasEitherOr;
     }
     if (state.step === 3) {
       const importable = state.previewRows.filter(
@@ -114,6 +153,7 @@ function ImportWizardInner({
       fileName: string;
       headers: string[];
       rawRows: Record<string, string>[];
+      warnings: string[];
     }) => {
       setState((s) => ({
         ...s,
@@ -123,10 +163,40 @@ function ImportWizardInner({
         rawRows: args.rawRows,
         mapping: emptyMapping(),
         previewRows: [],
+        dedupExisting: [],
       }));
     },
     [],
   );
+
+  const handleMediumPolicyChange = useCallback((policy: MediumPolicy) => {
+    setState((s) => ({ ...s, mediumPolicy: policy }));
+  }, []);
+
+  const handleDedupExistingChange = useCallback((existing: string[]) => {
+    setState((s) => ({ ...s, dedupExisting: existing }));
+  }, []);
+
+  const handleRecover = useCallback(() => {
+    if (!recoverable) return;
+    setState((s) => ({
+      ...s,
+      step: recoverable.step,
+      fileName: recoverable.fileName,
+      headers: recoverable.headers,
+      rawRows: recoverable.rawRows,
+      mapping: recoverable.mapping,
+      templateId: recoverable.templateId,
+      previewRows: recoverable.previewRows,
+    }));
+    setRecoverable(null);
+  }, [recoverable]);
+
+  const handleDiscardRecovery = useCallback(() => {
+    recovery.clear();
+    setRecoverable(null);
+    setRecoveryDismissed(true);
+  }, [recovery]);
 
   const handleMappingChange = useCallback((mapping: MappingConfig) => {
     setState((s) => ({ ...s, mapping, previewRows: [] }));
@@ -147,9 +217,10 @@ function ImportWizardInner({
   const handleImportDone = useCallback(
     (report: ImportReport) => {
       setState((s) => ({ ...s, importReport: report }));
+      recovery.clear();
       onComplete(report);
     },
-    [onComplete],
+    [onComplete, recovery],
   );
 
   const goNext = useCallback(() => {
@@ -196,6 +267,34 @@ function ImportWizardInner({
           <Stepper currentStep={state.step} />
         </div>
 
+        {/* Recovery banner (D3) */}
+        {recoverable && !recoveryDismissed && !state.file && (
+          <div className="mx-6 mt-4 flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm">
+            <RotateCcw size={16} className="text-blue-600 shrink-0" />
+            <div className="flex-1">
+              <div className="font-medium text-blue-900">
+                Continuar import del archivo "{recoverable.fileName}"
+              </div>
+              <div className="text-xs text-blue-700">
+                Guardado hace {Math.max(1, Math.round((Date.now() - recoverable.savedAt) / 60000))} minuto(s).
+                Tendrás que volver a seleccionar el archivo, pero mantenemos el mapeo.
+              </div>
+            </div>
+            <button
+              onClick={handleRecover}
+              className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+            >
+              Continuar
+            </button>
+            <button
+              onClick={handleDiscardRecovery}
+              className="rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-xs text-blue-700 hover:bg-blue-100"
+            >
+              Descartar
+            </button>
+          </div>
+        )}
+
         {/* Cuerpo del paso actual */}
         <div className="flex-1 overflow-y-auto px-6 py-5">
           {state.step === 1 && (
@@ -213,6 +312,8 @@ function ImportWizardInner({
               state={state}
               onPreviewRowsChange={handlePreviewRowsChange}
               onLoadingChange={handlePreviewLoading}
+              onMediumPolicyChange={handleMediumPolicyChange}
+              onDedupExistingChange={handleDedupExistingChange}
             />
           )}
           {state.step === 4 && (
@@ -223,6 +324,7 @@ function ImportWizardInner({
               }
               onImportDone={handleImportDone}
               onGoToOrders={onClose}
+              onAssignToPlan={onAssignToPlan}
             />
           )}
         </div>

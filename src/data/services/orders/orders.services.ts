@@ -58,6 +58,74 @@ export async function listOrders({
   }
 }
 
+const ORDER_STATUSES: OrderStatus[] = [
+  'pending',
+  'scheduled',
+  'in_transit',
+  'delivered',
+  'failed',
+  'cancelled',
+  'returned',
+];
+
+export interface OrderStatusCounts {
+  byStatus: Record<OrderStatus, number>;
+  pendingAddress: number;
+}
+
+export async function getStatusCounts(
+  orgId: string,
+): Promise<ServiceResult<OrderStatusCounts>> {
+  try {
+    const statusQueries = ORDER_STATUSES.map((status) =>
+      supabase
+        .from('orders')
+        .select('id', { count: 'exact', head: true })
+        .eq('org_id', orgId)
+        .eq('status', status),
+    );
+    const pendingAddressQuery = supabase
+      .from('orders')
+      .select('id', { count: 'exact', head: true })
+      .eq('org_id', orgId)
+      .is('address', null);
+
+    const results = await Promise.all([...statusQueries, pendingAddressQuery]);
+
+    const byStatus = ORDER_STATUSES.reduce(
+      (acc, status, idx) => {
+        const r = results[idx];
+        if (r.error) throw new Error(r.error.message);
+        acc[status] = r.count ?? 0;
+        return acc;
+      },
+      {} as Record<OrderStatus, number>,
+    );
+
+    const pa = results[results.length - 1];
+    if (pa.error) return fail(pa.error.message);
+
+    return ok({ byStatus, pendingAddress: pa.count ?? 0 });
+  } catch (e) {
+    return fail(toErrorMessage(e));
+  }
+}
+
+export async function listAllIds(
+  orgId: string,
+  status: OrderStatus | 'all',
+): Promise<ServiceResult<string[]>> {
+  try {
+    let query = supabase.from('orders').select('id').eq('org_id', orgId);
+    if (status !== 'all') query = query.eq('status', status);
+    const { data, error } = await query;
+    if (error) return fail(error.message);
+    return ok((data ?? []).map((r) => (r as { id: string }).id));
+  } catch (e) {
+    return fail(toErrorMessage(e));
+  }
+}
+
 export async function deleteOrders(ids: string[]): Promise<ServiceResult<void>> {
   if (ids.length === 0) return ok(undefined);
   try {
@@ -69,6 +137,12 @@ export async function deleteOrders(ids: string[]): Promise<ServiceResult<void>> 
   }
 }
 
+/**
+ * @deprecated Usar `importFromCsv` (vía ImportWizard) para importaciones de CSV/XLSX.
+ * `bulkCreate` inserta directo en Supabase sin pasar por matching, geocoding ni
+ * validaciones del backend. Solo apto para herramientas internas/admin con datos
+ * pre-validados. No invocar desde flows de usuario.
+ */
 export async function bulkCreate(
   rows: OrderInsert[],
 ): Promise<ServiceResult<{ ids: string[] }>> {
@@ -86,11 +160,52 @@ export async function bulkCreate(
   }
 }
 
+export async function getByIds(ids: string[]): Promise<ServiceResult<Order[]>> {
+  if (ids.length === 0) return ok([]);
+  try {
+    const { data, error } = await supabase.from('orders').select('*').in('id', ids);
+    if (error) return fail(error.message);
+    return ok((data ?? []) as Order[]);
+  } catch (e) {
+    return fail(toErrorMessage(e));
+  }
+}
+
+/**
+ * Verifica qué order_numbers ya existen en la org. Usado por el ImportWizard
+ * (Step 3) para mostrar dedup-banner antes del submit.
+ */
+export async function checkExisting(
+  orgId: string,
+  orderNumbers: string[],
+): Promise<ServiceResult<{ existing: string[] }>> {
+  const cleaned = orderNumbers
+    .map((n) => n?.trim())
+    .filter((n): n is string => !!n);
+  if (cleaned.length === 0) return ok({ existing: [] });
+  try {
+    const { data, error } = await supabase
+      .from('orders')
+      .select('order_number')
+      .eq('org_id', orgId)
+      .in('order_number', cleaned);
+    if (error) return fail(error.message);
+    const existing = (data ?? []).map((r) => (r as { order_number: string }).order_number);
+    return ok({ existing });
+  } catch (e) {
+    return fail(toErrorMessage(e));
+  }
+}
+
 export interface ImportRow {
   customer_name: string;
+  /** Código del cliente en el ERP del usuario. El backend lo usa para resolver
+   *  dirección desde el catálogo cuando `address` viene vacía. */
+  customer_code?: string | null;
   customer_phone?: string | null;
   customer_email?: string | null;
-  address: string;
+  /** Nullable: si viene vacía pero hay customer_code, el backend resuelve. */
+  address?: string | null;
   lat?: number | null;
   lng?: number | null;
   total_weight_kg?: number;

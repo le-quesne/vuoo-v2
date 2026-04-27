@@ -6,16 +6,21 @@ import {
   UserPlus,
   Circle,
   ArrowRight,
+  CalendarPlus,
+  Eye,
 } from 'lucide-react';
-import { useMemo } from 'react';
-import type { WizardState, ImportReport } from '../types/import.types';
+import { useMemo, useState } from 'react';
+import type { PreviewRow, WizardState, ImportReport } from '../types/import.types';
 import { useImportSubmit } from '../hooks';
+import { previewRowToImportRow, findIntraFileDuplicates } from '../utils/mapping';
+import { RawRowModal } from './Step3Preview/RawRowModal';
 
 interface Step4ConfirmProps {
   state: WizardState;
   onImportStart: () => void;
   onImportDone: (report: ImportReport) => void;
   onGoToOrders: () => void;
+  onAssignToPlan?: (orderIds: string[]) => void;
 }
 
 export function Step4Confirm({
@@ -23,76 +28,128 @@ export function Step4Confirm({
   onImportStart,
   onImportDone,
   onGoToOrders,
+  onAssignToPlan,
 }: Step4ConfirmProps) {
-  const { submit, progress, isSubmitting, error, report } = useImportSubmit();
+  const { submit, cancel, progress, isSubmitting, error, report } = useImportSubmit();
+  const [rawWarningRow, setRawWarningRow] = useState<PreviewRow | null>(null);
+
+  const intraDupes = useMemo(() => new Set(findIntraFileDuplicates(state.previewRows)), [state.previewRows]);
+  const dbDupes = useMemo(() => new Set(state.dedupExisting), [state.dedupExisting]);
+
+  /**
+   * Filas elegibles para submit:
+   *  - sin error de validación
+   *  - geocoding ok o warning (no error)
+   *  - order_number NO duplicado en CSV (toma la primera ocurrencia)
+   *  - order_number NO existe ya en DB
+   */
+  const importableRows = useMemo(() => {
+    const seenIntra = new Set<string>();
+    const out: PreviewRow[] = [];
+    for (const r of state.previewRows) {
+      if (r.error || r.geocodingStatus === 'error') continue;
+      const num = r.values.order_number?.trim();
+      if (num && dbDupes.has(num)) continue;
+      if (num && intraDupes.has(num)) {
+        if (seenIntra.has(num)) continue;
+        seenIntra.add(num);
+      }
+      out.push(r);
+    }
+    return out;
+  }, [state.previewRows, intraDupes, dbDupes]);
 
   const counters = useMemo(() => {
     let high = 0;
     let medium = 0;
     let newOnes = 0;
     let errors = 0;
+    let dedupSkipped = 0;
+    const seenIntra = new Set<string>();
+
     for (const r of state.previewRows) {
       if (r.error || r.geocodingStatus === 'error') {
         errors++;
         continue;
       }
-      if (r.overrideCreateNew) {
-        newOnes++;
+      const num = r.values.order_number?.trim();
+      if (num && dbDupes.has(num)) {
+        dedupSkipped++;
         continue;
       }
-      if (r.matchQuality === 'high') high++;
-      else if (r.matchQuality === 'medium') medium++;
-      else newOnes++;
+      if (num && intraDupes.has(num)) {
+        if (seenIntra.has(num)) {
+          dedupSkipped++;
+          continue;
+        }
+        seenIntra.add(num);
+      }
+      const willReuse =
+        r.matchQuality === 'medium'
+          ? !r.overrideCreateNew && state.mediumPolicy === 'reuse'
+          : false;
+      if (r.matchQuality === 'high' || willReuse) {
+        if (r.matchQuality === 'high') high++;
+        else medium++;
+      } else {
+        newOnes++;
+      }
     }
     return {
       total: state.previewRows.length,
-      importable: state.previewRows.length - errors,
+      importable: importableRows.length,
       high,
       medium,
       newOnes,
       errors,
+      dedupSkipped,
     };
-  }, [state.previewRows]);
+  }, [state.previewRows, intraDupes, dbDupes, state.mediumPolicy, importableRows]);
 
   async function handleImport() {
-    const rows = state.previewRows
-      .filter((r) => !r.error && r.geocodingStatus !== 'error')
-      .map((r) => {
-        const weight = toOptionalNumber(r.values.total_weight_kg);
-        const volume = toOptionalNumber(r.values.volume_m3);
-        return {
-          customer_name: (r.values.customer_name ?? '').trim(),
-          customer_phone: r.values.customer_phone?.trim() || null,
-          customer_email: r.values.customer_email?.trim() || null,
-          address: (r.values.address ?? '').trim(),
-          lat: r.lat,
-          lng: r.lng,
-          total_weight_kg: weight ?? 0,
-          total_volume_m3: volume ?? null,
-          time_window_start: r.values.time_window_start?.trim() || null,
-          time_window_end: r.values.time_window_end?.trim() || null,
-          priority: normalizePriority(r.values.priority),
-          requested_date: r.values.requested_date?.trim() || null,
-          order_number: r.values.order_number?.trim() || undefined,
-          internal_notes: r.values.internal_notes?.trim() || null,
-        };
-      });
+    const conversionWarnings: { row: PreviewRow; warnings: string[] }[] = [];
+    const rows = importableRows.map((r) => {
+      // Aplicar la política global de medium si el user no hizo override individual.
+      const effectiveOverride =
+        r.matchQuality === 'medium' && !r.overrideCreateNew && state.mediumPolicy === 'create_new'
+          ? true
+          : r.overrideCreateNew;
+      const adjusted: PreviewRow = effectiveOverride
+        ? { ...r, overrideCreateNew: true, stopId: null }
+        : r;
+      const conv = previewRowToImportRow(adjusted);
+      if (conv.warnings.length > 0) conversionWarnings.push({ row: r, warnings: conv.warnings });
+      return conv.row;
+    });
 
     onImportStart();
     const res = await submit(rows, state.templateId);
-    if (res) onImportDone(res);
+
+    if (res) {
+      const enrichedReport: ImportReport = {
+        ...res,
+        warnings: [
+          ...res.warnings,
+          ...conversionWarnings.flatMap(({ row, warnings }) =>
+            warnings.map((w) => `[fila ${row.id}] ${w}`),
+          ),
+        ],
+      };
+      onImportDone(enrichedReport);
+    }
   }
 
   // Vista post-import: mostramos el reporte final.
   if (report) {
+    const failedRows = state.previewRows.filter(
+      (r) => r.error || r.geocodingStatus === 'error',
+    );
     return (
       <div className="space-y-5">
         <div className="flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
           <CheckCircle2 size={20} className="text-emerald-600 shrink-0 mt-0.5" />
           <div>
-            <div className="text-sm font-semibold text-emerald-900">
-              Importación completada
-            </div>
+            <div className="text-sm font-semibold text-emerald-900">Importación completada</div>
             <p className="text-xs text-emerald-800 mt-0.5">
               {report.created} pedido{report.created === 1 ? '' : 's'} creado
               {report.created === 1 ? '' : 's'}
@@ -143,7 +200,55 @@ export function Step4Confirm({
           </div>
         )}
 
-        <div className="flex justify-end">
+        {failedRows.length > 0 && (
+          <div className="rounded-lg border border-gray-200 bg-white">
+            <div className="px-4 py-2 border-b border-gray-100 text-sm font-medium text-gray-900">
+              Filas no importadas ({failedRows.length})
+            </div>
+            <div className="max-h-40 overflow-y-auto">
+              <table className="w-full text-sm">
+                <tbody>
+                  {failedRows.slice(0, 20).map((r, i) => (
+                    <tr key={r.id} className="border-t border-gray-100">
+                      <td className="px-3 py-1.5 text-xs text-gray-400 w-8">{i + 1}</td>
+                      <td className="px-3 py-1.5 text-xs text-gray-700 truncate max-w-[200px]">
+                        {r.values.customer_name || <em>sin nombre</em>}
+                      </td>
+                      <td className="px-3 py-1.5 text-xs text-red-700 truncate max-w-[260px]">
+                        {r.error || 'No se pudo geocodificar'}
+                      </td>
+                      <td className="px-3 py-1.5">
+                        <button
+                          onClick={() => setRawWarningRow(r)}
+                          className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-0.5 text-[11px] text-gray-600 hover:bg-gray-50"
+                        >
+                          <Eye size={11} />
+                          Ver fila
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {failedRows.length > 20 && (
+              <div className="px-4 py-1.5 text-[11px] text-gray-500 text-center">
+                … y {failedRows.length - 20} más
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2">
+          {onAssignToPlan && report.orderIds.length > 0 && (
+            <button
+              onClick={() => onAssignToPlan(report.orderIds)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100"
+            >
+              <CalendarPlus size={14} />
+              Asignar a un plan
+            </button>
+          )}
           <button
             onClick={onGoToOrders}
             className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
@@ -152,6 +257,10 @@ export function Step4Confirm({
             <ArrowRight size={14} />
           </button>
         </div>
+
+        {rawWarningRow && (
+          <RawRowModal row={rawWarningRow} onClose={() => setRawWarningRow(null)} />
+        )}
       </div>
     );
   }
@@ -160,12 +269,9 @@ export function Step4Confirm({
   return (
     <div className="space-y-5">
       <div>
-        <h3 className="text-base font-semibold text-gray-900">
-          Confirmación
-        </h3>
+        <h3 className="text-base font-semibold text-gray-900">Confirmación</h3>
         <p className="text-sm text-gray-500 mt-0.5">
-          Revisá el resumen antes de importar. Esta acción crea los pedidos
-          en tu cuenta.
+          Revisá el resumen antes de importar. Esta acción crea los pedidos en tu cuenta.
         </p>
       </div>
 
@@ -174,11 +280,19 @@ export function Step4Confirm({
           <span className="text-sm font-medium text-gray-900">
             {counters.importable} pedido{counters.importable === 1 ? '' : 's'} listos para importar
           </span>
-          {counters.errors > 0 && (
-            <span className="text-xs text-red-600">
-              {counters.errors} fila{counters.errors === 1 ? '' : 's'} se omitirán por errores
-            </span>
-          )}
+          <div className="flex items-center gap-3">
+            {counters.dedupSkipped > 0 && (
+              <span className="text-xs text-amber-700">
+                {counters.dedupSkipped} duplicad{counters.dedupSkipped === 1 ? 'o' : 'os'}{' '}
+                ignorad{counters.dedupSkipped === 1 ? 'o' : 'os'}
+              </span>
+            )}
+            {counters.errors > 0 && (
+              <span className="text-xs text-red-600">
+                {counters.errors} con errores
+              </span>
+            )}
+          </div>
         </div>
         <div className="grid grid-cols-3 divide-x divide-gray-100">
           <StatRow
@@ -188,7 +302,7 @@ export function Step4Confirm({
           />
           <StatRow
             icon={<Circle size={10} className="fill-amber-400 stroke-amber-600" />}
-            label="A revisar"
+            label="Match medio"
             value={counters.medium}
           />
           <StatRow
@@ -204,6 +318,12 @@ export function Step4Confirm({
           <div className="flex items-center gap-2 text-sm text-gray-700">
             <Loader2 size={14} className="animate-spin" />
             Importando… {progress}%
+            <button
+              onClick={cancel}
+              className="ml-auto rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50"
+            >
+              Cancelar
+            </button>
           </div>
           <div className="h-2 w-full rounded-full bg-gray-100 overflow-hidden">
             <div
@@ -281,21 +401,4 @@ function StatRow({
       <div className="mt-1 text-lg font-semibold text-gray-900">{value}</div>
     </div>
   );
-}
-
-function toOptionalNumber(v: string | undefined): number | undefined {
-  if (v == null || v === '') return undefined;
-  const n = Number(String(v).replace(',', '.'));
-  return Number.isFinite(n) ? n : undefined;
-}
-
-function normalizePriority(
-  v: string | undefined,
-): 'urgent' | 'high' | 'normal' | 'low' | undefined {
-  if (!v) return undefined;
-  const low = v.trim().toLowerCase();
-  if (low === 'urgent' || low === 'high' || low === 'normal' || low === 'low') {
-    return low;
-  }
-  return 'normal';
 }
