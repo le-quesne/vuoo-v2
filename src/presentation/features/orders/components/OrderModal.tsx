@@ -15,6 +15,129 @@ import {
 } from '../utils';
 import { SectionHeader, Field } from './FormUi';
 
+/**
+ * Vincula una dirección recién completada al customer (por customer_code).
+ *  1. Resuelve customer_id (insert si no existe)
+ *  2. Inserta un stop con esa dirección apuntando al customer
+ *  3. Actualiza la orden actual para que use el stop
+ *  4. Backfill: actualiza TODAS las demás órdenes del mismo org+customer_code
+ *     que estén sin dirección, así los pedidos pendientes de B.&R. CIA LTDA
+ *     que comparten código se completan en una sola acción.
+ *
+ * Errores no bloquean el save de la orden — el caller los reportará como soft fail.
+ *
+ * Devuelve cuántas órdenes (además de la actual) quedaron actualizadas para
+ * que el caller pueda comunicarlo en UI.
+ */
+async function upsertCustomerStop(args: {
+  orgId: string
+  customerCode: string
+  customerName: string
+  customerPhone: string | null
+  customerEmail: string | null
+  address: string
+  lat: number | null
+  lng: number | null
+  userId: string | null
+  orderId: string
+}): Promise<{ backfilledOrderCount: number }> {
+  const code = args.customerCode.trim()
+  if (!code) return { backfilledOrderCount: 0 }
+
+  // 1) customer
+  let customerId: string | null = null
+  const existing = await supabase
+    .from('customers')
+    .select('id')
+    .eq('org_id', args.orgId)
+    .eq('customer_code', code)
+    .maybeSingle()
+
+  if (existing.data?.id) {
+    customerId = existing.data.id as string
+  } else {
+    const ins = await supabase
+      .from('customers')
+      .insert({
+        org_id: args.orgId,
+        customer_code: code,
+        name: args.customerName,
+        phone: args.customerPhone,
+        email: args.customerEmail,
+        is_active: true,
+      })
+      .select('id')
+      .single()
+    if (ins.error || !ins.data) throw new Error(ins.error?.message ?? 'no se pudo crear cliente')
+    customerId = (ins.data as { id: string }).id
+  }
+
+  // 2) stop
+  const stopIns = await supabase
+    .from('stops')
+    .insert({
+      org_id: args.orgId,
+      user_id: args.userId,
+      customer_id: customerId,
+      name: args.customerName,
+      address: args.address,
+      lat: args.lat,
+      lng: args.lng,
+      customer_name: args.customerName,
+      customer_phone: args.customerPhone,
+      customer_email: args.customerEmail,
+      geocoding_confidence: args.lat != null && args.lng != null ? 0.8 : null,
+      geocoding_provider: 'manual',
+    })
+    .select('id')
+    .single()
+  if (stopIns.error || !stopIns.data) {
+    throw new Error(stopIns.error?.message ?? 'no se pudo crear stop')
+  }
+  const stopId = (stopIns.data as { id: string }).id
+
+  // 3) link order actual → stop
+  await supabase
+    .from('orders')
+    .update({
+      stop_id: stopId,
+      address: args.address,
+      lat: args.lat,
+      lng: args.lng,
+      match_quality: 'high',
+      match_review_needed: false,
+    })
+    .eq('id', args.orderId)
+
+  // 4) backfill: cualquier OTRA orden del mismo customer_code en este org
+  //    que esté sin dirección, recibe esta misma dirección + stop_id.
+  //    Excluye la orden actual (ya actualizada arriba) y respeta órdenes
+  //    delivered/cancelled/returned (no mutamos historia cerrada).
+  const { data: backfilled, error: bfErr } = await supabase
+    .from('orders')
+    .update({
+      stop_id: stopId,
+      address: args.address,
+      lat: args.lat,
+      lng: args.lng,
+      match_quality: 'high',
+      match_review_needed: false,
+    })
+    .eq('org_id', args.orgId)
+    .eq('customer_code', code)
+    .is('address', null)
+    .neq('id', args.orderId)
+    .in('status', ['pending', 'scheduled'])
+    .select('id')
+
+  if (bfErr) {
+    // Soft fail: la orden actual ya se guardó. Caller decide si avisar.
+    return { backfilledOrderCount: 0 }
+  }
+
+  return { backfilledOrderCount: backfilled?.length ?? 0 }
+}
+
 export function OrderModal({
   mode,
   order,
@@ -38,6 +161,12 @@ export function OrderModal({
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [tagDraft, setTagDraft] = useState('')
   const [error, setError] = useState<string | null>(null)
+
+  // Si la orden venía sin dirección (importada con solo customer_code), ofrecemos
+  // guardar la dirección que el dispatcher complete también como dirección
+  // permanente del cliente (crea/actualiza stop vinculado).
+  const isPendingAddress = mode === 'edit' && !order?.address && !!order?.customer_code
+  const [saveAsCustomerStop, setSaveAsCustomerStop] = useState<boolean>(isPendingAddress)
 
   function updateItem(index: number, patch: Partial<OrderItem>) {
     const next = form.items.slice()
@@ -65,18 +194,25 @@ export function OrderModal({
     e.preventDefault()
     if (!currentOrg) return
     setError(null)
-    if (!form.customer_name.trim() || !form.address.trim()) {
-      setError('Nombre del cliente y direccion son obligatorios')
+    if (!form.customer_name.trim()) {
+      setError('Nombre del cliente es obligatorio')
+      return
+    }
+    // Address solo es obligatoria si la orden NO viene del flujo "pending"
+    // (importada con customer_code). Si está pending, dejamos guardar sin address.
+    if (!form.address.trim() && !isPendingAddress) {
+      setError('Dirección es obligatoria. Si todavía no la sabés, dejá la orden como pendiente.')
       return
     }
     setSaving(true)
 
+    const trimmedAddress = form.address.trim()
     const payload = {
       org_id: currentOrg.id,
       customer_name: form.customer_name.trim(),
       customer_phone: form.customer_phone.trim() || null,
       customer_email: form.customer_email.trim() || null,
-      address: form.address.trim(),
+      address: trimmedAddress || null,
       lat: coords?.lat ?? order?.lat ?? null,
       lng: coords?.lng ?? order?.lng ?? null,
       delivery_instructions: form.delivery_instructions.trim() || null,
@@ -120,6 +256,45 @@ export function OrderModal({
         setError(updErr.message)
         setSaving(false)
         return
+      }
+
+      // Si el dispatcher acaba de completar dirección de una orden pendiente y
+      // marcó "guardar como dirección del cliente", upsert el stop vinculado y
+      // backfilear órdenes pendientes del mismo customer_code.
+      if (
+        isPendingAddress &&
+        saveAsCustomerStop &&
+        trimmedAddress &&
+        order.customer_code
+      ) {
+        try {
+          const { backfilledOrderCount } = await upsertCustomerStop({
+            orgId: currentOrg.id,
+            customerCode: order.customer_code,
+            customerName: form.customer_name.trim(),
+            customerPhone: form.customer_phone.trim() || null,
+            customerEmail: form.customer_email.trim() || null,
+            address: trimmedAddress,
+            lat: coords?.lat ?? null,
+            lng: coords?.lng ?? null,
+            userId: user?.id ?? null,
+            orderId: order.id,
+          })
+          if (backfilledOrderCount > 0) {
+            // Mensaje informativo no-bloqueante. La modal se cierra igual; el
+            // contador del filtro "Sin dirección" en la página va a refrescar.
+            console.info(
+              `[OrderModal] backfilled ${backfilledOrderCount} pedido(s) del cliente ${order.customer_code}`,
+            )
+          }
+        } catch (e) {
+          // Falla soft: la orden se guardó OK, solo el stop falló. Avisamos pero no bloqueamos.
+          console.error('upsertCustomerStop failed', e)
+          setError(
+            'La orden se guardó pero no pudimos vincular la dirección al cliente: ' +
+              (e instanceof Error ? e.message : 'error desconocido'),
+          )
+        }
       }
     }
     setSaving(false)
@@ -193,7 +368,36 @@ export function OrderModal({
           <section>
             <SectionHeader icon={<MapPin size={14} />} label="Destino" />
             <div className="space-y-3">
-              <Field label="Direccion *">
+              {isPendingAddress && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle size={16} className="shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <div className="font-medium">Pedido sin dirección</div>
+                      <div className="text-xs">
+                        Esta orden se importó solo con código de cliente
+                        {order?.customer_code ? ` (${order.customer_code})` : ''}. Completá la dirección
+                        abajo o dejala en blanco para resolver después.
+                      </div>
+                      {order?.customer_code && (
+                        <label className="mt-2 flex items-center gap-2 text-xs cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={saveAsCustomerStop}
+                            onChange={(e) => setSaveAsCustomerStop(e.target.checked)}
+                            className="h-3.5 w-3.5"
+                          />
+                          <span>
+                            Guardar también como dirección permanente del cliente (próximas órdenes
+                            con código <code className="bg-amber-100 px-1 rounded">{order.customer_code}</code> se autocompletan)
+                          </span>
+                        </label>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+              <Field label={isPendingAddress ? 'Dirección' : 'Direccion *'}>
                 <AddressAutocomplete
                   value={form.address}
                   onChange={(v) => setForm({ ...form, address: v })}

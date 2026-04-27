@@ -5,10 +5,8 @@ import {
   Search,
   Upload,
   Pencil,
-  Calendar,
   ChevronLeft,
   ChevronRight,
-  Sparkles,
   Trash2,
 } from 'lucide-react'
 import { supabase } from '@/application/lib/supabase'
@@ -19,7 +17,6 @@ import {
   STATUS_META,
   SOURCE_LABEL,
   formatOrderDate as formatDate,
-  statusCounts,
   type StatusFilter,
 } from '@/presentation/features/orders/utils'
 import {
@@ -30,7 +27,13 @@ import {
 import { ImportWizard } from '@/presentation/features/orders/components/ImportWizard'
 import { useOneClickOptimize } from '@/presentation/features/planner/hooks'
 import { ConfirmDialog } from '@/presentation/components/ConfirmDialog'
-import { deleteOrders } from '@/data/services/orders'
+import {
+  deleteOrders,
+  getStatusCounts,
+  listAllIds,
+  ordersService,
+  type OrderStatusCounts,
+} from '@/data/services/orders'
 
 export function OrdersPage() {
   const { currentOrg } = useAuth()
@@ -40,15 +43,18 @@ export function OrdersPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('pending')
+  const [onlyPendingAddress, setOnlyPendingAddress] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [showCreate, setShowCreate] = useState(false)
   const [editing, setEditing] = useState<Order | null>(null)
   const [showImport, setShowImport] = useState(false)
   const [showSchedule, setShowSchedule] = useState(false)
+  const [scheduleOrdersOverride, setScheduleOrdersOverride] = useState<Order[] | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<{ ids: string[]; isBulk: boolean } | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const [reloadTick, setReloadTick] = useState(0)
+  const [globalCounts, setGlobalCounts] = useState<OrderStatusCounts | null>(null)
 
   const oneClick = useOneClickOptimize(currentOrg?.id ?? '')
 
@@ -95,6 +101,16 @@ export function OrdersPage() {
 
   const reload = useCallback(() => setReloadTick((t) => t + 1), [])
 
+  useEffect(() => {
+    if (!currentOrg) return
+    let cancelled = false
+    void getStatusCounts(currentOrg.id).then((res) => {
+      if (cancelled) return
+      if (res.success) setGlobalCounts(res.data)
+    })
+    return () => { cancelled = true }
+  }, [currentOrg, reloadTick])
+
   async function confirmDelete() {
     if (!deleteTarget) return
     setDeleteError(null)
@@ -120,34 +136,61 @@ export function OrdersPage() {
 
   useEffect(() => {
     if (!currentOrg) return
+    // Realtime con coalescing: un bulk-update server-side dispara N eventos
+    // (uno por fila). Sin debounce, cada uno gatilla un reload y el usuario
+    // ve los pedidos saltar de Pendiente a Programado uno por uno.
+    // Con 250ms de espera, todos los eventos del mismo bulk se agrupan
+    // en un solo reload.
+    let timer: ReturnType<typeof setTimeout> | null = null
     const channel = supabase
       .channel(`orders-page-${currentOrg.id}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'orders', filter: `org_id=eq.${currentOrg.id}` },
-        () => reload(),
+        () => {
+          if (timer) clearTimeout(timer)
+          timer = setTimeout(() => {
+            reload()
+            timer = null
+          }, 250)
+        },
       )
       .subscribe()
-    return () => { supabase.removeChannel(channel) }
+    return () => {
+      if (timer) clearTimeout(timer)
+      supabase.removeChannel(channel)
+    }
   }, [currentOrg, reload])
 
   const filtered = useMemo(() => {
     if (!search.trim()) return orders
     const q = search.toLowerCase()
-    return orders.filter(
-      (o) =>
+    return orders.filter((o) => {
+      if (onlyPendingAddress && !!o.address) return false
+      if (!q) return true
+      return (
         o.order_number.toLowerCase().includes(q) ||
         o.customer_name.toLowerCase().includes(q) ||
-        o.address.toLowerCase().includes(q) ||
-        (o.customer_phone ?? '').includes(q),
-    )
-  }, [orders, search])
+        (o.address ?? '').toLowerCase().includes(q) ||
+        (o.customer_code ?? '').toLowerCase().includes(q) ||
+        (o.customer_phone ?? '').includes(q)
+      )
+    })
+  }, [orders, search, onlyPendingAddress])
 
-  const counts = useMemo(() => statusCounts(orders), [orders])
+  const pendingAddressCount = globalCounts?.pendingAddress ?? 0
+  const counts = globalCounts?.byStatus ?? null
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE))
 
   const allFilteredSelected =
     filtered.length > 0 && filtered.every((o) => selected.has(o.id))
+
+  // Total de la consulta actual (filtro de estado activo). Coincide con totalCount
+  // cuando no hay filtros adicionales locales.
+  const filterTotal = totalCount
+  const canSelectAcrossPages = allFilteredSelected && selected.size < filterTotal
+  const [selectingAll, setSelectingAll] = useState(false)
+  const [selectAllError, setSelectAllError] = useState<string | null>(null)
 
   function toggleSelect(id: string) {
     const next = new Set(selected)
@@ -159,6 +202,19 @@ export function OrdersPage() {
   function toggleSelectAll() {
     if (allFilteredSelected) setSelected(new Set())
     else setSelected(new Set(filtered.map((o) => o.id)))
+  }
+
+  async function selectAllAcrossPages() {
+    if (!currentOrg) return
+    setSelectAllError(null)
+    setSelectingAll(true)
+    const res = await listAllIds(currentOrg.id, statusFilter)
+    setSelectingAll(false)
+    if (!res.success) {
+      setSelectAllError(res.error)
+      return
+    }
+    setSelected(new Set(res.data))
   }
 
   const selectedOrders = useMemo(
@@ -178,25 +234,24 @@ export function OrdersPage() {
             <button
               onClick={handleOptimizeDay}
               disabled={oneClick.isRunning}
-              className="flex items-center gap-2 px-3 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
               title="Crea/usa plan de hoy, asigna pedidos pendientes y optimiza rutas"
             >
-              <Sparkles size={16} />
               {oneClick.isRunning ? 'Optimizando...' : 'Optimizar día'}
             </button>
             <button
-              onClick={() => setShowImport(true)}
-              className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50"
-            >
-              <Upload size={16} />
-              Importar CSV
-            </button>
-            <button
               onClick={() => setShowCreate(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600"
+              className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50"
             >
               <Plus size={16} />
               Nuevo pedido
+            </button>
+            <button
+              onClick={() => setShowImport(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600"
+            >
+              <Upload size={16} />
+              Importar
             </button>
           </div>
         </div>
@@ -210,10 +265,26 @@ export function OrdersPage() {
               value={s}
               filter={statusFilter}
               onClick={changeStatusFilter}
-              count={counts[s]}
+              count={counts?.[s] ?? null}
               dot={STATUS_META[s].dot}
             />
           ))}
+          {pendingAddressCount > 0 && (
+            <button
+              onClick={() => setOnlyPendingAddress((v) => !v)}
+              className={[
+                'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border transition-colors',
+                onlyPendingAddress
+                  ? 'bg-amber-100 text-amber-900 border-amber-300'
+                  : 'bg-white text-amber-800 border-amber-200 hover:bg-amber-50',
+              ].join(' ')}
+              title="Filtrar pedidos importados sin dirección"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              Sin dirección
+              <span className="text-[10px] opacity-70">({pendingAddressCount})</span>
+            </button>
+          )}
         </div>
 
         <div className="flex items-center justify-between mb-3">
@@ -235,11 +306,18 @@ export function OrdersPage() {
               </span>
               {selectedOrders.length > 0 && (
                 <button
-                  onClick={() => setShowSchedule(true)}
-                  className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-lg text-sm font-medium hover:bg-emerald-600"
+                  onClick={async () => {
+                    if (selected.size > orders.length) {
+                      const res = await ordersService.getByIds(Array.from(selected))
+                      if (res.success) {
+                        setScheduleOrdersOverride(res.data.filter((o) => o.status === 'pending'))
+                      }
+                    }
+                    setShowSchedule(true)
+                  }}
+                  className="px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50"
                 >
-                  <Calendar size={16} />
-                  Programar seleccion
+                  Programar ({selectedOrders.length})
                 </button>
               )}
               <button
@@ -247,14 +325,42 @@ export function OrdersPage() {
                   setDeleteError(null)
                   setDeleteTarget({ ids: Array.from(selected), isBulk: true })
                 }}
-                className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-medium hover:bg-red-600"
+                className="px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50"
               >
-                <Trash2 size={16} />
                 Eliminar ({selected.size})
               </button>
             </div>
           )}
         </div>
+
+        {canSelectAcrossPages && (
+          <div className="mb-3 flex items-center justify-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+            <span>Has seleccionado los {selected.size} pedidos de esta página.</span>
+            <button
+              onClick={selectAllAcrossPages}
+              disabled={selectingAll}
+              className="font-medium text-blue-700 underline hover:text-blue-900 disabled:opacity-50"
+            >
+              {selectingAll
+                ? 'Seleccionando...'
+                : `Seleccionar los ${filterTotal} pedidos`}
+            </button>
+            {selectAllError && (
+              <span className="text-xs text-red-600">({selectAllError})</span>
+            )}
+          </div>
+        )}
+        {selected.size === filterTotal && filterTotal > orders.length && (
+          <div className="mb-3 flex items-center justify-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+            <span>Los {filterTotal} pedidos están seleccionados.</span>
+            <button
+              onClick={() => setSelected(new Set())}
+              className="font-medium text-blue-700 underline hover:text-blue-900"
+            >
+              Limpiar selección
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 pb-6">
@@ -413,20 +519,29 @@ export function OrdersPage() {
       <ImportWizard
         open={showImport}
         onClose={() => { setShowImport(false); reload() }}
-        onComplete={(report) => {
+        onComplete={() => {
           // Refresca la tabla en el fondo; el wizard sigue abierto mostrando
           // el resumen hasta que el usuario cierre con "Ir a pedidos".
-          console.log('[ImportWizard] report recibido:', report)
           reload()
+        }}
+        onAssignToPlan={async (orderIds) => {
+          // Fetch las órdenes recién creadas y abrir ScheduleOrdersModal con ellas.
+          const res = await ordersService.getByIds(orderIds)
+          if (res.success) {
+            setScheduleOrdersOverride(res.data)
+            setShowImport(false)
+            setShowSchedule(true)
+          }
         }}
       />
 
       {showSchedule && (
         <ScheduleOrdersModal
-          orders={selectedOrders}
-          onClose={() => setShowSchedule(false)}
+          orders={scheduleOrdersOverride ?? selectedOrders}
+          onClose={() => { setShowSchedule(false); setScheduleOrdersOverride(null) }}
           onScheduled={() => {
             setShowSchedule(false)
+            setScheduleOrdersOverride(null)
             setSelected(new Set())
             reload()
           }}

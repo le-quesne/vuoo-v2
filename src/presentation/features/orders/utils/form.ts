@@ -43,7 +43,7 @@ export function fromOrder(o: Order): OrderFormState {
     customer_name: o.customer_name,
     customer_phone: o.customer_phone ?? '',
     customer_email: o.customer_email ?? '',
-    address: o.address,
+    address: o.address ?? '',
     delivery_instructions: o.delivery_instructions ?? '',
     items: o.items ?? [],
     service_duration_minutes: o.service_duration_minutes,
