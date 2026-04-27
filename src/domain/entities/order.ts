@@ -19,7 +19,8 @@ export interface Order {
   customerName: string;
   customerPhone: string | null;
   customerEmail: string | null;
-  address: string;
+  customerCode: string | null;
+  address: string | null;
   lat: number | null;
   lng: number | null;
   deliveryInstructions: string | null;

@@ -265,7 +265,8 @@ export interface Order {
   customer_name: string
   customer_phone: string | null
   customer_email: string | null
-  address: string
+  customer_code: string | null
+  address: string | null
   lat: number | null
   lng: number | null
   delivery_instructions: string | null
