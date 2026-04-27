@@ -29,6 +29,7 @@ import { useOneClickOptimize } from '@/presentation/features/planner/hooks'
 import { ConfirmDialog } from '@/presentation/components/ConfirmDialog'
 import {
   deleteOrders,
+  getAddressCountsForStatus,
   getStatusCounts,
   listAllIds,
   ordersService,
@@ -43,7 +44,7 @@ export function OrdersPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('pending')
-  const [onlyPendingAddress, setOnlyPendingAddress] = useState(false)
+  const [addressFilter, setAddressFilter] = useState<'all' | 'pending' | 'resolved'>('all')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [showCreate, setShowCreate] = useState(false)
   const [editing, setEditing] = useState<Order | null>(null)
@@ -55,6 +56,10 @@ export function OrdersPage() {
 
   const [reloadTick, setReloadTick] = useState(0)
   const [globalCounts, setGlobalCounts] = useState<OrderStatusCounts | null>(null)
+  const [addressCounts, setAddressCounts] = useState<{
+    pendingAddress: number
+    resolvedAddress: number
+  }>({ pendingAddress: 0, resolvedAddress: 0 })
 
   const oneClick = useOneClickOptimize(currentOrg?.id ?? '')
 
@@ -80,24 +85,25 @@ export function OrdersPage() {
     const from = (page - 1) * PAGE_SIZE
     const to = from + PAGE_SIZE - 1
 
-    let q = supabase
-      .from('orders')
-      .select('*', { count: 'exact' })
-      .eq('org_id', currentOrg.id)
-      .order('created_at', { ascending: false })
-      .range(from, to)
-
-    if (statusFilter !== 'all') q = q.eq('status', statusFilter)
-
-    q.then(({ data, count, error }) => {
-      if (cancelled) return
-      if (!error && data) setOrders(data as Order[])
-      if (count !== null) setTotalCount(count)
-      setLoading(false)
-    })
+    void ordersService
+      .listOrders({
+        orgId: currentOrg.id,
+        status: statusFilter,
+        addressFilter,
+        from,
+        to,
+      })
+      .then((res) => {
+        if (cancelled) return
+        if (res.success) {
+          setOrders(res.data.items)
+          setTotalCount(res.data.total)
+        }
+        setLoading(false)
+      })
 
     return () => { cancelled = true }
-  }, [currentOrg, page, statusFilter, reloadTick])
+  }, [currentOrg, page, statusFilter, addressFilter, reloadTick])
 
   const reload = useCallback(() => setReloadTick((t) => t + 1), [])
 
@@ -110,6 +116,16 @@ export function OrdersPage() {
     })
     return () => { cancelled = true }
   }, [currentOrg, reloadTick])
+
+  useEffect(() => {
+    if (!currentOrg) return
+    let cancelled = false
+    void getAddressCountsForStatus(currentOrg.id, statusFilter).then((res) => {
+      if (cancelled) return
+      if (res.success) setAddressCounts(res.data)
+    })
+    return () => { cancelled = true }
+  }, [currentOrg, statusFilter, reloadTick])
 
   async function confirmDelete() {
     if (!deleteTarget) return
@@ -130,6 +146,12 @@ export function OrdersPage() {
 
   function changeStatusFilter(next: StatusFilter) {
     setStatusFilter(next)
+    setPage(1)
+    setSelected(new Set())
+  }
+
+  function toggleAddressFilter(next: 'all' | 'pending' | 'resolved') {
+    setAddressFilter((prev) => (prev === next ? 'all' : next))
     setPage(1)
     setSelected(new Set())
   }
@@ -163,30 +185,26 @@ export function OrdersPage() {
   }, [currentOrg, reload])
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return orders
-    const q = search.toLowerCase()
-    return orders.filter((o) => {
-      if (onlyPendingAddress && !!o.address) return false
-      if (!q) return true
-      return (
-        o.order_number.toLowerCase().includes(q) ||
-        o.customer_name.toLowerCase().includes(q) ||
-        (o.address ?? '').toLowerCase().includes(q) ||
-        (o.customer_code ?? '').toLowerCase().includes(q) ||
-        (o.customer_phone ?? '').includes(q)
-      )
-    })
-  }, [orders, search, onlyPendingAddress])
+    const q = search.trim().toLowerCase()
+    if (!q) return orders
+    return orders.filter((o) =>
+      o.order_number.toLowerCase().includes(q) ||
+      o.customer_name.toLowerCase().includes(q) ||
+      (o.address ?? '').toLowerCase().includes(q) ||
+      (o.customer_code ?? '').toLowerCase().includes(q) ||
+      (o.customer_phone ?? '').includes(q),
+    )
+  }, [orders, search])
 
-  const pendingAddressCount = globalCounts?.pendingAddress ?? 0
   const counts = globalCounts?.byStatus ?? null
+  const pendingAddressCount = addressCounts.pendingAddress
+  const resolvedAddressCount = addressCounts.resolvedAddress
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE))
 
   const allFilteredSelected =
     filtered.length > 0 && filtered.every((o) => selected.has(o.id))
 
-  // Total de la consulta actual (filtro de estado activo). Coincide con totalCount
-  // cuando no hay filtros adicionales locales.
+  // totalCount ya respeta status + addressFilter (los aplica server-side).
   const filterTotal = totalCount
   const canSelectAcrossPages = allFilteredSelected && selected.size < filterTotal
   const [selectingAll, setSelectingAll] = useState(false)
@@ -208,7 +226,7 @@ export function OrdersPage() {
     if (!currentOrg) return
     setSelectAllError(null)
     setSelectingAll(true)
-    const res = await listAllIds(currentOrg.id, statusFilter)
+    const res = await listAllIds(currentOrg.id, statusFilter, addressFilter)
     setSelectingAll(false)
     if (!res.success) {
       setSelectAllError(res.error)
@@ -271,18 +289,34 @@ export function OrdersPage() {
           ))}
           {pendingAddressCount > 0 && (
             <button
-              onClick={() => setOnlyPendingAddress((v) => !v)}
+              onClick={() => toggleAddressFilter('pending')}
               className={[
                 'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border transition-colors',
-                onlyPendingAddress
+                addressFilter === 'pending'
                   ? 'bg-amber-100 text-amber-900 border-amber-300'
                   : 'bg-white text-amber-800 border-amber-200 hover:bg-amber-50',
               ].join(' ')}
-              title="Filtrar pedidos importados sin dirección"
+              title="Filtrar pedidos sin dirección"
             >
               <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
               Sin dirección
               <span className="text-[10px] opacity-70">({pendingAddressCount})</span>
+            </button>
+          )}
+          {resolvedAddressCount > 0 && (
+            <button
+              onClick={() => toggleAddressFilter('resolved')}
+              className={[
+                'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border transition-colors',
+                addressFilter === 'resolved'
+                  ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                  : 'bg-white text-emerald-800 border-emerald-200 hover:bg-emerald-50',
+              ].join(' ')}
+              title="Filtrar pedidos con dirección"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              Con dirección
+              <span className="text-[10px] opacity-70">({resolvedAddressCount})</span>
             </button>
           )}
         </div>

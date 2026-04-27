@@ -28,6 +28,7 @@ import { AdminUsers } from '@/presentation/pages/admin/AdminUsers';
 import TrackingPage from '@/presentation/pages/TrackingPage';
 import { DriverWelcomePage } from '@/presentation/pages/DriverWelcomePage';
 import { WelcomePage } from '@/presentation/pages/WelcomePage';
+import { DatasulDownloadPage } from '@/presentation/pages/DatasulDownloadPage';
 
 export function AppRouter() {
   return (
@@ -38,6 +39,7 @@ export function AppRouter() {
         <Route path="/track/:token" element={<TrackingPage />} />
         <Route path="/driver-welcome" element={<DriverWelcomePage />} />
         <Route path="/welcome" element={<WelcomePage />} />
+        <Route path="/datasul" element={<DatasulDownloadPage />} />
 
         {/* Onboarding */}
         <Route element={<RequireAuth />}>

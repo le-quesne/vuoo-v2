@@ -21,9 +21,12 @@ async function authHeaders(): Promise<Record<string, string>> {
     : {};
 }
 
+export type AddressFilter = 'all' | 'pending' | 'resolved';
+
 export interface ListOrdersArgs {
   orgId: string;
   status?: OrderStatus | 'all';
+  addressFilter?: AddressFilter;
   search?: string;
   from: number;
   to: number;
@@ -32,6 +35,7 @@ export interface ListOrdersArgs {
 export async function listOrders({
   orgId,
   status,
+  addressFilter = 'all',
   search,
   from,
   to,
@@ -44,6 +48,8 @@ export async function listOrders({
       .order('created_at', { ascending: false })
       .range(from, to);
     if (status && status !== 'all') query = query.eq('status', status);
+    if (addressFilter === 'pending') query = query.is('address', null);
+    if (addressFilter === 'resolved') query = query.not('address', 'is', null);
     if (search && search.trim().length > 0) {
       const q = `%${search.trim()}%`;
       query = query.or(
@@ -53,6 +59,34 @@ export async function listOrders({
     const { data, error, count } = await query;
     if (error) return fail(error.message);
     return ok({ items: (data ?? []) as Order[], total: count ?? 0 });
+  } catch (e) {
+    return fail(toErrorMessage(e));
+  }
+}
+
+export async function getAddressCountsForStatus(
+  orgId: string,
+  status: OrderStatus | 'all',
+): Promise<ServiceResult<{ pendingAddress: number; resolvedAddress: number }>> {
+  try {
+    const base = () => {
+      let q = supabase
+        .from('orders')
+        .select('id', { count: 'exact', head: true })
+        .eq('org_id', orgId);
+      if (status !== 'all') q = q.eq('status', status);
+      return q;
+    };
+    const [pa, ra] = await Promise.all([
+      base().is('address', null),
+      base().not('address', 'is', null),
+    ]);
+    if (pa.error) return fail(pa.error.message);
+    if (ra.error) return fail(ra.error.message);
+    return ok({
+      pendingAddress: pa.count ?? 0,
+      resolvedAddress: ra.count ?? 0,
+    });
   } catch (e) {
     return fail(toErrorMessage(e));
   }
@@ -114,10 +148,13 @@ export async function getStatusCounts(
 export async function listAllIds(
   orgId: string,
   status: OrderStatus | 'all',
+  addressFilter: AddressFilter = 'all',
 ): Promise<ServiceResult<string[]>> {
   try {
     let query = supabase.from('orders').select('id').eq('org_id', orgId);
     if (status !== 'all') query = query.eq('status', status);
+    if (addressFilter === 'pending') query = query.is('address', null);
+    if (addressFilter === 'resolved') query = query.not('address', 'is', null);
     const { data, error } = await query;
     if (error) return fail(error.message);
     return ok((data ?? []).map((r) => (r as { id: string }).id));
