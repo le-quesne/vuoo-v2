@@ -1,13 +1,15 @@
-import { useMemo } from 'react'
+import { useMemo, useRef } from 'react'
 import {
   Platform,
   View,
   Text,
+  Pressable,
   StyleSheet,
   type StyleProp,
   type ViewStyle,
 } from 'react-native'
 import { WebView } from 'react-native-webview'
+import { Ionicons } from '@expo/vector-icons'
 import { colors, radius, shadow, spacing } from '@/theme'
 import type { StopStatus } from '@/types/database'
 
@@ -158,6 +160,9 @@ function buildHtml(
 
       var markers = [];
       var driverMarker = null;
+      // Guardamos la geometria real de la ruta apenas la recibimos para que
+      // el boton "re-encuadrar" use el mismo encuadre que cuando carga el mapa.
+      var lastRouteCoords = null;
 
       function addStopMarkers() {
         STOPS.forEach(function (s, i) {
@@ -313,6 +318,7 @@ function buildHtml(
                 properties: {},
                 geometry: { type: 'LineString', coordinates: realCoords },
               });
+              lastRouteCoords = realCoords;
               // Reajustamos bounds a la geometria real para que quepa toda la ruta.
               try {
                 var b = new mapboxgl.LngLatBounds(realCoords[0], realCoords[0]);
@@ -343,6 +349,30 @@ function buildHtml(
         }
       });
 
+      // Expuesta a RN: el boton flotante hace injectJavaScript('window.fitRoute(); true;')
+      window.fitRoute = function () {
+        try {
+          var pts = [];
+          if (lastRouteCoords && lastRouteCoords.length > 0) {
+            pts = lastRouteCoords.slice();
+          } else {
+            for (var i = 0; i < STOPS.length; i++) pts.push([STOPS[i].lng, STOPS[i].lat]);
+          }
+          if (DEPOT && typeof DEPOT.lat === 'number' && typeof DEPOT.lng === 'number') {
+            pts.push([DEPOT.lng, DEPOT.lat]);
+          }
+          if (DRIVER) pts.push([DRIVER.lng, DRIVER.lat]);
+          if (pts.length === 0) return;
+          if (pts.length === 1) {
+            map.easeTo({ center: pts[0], zoom: 13, duration: 300 });
+            return;
+          }
+          var bb = new mapboxgl.LngLatBounds(pts[0], pts[0]);
+          for (var j = 0; j < pts.length; j++) bb.extend(pts[j]);
+          map.fitBounds(bb, { padding: 48, maxZoom: 15, duration: 400 });
+        } catch (e) { /* ignore */ }
+      };
+
       map.on('error', function (e) {
         if (window.ReactNativeWebView && e && e.error) {
           window.ReactNativeWebView.postMessage('mapbox-error:' + (e.error.message || ''));
@@ -364,6 +394,7 @@ export function RouteMapWebView({
   style,
 }: RouteMapWebViewProps) {
   const token = process.env.EXPO_PUBLIC_MAPBOX_TOKEN ?? ''
+  const webViewRef = useRef<WebView>(null)
 
   const html = useMemo(
     () => buildHtml(token, stops, driverLocation ?? null, depot ?? null),
@@ -398,6 +429,7 @@ export function RouteMapWebView({
   return (
     <View style={[styles.container, style]}>
       <WebView
+        ref={webViewRef}
         originWhitelist={['*']}
         javaScriptEnabled
         domStorageEnabled
@@ -406,6 +438,18 @@ export function RouteMapWebView({
         androidLayerType="hardware"
         setSupportMultipleWindows={false}
       />
+      <Pressable
+        onPress={() =>
+          webViewRef.current?.injectJavaScript(
+            'if (window.fitRoute) window.fitRoute(); true;',
+          )
+        }
+        accessibilityLabel="Re-encuadrar ruta"
+        hitSlop={8}
+        style={({ pressed }) => [styles.fitBtn, pressed && { opacity: 0.7 }]}
+      >
+        <Ionicons name="scan-outline" size={20} color={colors.text} />
+      </Pressable>
     </View>
   )
 }
@@ -433,6 +477,20 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 13,
     textAlign: 'center',
+  },
+  fitBtn: {
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.sm,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadow.card,
   },
 })
 

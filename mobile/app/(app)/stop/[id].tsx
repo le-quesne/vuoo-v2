@@ -18,6 +18,12 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { enqueueOperation } from '@/lib/offline'
+import {
+  loadPodDraft,
+  savePodDraft,
+  clearPodDraft,
+  type PodUploadStatus,
+} from '@/lib/podDraft'
 import SignatureCapture from '@/components/SignatureCapture'
 import type { PlanStop, Stop } from '@/types/database'
 import { colors, spacing, radius } from '@/theme'
@@ -67,16 +73,18 @@ async function resolveStorageUrl(
   // Si ya es URL absoluta, úsala tal cual.
   if (/^https?:\/\//.test(pathOrUrl)) return pathOrUrl
   try {
-    const { data } = await supabase.storage
+    const { data, error } = await supabase.storage
       .from(bucket)
       .createSignedUrl(pathOrUrl, 60 * 60)
-    if (data?.signedUrl) return data.signedUrl
-  } catch {
-    /* fallthrough */
+    if (error) {
+      console.warn('[stop] createSignedUrl error:', bucket, pathOrUrl, error.message)
+      return null
+    }
+    return data?.signedUrl ?? null
+  } catch (err) {
+    console.warn('[stop] createSignedUrl threw:', bucket, pathOrUrl, err)
+    return null
   }
-  // Fallback: public URL
-  const { data: pub } = supabase.storage.from(bucket).getPublicUrl(pathOrUrl)
-  return pub?.publicUrl ?? null
 }
 
 export default function StopExecutionScreen() {
@@ -85,7 +93,17 @@ export default function StopExecutionScreen() {
   const [planStop, setPlanStop] = useState<PlanStopDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [photoUri, setPhotoUri] = useState<string | null>(null)
+  const [photoPath, setPhotoPath] = useState<string | null>(null)
+  const [photoStatus, setPhotoStatus] = useState<PodUploadStatus>('idle')
   const [signatureBase64, setSignatureBase64] = useState<string | null>(null)
+  const [signaturePath, setSignaturePath] = useState<string | null>(null)
+  const [signatureStatus, setSignatureStatus] = useState<PodUploadStatus>('idle')
+  const [draftRestored, setDraftRestored] = useState(false)
+  // Paradas hermanas en la misma ruta — para detectar si esta es la ultima
+  // pendiente y disparar la pantalla "Ruta completada".
+  const [siblingStatuses, setSiblingStatuses] = useState<
+    { id: string; status: string }[]
+  >([])
   const [signatureModalOpen, setSignatureModalOpen] = useState(false)
   const [comments, setComments] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -101,12 +119,73 @@ export default function StopExecutionScreen() {
       .select('*, stop:stops(*)')
       .eq('id', id)
       .maybeSingle()
-    setPlanStop(data as unknown as PlanStopDetail | null)
+    const ps = data as unknown as PlanStopDetail | null
+    setPlanStop(ps)
+    if (ps?.route_id) {
+      const { data: siblings } = await supabase
+        .from('plan_stops')
+        .select('id, status')
+        .eq('route_id', ps.route_id)
+      setSiblingStatuses((siblings ?? []) as { id: string; status: string }[])
+    }
   }, [id])
 
   useEffect(() => {
     load().finally(() => setLoading(false))
   }, [load])
+
+  // Restaura el draft local del POD (si lo hay) cuando se monta la pantalla.
+  // Esto cubre el caso "el chofer toma foto/firma sin red, cierra la app, y
+  // vuelve antes de marcar como completada". El estado local se persiste en
+  // AsyncStorage y se reinyecta al volver, asi no pierde el progreso.
+  useEffect(() => {
+    if (!id) return
+    let cancelled = false
+    loadPodDraft(id).then((draft) => {
+      if (cancelled || !draft) {
+        setDraftRestored(true)
+        return
+      }
+      setPhotoUri(draft.photoUri)
+      setPhotoPath(draft.photoPath)
+      setPhotoStatus(draft.photoStatus)
+      setSignatureBase64(draft.signatureBase64)
+      setSignaturePath(draft.signaturePath)
+      setSignatureStatus(draft.signatureStatus)
+      setComments(draft.comments)
+      setDraftRestored(true)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [id])
+
+  // Autosave del draft cada vez que cambia algo. Solo despues de haber
+  // intentado la restauracion para no pisar lo persistido con valores vacios.
+  useEffect(() => {
+    if (!id || !draftRestored) return
+    if (planStop && planStop.status !== 'pending') return
+    void savePodDraft(id, {
+      photoUri,
+      photoPath,
+      photoStatus,
+      signatureBase64,
+      signaturePath,
+      signatureStatus,
+      comments,
+    })
+  }, [
+    id,
+    draftRestored,
+    planStop,
+    photoUri,
+    photoPath,
+    photoStatus,
+    signatureBase64,
+    signaturePath,
+    signatureStatus,
+    comments,
+  ])
 
   // Cuando la parada ya fue reportada, resolvemos signed URLs del POD.
   useEffect(() => {
@@ -149,145 +228,171 @@ export default function StopExecutionScreen() {
       quality: 0.7,
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
     })
-    if (!result.canceled && result.assets[0]) {
-      setPhotoUri(result.assets[0].uri)
+    if (!result.canceled && result.assets[0] && planStop && driver) {
+      const uri = result.assets[0].uri
+      const path = `${driver.org_id}/${planStop.id}/photo_${Date.now()}.jpg`
+      setPhotoUri(uri)
+      setPhotoPath(path)
+      // Subimos al instante; si falla, encolamos para que la sync queue lo
+      // intente cuando vuelva la red. handleComplete ya no toca storage.
+      void uploadPhotoNow(uri, path)
     }
   }
 
-  // Try to upload the photo directly. Returns { path, uploaded, networkFailure }.
-  async function tryUploadPhoto(
-    path: string,
-  ): Promise<{ uploaded: boolean; networkFailure: boolean }> {
-    if (!photoUri) return { uploaded: false, networkFailure: false }
-    try {
-      const response = await fetch(photoUri)
-      const blob = await response.blob()
-      const arrayBuffer = await new Response(blob).arrayBuffer()
-
-      const { error } = await supabase.storage
-        .from('delivery-photos')
-        .upload(path, arrayBuffer, {
-          contentType: 'image/jpeg',
-          upsert: false,
-        })
-      if (error) {
-        return { uploaded: false, networkFailure: true }
+  async function uploadPhotoNow(uri: string, path: string) {
+    if (!planStop) return
+    setPhotoStatus('uploading')
+    const netState = await NetInfo.fetch().catch(() => null)
+    const onlineHint = netState?.isConnected !== false
+    if (onlineHint) {
+      try {
+        const response = await fetch(uri)
+        const blob = await response.blob()
+        const arrayBuffer = await new Response(blob).arrayBuffer()
+        const { error } = await supabase.storage
+          .from('delivery-photos')
+          .upload(path, arrayBuffer, {
+            contentType: 'image/jpeg',
+            upsert: true,
+          })
+        if (error) {
+          await enqueueOperation(
+            'upload_photo',
+            { planStopId: planStop.id, path },
+            uri,
+          )
+          setPhotoStatus('queued')
+          return
+        }
+        setPhotoStatus('uploaded')
+        return
+      } catch {
+        await enqueueOperation(
+          'upload_photo',
+          { planStopId: planStop.id, path },
+          uri,
+        )
+        setPhotoStatus('queued')
+        return
       }
-      return { uploaded: true, networkFailure: false }
-    } catch {
-      return { uploaded: false, networkFailure: true }
     }
+    await enqueueOperation(
+      'upload_photo',
+      { planStopId: planStop.id, path },
+      uri,
+    )
+    setPhotoStatus('queued')
   }
 
-  async function tryUploadSignature(
-    path: string,
-  ): Promise<{ uploaded: boolean; networkFailure: boolean }> {
-    if (!signatureBase64) return { uploaded: false, networkFailure: false }
-    try {
-      const bytes = base64ToUint8Array(signatureBase64)
-      const { error } = await supabase.storage
-        .from('signatures')
-        .upload(path, bytes, {
-          contentType: 'image/png',
-          upsert: true,
-        })
-      if (error) {
-        return { uploaded: false, networkFailure: true }
+  async function uploadSignatureNow(base64: string, path: string) {
+    if (!planStop) return
+    setSignatureStatus('uploading')
+    const netState = await NetInfo.fetch().catch(() => null)
+    const onlineHint = netState?.isConnected !== false
+    const dataUrl = base64.startsWith('data:')
+      ? base64
+      : `data:image/png;base64,${base64}`
+    if (onlineHint) {
+      try {
+        const bytes = base64ToUint8Array(base64)
+        const { error } = await supabase.storage
+          .from('signatures')
+          .upload(path, bytes, {
+            contentType: 'image/png',
+            upsert: true,
+          })
+        if (error) {
+          await enqueueOperation(
+            'upload_signature',
+            { planStopId: planStop.id, path },
+            dataUrl,
+          )
+          setSignatureStatus('queued')
+          return
+        }
+        setSignatureStatus('uploaded')
+        return
+      } catch {
+        await enqueueOperation(
+          'upload_signature',
+          { planStopId: planStop.id, path },
+          dataUrl,
+        )
+        setSignatureStatus('queued')
+        return
       }
-      return { uploaded: true, networkFailure: false }
-    } catch {
-      return { uploaded: false, networkFailure: true }
+    }
+    await enqueueOperation(
+      'upload_signature',
+      { planStopId: planStop.id, path },
+      dataUrl,
+    )
+    setSignatureStatus('queued')
+  }
+
+  // Resumen offline-friendly basado en paradas cargadas + el efecto local
+  // del update de esta parada. No depende de re-query post-submit.
+  function summaryAfterThisUpdate(newStatus: 'completed' | 'incomplete'): {
+    isLastPending: boolean
+    delivered: number
+    failed: number
+    total: number
+  } {
+    if (!planStop) {
+      return { isLastPending: false, delivered: 0, failed: 0, total: 0 }
+    }
+    const others = siblingStatuses.filter((r) => r.id !== planStop.id)
+    const pendingOthers = others.filter((r) => r.status === 'pending').length
+    const deliveredOthers = others.filter((r) => r.status === 'completed').length
+    const failedOthers = others.filter(
+      (r) => r.status === 'incomplete' || r.status === 'cancelled',
+    ).length
+    const delivered = deliveredOthers + (newStatus === 'completed' ? 1 : 0)
+    const failed = failedOthers + (newStatus === 'incomplete' ? 1 : 0)
+    return {
+      isLastPending: pendingOthers === 0,
+      delivered,
+      failed,
+      total: siblingStatuses.length,
     }
   }
 
   async function handleComplete() {
     if (!planStop || !driver) return
-    if (!photoUri) {
+    if (!photoPath) {
       Alert.alert(
         'Foto requerida',
         'Toma una foto de prueba de entrega antes de completar.',
       )
       return
     }
+    if (!signaturePath) {
+      Alert.alert(
+        'Firma requerida',
+        'El cliente debe firmar para confirmar la entrega.',
+      )
+      return
+    }
     setSubmitting(true)
 
     const now = new Date()
-    const photoPath = `${driver.org_id}/${planStop.id}/photo_${Date.now()}.jpg`
-    const signaturePath = `${driver.org_id}/${planStop.id}/signature.png`
     const existingImages = planStop.report_images ?? []
-
-    // Decide up front whether we should attempt network writes.
-    const netState = await NetInfo.fetch().catch(() => null)
-    const onlineHint = netState?.isConnected !== false
-
-    let photoUploaded = false
-    let photoQueued = false
-    if (onlineHint) {
-      const res = await tryUploadPhoto(photoPath)
-      photoUploaded = res.uploaded
-      if (!res.uploaded) {
-        await enqueueOperation(
-          'upload_photo',
-          { planStopId: planStop.id, path: photoPath },
-          photoUri,
-        )
-        photoQueued = true
-      }
-    } else {
-      await enqueueOperation(
-        'upload_photo',
-        { planStopId: planStop.id, path: photoPath },
-        photoUri,
-      )
-      photoQueued = true
-    }
-
-    let signatureUploaded = false
-    let signatureQueued = false
-    if (signatureBase64) {
-      if (onlineHint) {
-        const res = await tryUploadSignature(signaturePath)
-        signatureUploaded = res.uploaded
-        if (!res.uploaded) {
-          // Queue using a data URL so the worker can reconstruct bytes.
-          const dataUrl = signatureBase64.startsWith('data:')
-            ? signatureBase64
-            : `data:image/png;base64,${signatureBase64}`
-          await enqueueOperation(
-            'upload_signature',
-            { planStopId: planStop.id, path: signaturePath },
-            dataUrl,
-          )
-          signatureQueued = true
-        }
-      } else {
-        const dataUrl = signatureBase64.startsWith('data:')
-          ? signatureBase64
-          : `data:image/png;base64,${signatureBase64}`
-        await enqueueOperation(
-          'upload_signature',
-          { planStopId: planStop.id, path: signaturePath },
-          dataUrl,
-        )
-        signatureQueued = true
-      }
-    }
-
     const updateFields: Record<string, unknown> = {
       status: 'completed',
       execution_date: now.toISOString().slice(0, 10),
       report_time: now.toISOString(),
       report_comments: comments || null,
-      report_images: photoUploaded
-        ? [...existingImages, photoPath]
-        : existingImages,
+      report_images: [...existingImages, photoPath],
     }
-    if (signatureUploaded) {
+    if (signaturePath) {
       updateFields.report_signature_url = signaturePath
     }
 
+    const netState = await NetInfo.fetch().catch(() => null)
+    const onlineHint = netState?.isConnected !== false
+
     let updateQueued = false
-    if (onlineHint && !photoQueued && !signatureQueued) {
+    if (onlineHint) {
       const { error } = await supabase
         .from('plan_stops')
         .update(updateFields)
@@ -295,35 +400,57 @@ export default function StopExecutionScreen() {
       if (error) {
         await enqueueOperation('update_plan_stop', {
           id: planStop.id,
-          fields: {
-            ...updateFields,
-            // When processed later by the queue, include the expected paths
-            // so report_images/report_signature_url are correct.
-            report_images: [...existingImages, photoPath],
-            report_signature_url: signatureBase64 ? signaturePath : null,
-          },
+          fields: updateFields,
         })
         updateQueued = true
       }
     } else {
       await enqueueOperation('update_plan_stop', {
         id: planStop.id,
-        fields: {
-          ...updateFields,
-          report_images: [...existingImages, photoPath],
-          report_signature_url: signatureBase64 ? signaturePath : null,
-        },
+        fields: updateFields,
       })
       updateQueued = true
     }
 
     setSubmitting(false)
 
-    if (photoQueued || signatureQueued || updateQueued) {
+    // El reporte ya esta o subido o encolado — el draft local cumplio su
+    // proposito y se puede borrar para no restaurar datos viejos despues.
+    void clearPodDraft(planStop.id)
+
+    if (
+      updateQueued ||
+      photoStatus === 'queued' ||
+      signatureStatus === 'queued'
+    ) {
       Alert.alert(
         'Guardado localmente',
         'Se sincronizara cuando vuelva la red.',
       )
+    }
+
+    // Si era la ultima parada pendiente, vamos a la pantalla de exito.
+    // El haptic chain se dispara dentro de done.tsx sincronizado con la
+    // animacion del fill — asi se siente como una sola pieza.
+    const summary = summaryAfterThisUpdate('completed')
+    if (summary.isLastPending && planStop.route_id) {
+      const outcome =
+        summary.delivered === 0
+          ? 'all-failed'
+          : summary.failed > 0
+            ? 'partial'
+            : 'success'
+      router.replace({
+        pathname: '/(app)/route/[id]/done',
+        params: {
+          id: planStop.route_id,
+          delivered: String(summary.delivered),
+          failed: String(summary.failed),
+          total: String(summary.total),
+          outcome,
+        },
+      })
+      return
     }
     router.back()
   }
@@ -334,52 +461,23 @@ export default function StopExecutionScreen() {
 
     const now = new Date()
     const existingImages = planStop.report_images ?? []
-    const photoPath = photoUri
-      ? `${driver.org_id}/${planStop.id}/photo_${Date.now()}.jpg`
-      : null
-
-    const netState = await NetInfo.fetch().catch(() => null)
-    const onlineHint = netState?.isConnected !== false
-
-    let photoUploaded = false
-    let photoQueued = false
-    if (photoUri && photoPath) {
-      if (onlineHint) {
-        const res = await tryUploadPhoto(photoPath)
-        photoUploaded = res.uploaded
-        if (!res.uploaded) {
-          await enqueueOperation(
-            'upload_photo',
-            { planStopId: planStop.id, path: photoPath },
-            photoUri,
-          )
-          photoQueued = true
-        }
-      } else {
-        await enqueueOperation(
-          'upload_photo',
-          { planStopId: planStop.id, path: photoPath },
-          photoUri,
-        )
-        photoQueued = true
-      }
-    }
-
     const updateFields: Record<string, unknown> = {
       status: 'incomplete',
       execution_date: now.toISOString().slice(0, 10),
       report_time: now.toISOString(),
       report_comments: comments || null,
-      report_images:
-        photoUploaded && photoPath
-          ? [...existingImages, photoPath]
-          : existingImages,
+      report_images: photoPath
+        ? [...existingImages, photoPath]
+        : existingImages,
       cancellation_reason: failReason,
       delivery_attempts: (planStop.delivery_attempts ?? 0) + 1,
     }
 
+    const netState = await NetInfo.fetch().catch(() => null)
+    const onlineHint = netState?.isConnected !== false
+
     let updateQueued = false
-    if (onlineHint && !photoQueued) {
+    if (onlineHint) {
       const { error } = await supabase
         .from('plan_stops')
         .update(updateFields)
@@ -387,24 +485,14 @@ export default function StopExecutionScreen() {
       if (error) {
         await enqueueOperation('update_plan_stop', {
           id: planStop.id,
-          fields: {
-            ...updateFields,
-            report_images: photoPath
-              ? [...existingImages, photoPath]
-              : existingImages,
-          },
+          fields: updateFields,
         })
         updateQueued = true
       }
     } else {
       await enqueueOperation('update_plan_stop', {
         id: planStop.id,
-        fields: {
-          ...updateFields,
-          report_images: photoPath
-            ? [...existingImages, photoPath]
-            : existingImages,
-        },
+        fields: updateFields,
       })
       updateQueued = true
     }
@@ -412,11 +500,34 @@ export default function StopExecutionScreen() {
     setSubmitting(false)
     setFailModalOpen(false)
 
-    if (photoQueued || updateQueued) {
+    void clearPodDraft(planStop.id)
+
+    if (updateQueued || photoStatus === 'queued') {
       Alert.alert(
         'Guardado localmente',
         'Se sincronizara cuando vuelva la red.',
       )
+    }
+
+    const summary = summaryAfterThisUpdate('incomplete')
+    if (summary.isLastPending && planStop.route_id) {
+      const outcome =
+        summary.delivered === 0
+          ? 'all-failed'
+          : summary.failed > 0
+            ? 'partial'
+            : 'success'
+      router.replace({
+        pathname: '/(app)/route/[id]/done',
+        params: {
+          id: planStop.route_id,
+          delivered: String(summary.delivered),
+          failed: String(summary.failed),
+          total: String(summary.total),
+          outcome,
+        },
+      })
+      return
     }
     router.back()
   }
@@ -489,11 +600,16 @@ export default function StopExecutionScreen() {
                 <View style={styles.photoPreviewContainer}>
                   <Image source={{ uri: photoUri }} style={styles.photoPreview} />
                   <Pressable
-                    onPress={() => setPhotoUri(null)}
+                    onPress={() => {
+                      setPhotoUri(null)
+                      setPhotoPath(null)
+                      setPhotoStatus('idle')
+                    }}
                     style={({ pressed }) => [styles.photoReplace, pressed && { opacity: 0.7 }]}
                   >
                     <Text style={styles.photoReplaceText}>Cambiar</Text>
                   </Pressable>
+                  <UploadStatus status={photoStatus} />
                 </View>
               ) : (
                 <Pressable
@@ -506,7 +622,7 @@ export default function StopExecutionScreen() {
             </View>
 
             <View style={[styles.card, { marginTop: spacing.md }]}>
-              <Text style={styles.sectionTitle}>Firma (opcional)</Text>
+              <Text style={styles.sectionTitle}>Firma</Text>
               {signaturePreviewUri ? (
                 <View style={styles.signaturePreviewContainer}>
                   <Image
@@ -525,7 +641,11 @@ export default function StopExecutionScreen() {
                       <Text style={styles.signatureSmallBtnText}>Re-capturar</Text>
                     </Pressable>
                     <Pressable
-                      onPress={() => setSignatureBase64(null)}
+                      onPress={() => {
+                        setSignatureBase64(null)
+                        setSignaturePath(null)
+                        setSignatureStatus('idle')
+                      }}
                       style={({ pressed }) => [
                         styles.signatureSmallBtn,
                         pressed && { opacity: 0.7 },
@@ -534,6 +654,7 @@ export default function StopExecutionScreen() {
                       <Text style={styles.signatureSmallBtnText}>Eliminar</Text>
                     </Pressable>
                   </View>
+                  <UploadStatus status={signatureStatus} />
                 </View>
               ) : (
                 <Pressable
@@ -564,11 +685,14 @@ export default function StopExecutionScreen() {
             <Pressable
               onPress={handleComplete}
               disabled={submitting}
-              style={({ pressed }) => [
-                styles.primaryBtn,
-                submitting && { opacity: 0.6 },
-                pressed && !submitting && { backgroundColor: colors.primaryDark },
-              ]}
+              style={({ pressed }) => {
+                const ready = !!photoPath && !!signaturePath
+                return [
+                  styles.primaryBtn,
+                  (submitting || !ready) && { opacity: 0.5 },
+                  pressed && !submitting && ready && { backgroundColor: colors.primaryDark },
+                ]
+              }}
             >
               {submitting ? (
                 <ActivityIndicator color="#fff" />
@@ -592,7 +716,12 @@ export default function StopExecutionScreen() {
         visible={signatureModalOpen}
         onClose={() => setSignatureModalOpen(false)}
         onSave={(sig) => {
-          setSignatureBase64(sig)
+          if (planStop && driver) {
+            const path = `${driver.org_id}/${planStop.id}/signature.png`
+            setSignatureBase64(sig)
+            setSignaturePath(path)
+            void uploadSignatureNow(sig, path)
+          }
           setSignatureModalOpen(false)
         }}
       />
@@ -775,6 +904,9 @@ function PODCard({
                   source={{ uri: url }}
                   style={styles.podPhoto}
                   resizeMode="cover"
+                  onError={(e) =>
+                    console.warn('[stop] POD photo load error:', url, e.nativeEvent)
+                  }
                 />
                 <View style={styles.photoIndex}>
                   <Text style={styles.photoIndexText}>{i + 1}</Text>
@@ -808,24 +940,61 @@ function PODCard({
         </Pressable>
       </Modal>
 
-      {signatureUrl && (
-        <View style={{ marginTop: spacing.md }}>
-          <Text style={styles.podLabel}>Firma</Text>
+      <View style={{ marginTop: spacing.md }}>
+        <Text style={styles.podLabel}>Firma</Text>
+        {signatureUrl ? (
           <View style={styles.signatureBox}>
             <Image
               source={{ uri: signatureUrl }}
               style={styles.signatureImage}
               resizeMode="contain"
+              onError={(e) =>
+                console.warn(
+                  '[stop] POD signature load error:',
+                  signatureUrl,
+                  e.nativeEvent,
+                )
+              }
             />
           </View>
-        </View>
-      )}
+        ) : (
+          <Text style={[styles.podValue, { marginTop: 4, fontStyle: 'italic', textAlign: 'left' }]}>
+            No se capturó firma.
+          </Text>
+        )}
+      </View>
+    </View>
+  )
+}
 
-      {photoUrls.length === 0 && !signatureUrl && (
-        <Text style={[styles.podLabel, { marginTop: spacing.md, fontStyle: 'italic' }]}>
-          Sin fotos ni firma adjuntas.
+function UploadStatus({
+  status,
+}: {
+  status: 'idle' | 'uploading' | 'uploaded' | 'queued'
+}) {
+  if (status === 'idle') return null
+  if (status === 'uploading') {
+    return (
+      <View style={styles.uploadStatusRow}>
+        <ActivityIndicator size="small" color={colors.textMuted} />
+        <Text style={styles.uploadStatusText}>Subiendo...</Text>
+      </View>
+    )
+  }
+  if (status === 'uploaded') {
+    return (
+      <View style={styles.uploadStatusRow}>
+        <Text style={[styles.uploadStatusText, { color: colors.success }]}>
+          ✓ Guardado
         </Text>
-      )}
+      </View>
+    )
+  }
+  return (
+    <View style={styles.uploadStatusRow}>
+      <Text style={[styles.uploadStatusText, { color: colors.warning }]}>
+        Sin red — se subira luego
+      </Text>
     </View>
   )
 }
@@ -949,6 +1118,13 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
   },
   podBadgeText: { fontSize: 11, fontWeight: '700' },
+  uploadStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+  },
+  uploadStatusText: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },
   podRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

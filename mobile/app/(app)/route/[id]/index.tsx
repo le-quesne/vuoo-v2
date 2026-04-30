@@ -13,6 +13,7 @@ import {
 } from 'react-native'
 import { router, useLocalSearchParams, Stack } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '@/lib/supabase'
 import { isTrackingActive, startTracking, stopTracking } from '@/lib/location'
 import { useAuth } from '@/contexts/AuthContext'
@@ -47,6 +48,7 @@ export default function RouteDetailScreen() {
   const [route, setRoute] = useState<RouteWithRelations | null>(null)
   const [stops, setStops] = useState<PlanStopRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [stopsExpanded, setStopsExpanded] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [startingRoute, setStartingRoute] = useState(false)
   const [finishingRoute, setFinishingRoute] = useState(false)
@@ -144,8 +146,13 @@ export default function RouteDetailScreen() {
   useEffect(() => {
     if (!id || !driver?.id) return
 
+    // Nombre unico por mount: si re-entramos a la pantalla antes de que
+    // supabase termine de limpiar el canal anterior, un nombre estatico nos
+    // devuelve el canal cacheado ya en estado `subscribed` y .on() falla con
+    // "cannot add postgres_changes callbacks after subscribe()".
+    const channelName = `route-sync-${id}-${Date.now()}`
     const channel = supabase
-      .channel(`route-sync-${id}`)
+      .channel(channelName)
       .on(
         'postgres_changes',
         {
@@ -213,7 +220,7 @@ export default function RouteDetailScreen() {
       })
 
     const channel = supabase
-      .channel(`driver-location-${driver.id}`)
+      .channel(`driver-location-${driver.id}-${Date.now()}`)
       .on(
         'postgres_changes',
         {
@@ -394,73 +401,59 @@ export default function RouteDetailScreen() {
   }
 
   const nextPending = stops.find((s) => s.status === 'pending')
+  const nextPendingIndex = nextPending
+    ? stops.findIndex((s) => s.id === nextPending.id)
+    : -1
   const completedCount = stops.filter((s) => s.status === 'completed').length
+  // Cuando la ruta esta en curso, el "siguiente" se muestra como tarjeta
+  // destacada arriba — lo sacamos de la lista para evitar duplicarlo.
+  const showNextCard = !!nextPending && route?.status !== 'not_started'
+  // Pendientes arriba en orden de ruta, ya reportadas (completed/incomplete/cancelled)
+  // al final con opacidad reducida — el chofer foco en lo que falta.
+  const listStops = (() => {
+    const indexed = stops.map((s, originalIndex) => ({ stop: s, originalIndex }))
+    const filtered = indexed.filter(
+      ({ stop }) => !(showNextCard && stop.id === nextPending?.id),
+    )
+    const pending = filtered.filter(({ stop }) => stop.status === 'pending')
+    const done = filtered.filter(({ stop }) => stop.status !== 'pending')
+    return [...pending, ...done]
+  })()
 
-  return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <Stack.Screen options={{ title: route?.plan?.name ?? 'Ruta' }} />
+  const canReportIncident =
+    !!driver?.org_id && route?.status !== 'completed'
 
-      <View style={styles.summary}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.summaryLabel}>Progreso</Text>
-          <View style={styles.summaryValueRow}>
-            <Text style={styles.summaryValue}>
-              {completedCount} / {stops.length} paradas
-            </Text>
-            <TrackingBadge active={tracking && route?.status === 'in_transit'} />
-          </View>
-        </View>
-        {route?.status === 'not_started' && (
-          <Pressable
-            onPress={handleStartRoute}
-            disabled={startingRoute}
-            style={({ pressed }) => [styles.startButton, pressed && { opacity: 0.85 }]}
-          >
-            {startingRoute ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.startButtonText}>Iniciar ruta</Text>
-            )}
-          </Pressable>
-        )}
-        {route?.status === 'in_transit' && (
-          <Pressable
-            onPress={handleFinishRoute}
-            disabled={finishingRoute}
-            style={({ pressed }) => [styles.finishButton, pressed && { opacity: 0.85 }]}
-          >
-            {finishingRoute ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.startButtonText}>Finalizar ruta</Text>
-            )}
-          </Pressable>
-        )}
-        {route?.status === 'completed' && (
-          <Pressable
-            onPress={handleReopenRoute}
-            disabled={finishingRoute}
-            style={({ pressed }) => [styles.reopenButton, pressed && { opacity: 0.85 }]}
-          >
-            {finishingRoute ? (
-              <ActivityIndicator color={colors.primary} />
-            ) : (
-              <Text style={styles.reopenButtonText}>Reabrir ruta</Text>
-            )}
-          </Pressable>
-        )}
-      </View>
+  // Asumimos round-trip cuando hay depot configurado: el chofer debe volver
+  // al depot antes de poder cerrar la ruta. Si la org no tiene depot, no
+  // exigimos proximidad y "Finalizar" aparece cuando todas estan reportadas.
+  const pendingCount = stops.filter((s) => s.status === 'pending').length
+  const hasDepot = !!depot
+  const nearDepot = (() => {
+    if (!depot || !driverLocation) return false
+    return haversineMeters(driverLocation, depot) <= 150
+  })()
+  const canFinishRoute =
+    route?.status === 'in_transit' &&
+    pendingCount === 0 &&
+    (!hasDepot || nearDepot)
+  const waitingForDepot =
+    route?.status === 'in_transit' &&
+    pendingCount === 0 &&
+    hasDepot &&
+    !nearDepot
 
+  const failedCount = stops.filter(
+    (s) => s.status === 'incomplete' || s.status === 'cancelled',
+  ).length
+  const completedPct =
+    stops.length > 0 ? Math.min(1, completedCount / stops.length) : 0
+  const failedPct =
+    stops.length > 0 ? Math.min(1 - completedPct, failedCount / stops.length) : 0
+  const reportedCount = completedCount + failedCount
+
+  const listHeader = (
+    <View>
       <SyncStatusBar />
-
-      {route?.status === 'in_transit' && driver?.org_id && (
-        <Pressable
-          onPress={() => setIncidentModalOpen(true)}
-          style={({ pressed }) => [styles.incidentBtn, pressed && { opacity: 0.8 }]}
-        >
-          <Text style={styles.incidentBtnText}>Reportar problema</Text>
-        </Pressable>
-      )}
 
       {(mapStops.length > 0 || depot) && (
         <RouteMapWebView
@@ -471,18 +464,154 @@ export default function RouteDetailScreen() {
         />
       )}
 
+      <View style={styles.actionRow}>
+        {route?.status === 'not_started' && (
+          <Pressable
+            onPress={handleStartRoute}
+            disabled={startingRoute}
+            style={({ pressed }) => [styles.startButton, styles.actionBtn, pressed && { opacity: 0.85 }]}
+          >
+            {startingRoute ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.startButtonText}>Iniciar ruta</Text>
+            )}
+          </Pressable>
+        )}
+        {canFinishRoute && (
+          <Pressable
+            onPress={handleFinishRoute}
+            disabled={finishingRoute}
+            style={({ pressed }) => [styles.finishButton, styles.actionBtn, pressed && { opacity: 0.85 }]}
+          >
+            {finishingRoute ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.startButtonText}>Finalizar ruta</Text>
+            )}
+          </Pressable>
+        )}
+        {waitingForDepot && (
+          <Text style={styles.waitDepotHint}>
+            Vuelve al centro de distribución
+          </Text>
+        )}
+        {route?.status === 'completed' && (
+          <Pressable
+            onPress={handleReopenRoute}
+            disabled={finishingRoute}
+            style={({ pressed }) => [styles.reopenButton, styles.actionBtn, pressed && { opacity: 0.85 }]}
+          >
+            {finishingRoute ? (
+              <ActivityIndicator color={colors.primary} />
+            ) : (
+              <Text style={styles.reopenButtonText}>Reabrir ruta</Text>
+            )}
+          </Pressable>
+        )}
+      </View>
+
       {nextPending && route?.status !== 'not_started' && (
-        <Pressable
-          onPress={() => openMapsFor(nextPending.stop)}
-          style={({ pressed }) => [styles.nextBanner, pressed && { opacity: 0.9 }]}
-        >
-          <Text style={styles.nextBannerLabel}>Siguiente parada · Tocar para navegar</Text>
-          <Text style={styles.nextBannerTitle}>{nextPending.stop?.name}</Text>
+        <View style={styles.nextBanner}>
+          <Text style={styles.nextBannerLabel}>Siguiente parada</Text>
+          <View style={styles.nextTitleRow}>
+            {nextPendingIndex >= 0 && (
+              <View style={styles.nextOrderBadge}>
+                <Text style={styles.nextOrderBadgeText}>
+                  {nextPendingIndex + 1}
+                </Text>
+              </View>
+            )}
+            <Text style={styles.nextBannerTitle}>{nextPending.stop?.name}</Text>
+          </View>
           {nextPending.stop?.address && (
             <Text style={styles.nextBannerAddress}>{nextPending.stop.address}</Text>
           )}
+          <View style={styles.nextActions}>
+            <Pressable
+              onPress={() => openMapsFor(nextPending.stop)}
+              style={({ pressed }) => [styles.mapsBtn, pressed && { opacity: 0.85 }]}
+            >
+              <Text style={styles.mapsBtnText}>Abrir en Maps</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => router.push(`/(app)/stop/${nextPending.id}`)}
+              style={({ pressed }) => [styles.arrivedBtn, pressed && { opacity: 0.85 }]}
+            >
+              <Text style={styles.arrivedBtnText}>Ya llegué</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
+      {listStops.length > 0 && (
+        <Pressable
+          onPress={() => setStopsExpanded((v) => !v)}
+          hitSlop={8}
+          accessibilityLabel={
+            stopsExpanded ? 'Ocultar próximas paradas' : 'Mostrar próximas paradas'
+          }
+          style={({ pressed }) => [styles.expandBtn, pressed && { opacity: 0.6 }]}
+        >
+          <Ionicons
+            name={stopsExpanded ? 'chevron-up' : 'ellipsis-horizontal'}
+            size={18}
+            color={colors.textMuted}
+          />
+          <Text style={styles.expandBtnText}>
+            {stopsExpanded
+              ? 'Ocultar próximas paradas'
+              : `Ver ${listStops.length} parada${listStops.length === 1 ? '' : 's'} más`}
+          </Text>
         </Pressable>
       )}
+    </View>
+  )
+
+  return (
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
+      <Stack.Screen
+        options={{
+          title: route?.plan?.name ?? 'Ruta',
+          headerRight: () =>
+            canReportIncident ? (
+              <Pressable
+                onPress={() => setIncidentModalOpen(true)}
+                hitSlop={12}
+                accessibilityLabel="Reportar emergencia"
+                style={({ pressed }) => [
+                  styles.emergencyHeaderBtn,
+                  pressed && { opacity: 0.7 },
+                ]}
+              >
+                <Ionicons name="warning" size={22} color={colors.danger} />
+              </Pressable>
+            ) : null,
+        }}
+      />
+
+      <View style={styles.miniProgress}>
+        <View style={styles.miniProgressTrack}>
+          {stops.map((s) => {
+            const bg =
+              s.status === 'completed'
+                ? colors.success
+                : s.status === 'incomplete' || s.status === 'cancelled'
+                  ? colors.warning
+                  : 'transparent'
+            return (
+              <View
+                key={s.id}
+                style={[styles.miniProgressSegment, { backgroundColor: bg }]}
+              />
+            )
+          })}
+        </View>
+        <Text style={styles.miniProgressText}>
+          {reportedCount}/{stops.length}
+        </Text>
+        <TrackingBadge active={tracking && route?.status === 'in_transit'} />
+      </View>
 
       {driver?.org_id && driver?.id && user?.id && (
         <IncidentReportModal
@@ -493,31 +622,63 @@ export default function RouteDetailScreen() {
           userId={user.id}
           onClose={() => setIncidentModalOpen(false)}
           onReported={() => {}}
+          onFinishRouteEarly={
+            route?.status === 'in_transit' && !canFinishRoute
+              ? handleFinishRoute
+              : undefined
+          }
         />
       )}
 
       <FlatList
-        data={stops}
-        keyExtractor={(s) => s.id}
-        contentContainerStyle={{ padding: spacing.lg, gap: spacing.sm }}
+        data={stopsExpanded ? listStops : []}
+        keyExtractor={({ stop }) => stop.id}
+        contentContainerStyle={styles.listContent}
+        ListHeaderComponent={listHeader}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />
         }
         ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyText}>Esta ruta no tiene paradas.</Text>
-          </View>
+          // Solo mostramos placeholder cuando realmente no hay paradas. Si la
+          // lista esta colapsada, el botón "Ver N paradas más" en el header
+          // ya comunica que hay items ocultos.
+          stopsExpanded || listStops.length === 0 ? (
+            <View style={styles.empty}>
+              <Text style={styles.emptyText}>
+                {showNextCard ? 'No hay más paradas pendientes.' : 'Esta ruta no tiene paradas.'}
+              </Text>
+            </View>
+          ) : null
         }
-        renderItem={({ item, index }) => (
-          <StopRow
-            planStop={item}
-            index={index}
-            onPress={() => router.push(`/(app)/stop/${item.id}`)}
-          />
+        renderItem={({ item }) => (
+          <View style={styles.stopRowWrap}>
+            <StopRow
+              planStop={item.stop}
+              index={item.originalIndex}
+              onPress={() => router.push(`/(app)/stop/${item.stop.id}`)}
+            />
+          </View>
         )}
       />
     </SafeAreaView>
   )
+}
+
+// Distancia haversine en metros entre dos puntos (lat/lng en grados).
+function haversineMeters(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number },
+): number {
+  const R = 6371000
+  const toRad = (deg: number) => (deg * Math.PI) / 180
+  const dLat = toRad(b.lat - a.lat)
+  const dLng = toRad(b.lng - a.lng)
+  const lat1 = toRad(a.lat)
+  const lat2 = toRad(b.lat)
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2
+  return 2 * R * Math.asin(Math.sqrt(h))
 }
 
 function openMapsFor(stop: Stop | null | undefined): void {
@@ -548,12 +709,13 @@ function StopRow({
     ? `${planStop.stop.time_window_start.slice(0, 5)} - ${planStop.stop.time_window_end.slice(0, 5)}`
     : null
   const pending = planStop.status === 'pending'
-  const ctaLabel = pending ? 'Completar' : 'Ver detalle'
 
   return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [styles.stopCard, pressed && { opacity: 0.85 }]}
+    <View
+      style={[
+        styles.stopCard,
+        !pending && styles.stopCardDone,
+      ]}
     >
       <View style={styles.stopOrder}>
         <Text style={styles.stopOrderText}>{index + 1}</Text>
@@ -574,41 +736,69 @@ function StopRow({
             {planStop.stop.address}
           </Text>
         )}
-        <View style={styles.stopFooter}>
-          {tw && <Text style={styles.stopMeta}>{tw}</Text>}
-          <Pressable
-            onPress={onPress}
-            hitSlop={8}
-            style={({ pressed }) => [
-              pending ? styles.ctaPrimary : styles.ctaSecondary,
-              pressed && { opacity: 0.75 },
-            ]}
-          >
-            <Text style={pending ? styles.ctaPrimaryText : styles.ctaSecondaryText}>
-              {ctaLabel}
-            </Text>
-          </Pressable>
-        </View>
+        {tw && (
+          <View style={styles.stopFooter}>
+            <Text style={styles.stopMeta}>{tw}</Text>
+          </View>
+        )}
       </View>
-    </Pressable>
+      <Pressable
+        onPress={onPress}
+        hitSlop={12}
+        accessibilityLabel="Ver detalle de la parada"
+        style={({ pressed }) => [styles.stopChevronBtn, pressed && { opacity: 0.5 }]}
+      >
+        <Ionicons name="chevron-forward" size={22} color={colors.textMuted} />
+      </Pressable>
+    </View>
   )
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.bg },
-  summary: {
+  miniProgress: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: spacing.lg,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
     backgroundColor: colors.card,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
-    gap: spacing.md,
   },
-  summaryLabel: { fontSize: 11, color: colors.textMuted, textTransform: 'uppercase' },
-  summaryValueRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
-  summaryValue: { fontSize: 18, fontWeight: '600', color: colors.text },
+  miniProgressTrack: {
+    flex: 1,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+    overflow: 'hidden',
+    flexDirection: 'row',
+  },
+  miniProgressSegment: {
+    flex: 1,
+    height: '100%',
+  },
+  miniProgressText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.textMuted,
+  },
+  actionRow: {
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+  },
+  actionBtn: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  waitDepotHint: {
+    textAlign: 'center',
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '600',
+    paddingVertical: spacing.md,
+  },
   startButton: {
     backgroundColor: colors.primary,
     paddingHorizontal: spacing.lg,
@@ -632,37 +822,74 @@ const styles = StyleSheet.create({
   reopenButtonText: { color: colors.primary, fontWeight: '600' },
   startButtonText: { color: '#fff', fontWeight: '600' },
   map: {
-    height: 280,
+    height: 400,
     marginHorizontal: spacing.lg,
     marginTop: spacing.lg,
   },
-  incidentBtn: {
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.warning,
-    backgroundColor: colors.warningBg,
-    alignItems: 'center',
-  },
-  incidentBtnText: {
-    color: colors.warning,
-    fontSize: 13,
-    fontWeight: '600',
+  emergencyHeaderBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
   },
   nextBanner: {
     margin: spacing.lg,
-    marginBottom: 0,
+    marginBottom: spacing.md,
     padding: spacing.lg,
     backgroundColor: colors.primary,
     borderRadius: radius.lg,
   },
   nextBannerLabel: { color: '#c7d2fe', fontSize: 11, textTransform: 'uppercase', fontWeight: '600' },
-  nextBannerTitle: { color: '#fff', fontSize: 18, fontWeight: '700', marginTop: 4 },
+  nextTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: 4 },
+  nextOrderBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  nextOrderBadgeText: { color: colors.primary, fontWeight: '800', fontSize: 13 },
+  nextBannerTitle: { color: '#fff', fontSize: 18, fontWeight: '700', flex: 1 },
   nextBannerAddress: { color: '#e0e7ff', fontSize: 13, marginTop: 2 },
+  nextActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  mapsBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: radius.sm,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+  },
+  mapsBtnText: { color: colors.primary, fontWeight: '700', fontSize: 14 },
+  arrivedBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: radius.sm,
+    backgroundColor: colors.success,
+    alignItems: 'center',
+  },
+  arrivedBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  expandBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  expandBtnText: {
+    fontSize: 13,
+    color: colors.textMuted,
+    fontWeight: '600',
+  },
   empty: { padding: spacing.xl, alignItems: 'center' },
   emptyText: { color: colors.textLight },
+  listContent: { paddingTop: spacing.lg, paddingBottom: spacing.xl },
+  stopRowWrap: { marginHorizontal: spacing.lg, marginBottom: spacing.sm },
   stopCard: {
     flexDirection: 'row',
     backgroundColor: colors.card,
@@ -672,6 +899,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     gap: spacing.md,
   },
+  stopCardDone: { opacity: 0.5 },
   stopOrder: {
     width: 28,
     height: 28,
@@ -690,22 +918,10 @@ const styles = StyleSheet.create({
   stopBadgeText: { fontSize: 10, fontWeight: '600' },
   stopFooter: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.sm, gap: spacing.md },
   stopMeta: { fontSize: 12, color: colors.textMuted },
-  ctaPrimary: {
-    marginLeft: 'auto',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: radius.sm,
-    backgroundColor: colors.primary,
+  stopChevronBtn: {
+    marginLeft: spacing.sm,
+    alignSelf: 'center',
+    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.sm,
   },
-  ctaPrimaryText: { fontSize: 13, fontWeight: '700', color: '#ffffff' },
-  ctaSecondary: {
-    marginLeft: 'auto',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: radius.sm,
-    backgroundColor: colors.bg,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  ctaSecondaryText: { fontSize: 12, fontWeight: '600', color: colors.textMuted },
 })

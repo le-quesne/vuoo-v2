@@ -29,10 +29,23 @@ export interface InsertLocationPayload {
   [key: string]: unknown
 }
 
+export interface PendingItemDebug {
+  id: number
+  action: OfflineAction
+  createdAt: string
+  attemptCount: number
+  lastError: string | null
+  lastAttemptedAt: string | null
+}
+
 export async function initOfflineDb(): Promise<void> {}
 
 export async function getPendingCount(): Promise<number> {
   return 0
+}
+
+export async function getPendingDebug(): Promise<PendingItemDebug[]> {
+  return []
 }
 
 export async function enqueueOperation(

@@ -17,7 +17,7 @@ import { SyncStatusBar } from '@/components/SyncStatusBar'
 import { router } from 'expo-router'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
-import type { Route, Plan, Vehicle } from '@/types/database'
+import type { Route, Plan, Vehicle, StopStatus } from '@/types/database'
 import { colors, spacing, radius, shadow } from '@/theme'
 
 interface RouteCard extends Route {
@@ -25,6 +25,7 @@ interface RouteCard extends Route {
   vehicle: Vehicle | null
   stops_total: number
   stops_completed: number
+  stops_statuses: StopStatus[]
 }
 
 function todayIso(): string {
@@ -92,30 +93,33 @@ export default function HomeScreen() {
     }
 
     const routeIds = routesData.map((r) => r.id)
-    let stopCounts: Record<string, { total: number; completed: number }> = {}
+    const statusesByRoute: Record<string, StopStatus[]> = {}
 
     if (routeIds.length > 0) {
       const { data: stopsData } = await supabase
         .from('plan_stops')
-        .select('route_id, status')
+        .select('route_id, status, order_index')
         .in('route_id', routeIds)
+        .order('order_index', { ascending: true })
 
-      stopCounts = (stopsData ?? []).reduce<typeof stopCounts>((acc, ps) => {
+      for (const ps of stopsData ?? []) {
         const rid = ps.route_id as string
-        if (!acc[rid]) acc[rid] = { total: 0, completed: 0 }
-        acc[rid].total += 1
-        if (ps.status === 'completed') acc[rid].completed += 1
-        return acc
-      }, {})
+        if (!statusesByRoute[rid]) statusesByRoute[rid] = []
+        statusesByRoute[rid].push(ps.status as StopStatus)
+      }
     }
 
-    const enriched: RouteCard[] = routesData.map((r) => ({
-      ...(r as unknown as Route),
-      plan: (r as any).plan as Plan,
-      vehicle: (r as any).vehicle as Vehicle | null,
-      stops_total: stopCounts[(r as any).id]?.total ?? 0,
-      stops_completed: stopCounts[(r as any).id]?.completed ?? 0,
-    }))
+    const enriched: RouteCard[] = routesData.map((r) => {
+      const statuses = statusesByRoute[(r as any).id] ?? []
+      return {
+        ...(r as unknown as Route),
+        plan: (r as any).plan as Plan,
+        vehicle: (r as any).vehicle as Vehicle | null,
+        stops_total: statuses.length,
+        stops_completed: statuses.filter((s) => s === 'completed').length,
+        stops_statuses: statuses,
+      }
+    })
 
     setRoutes(enriched)
   }, [driver])
@@ -133,7 +137,7 @@ export default function HomeScreen() {
     if (!driver?.id) return
 
     const channel = supabase
-      .channel(`driver-routes-${driver.id}`)
+      .channel(`driver-routes-${driver.id}-${Date.now()}`)
       .on(
         'postgres_changes',
         {
@@ -240,8 +244,10 @@ function RouteItemCard({
   route: RouteCard
   onPress: () => void
 }) {
-  const progress =
-    route.stops_total === 0 ? 0 : route.stops_completed / route.stops_total
+  const failedCount = route.stops_statuses.filter(
+    (s) => s === 'incomplete' || s === 'cancelled',
+  ).length
+  const reportedCount = route.stops_completed + failedCount
 
   const statusLabel: Record<string, string> = {
     not_started: 'Por iniciar',
@@ -304,13 +310,24 @@ function RouteItemCard({
       <View style={styles.progressHeader}>
         <Text style={styles.progressLabel}>Progreso</Text>
         <Text style={styles.progressCount}>
-          {route.stops_completed} / {route.stops_total} paradas
+          {reportedCount} / {route.stops_total} paradas
         </Text>
       </View>
       <View style={styles.progressBar}>
-        <View
-          style={[styles.progressFill, { width: `${Math.round(progress * 100)}%` }]}
-        />
+        {route.stops_statuses.map((s, i) => {
+          const bg =
+            s === 'completed'
+              ? colors.success
+              : s === 'incomplete' || s === 'cancelled'
+                ? colors.warning
+                : 'transparent'
+          return (
+            <View
+              key={i}
+              style={[styles.progressSegment, { backgroundColor: bg }]}
+            />
+          )
+        })}
       </View>
     </Pressable>
   )
@@ -462,6 +479,8 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: colors.border,
     overflow: 'hidden',
+    flexDirection: 'row',
   },
   progressFill: { height: '100%', backgroundColor: colors.primary, borderRadius: 4 },
+  progressSegment: { flex: 1, height: '100%' },
 })

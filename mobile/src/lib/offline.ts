@@ -1,5 +1,6 @@
 import * as SQLite from 'expo-sqlite'
 import NetInfo from '@react-native-community/netinfo'
+import { AppState, type AppStateStatus } from 'react-native'
 import { supabase } from './supabase'
 
 // ---------------------------------------------------------------------------
@@ -44,6 +45,18 @@ interface SyncQueueRow {
   file_path: string | null
   created_at: string
   synced_at: string | null
+  attempt_count: number | null
+  last_error: string | null
+  last_attempted_at: string | null
+}
+
+export interface PendingItemDebug {
+  id: number
+  action: OfflineAction
+  createdAt: string
+  attemptCount: number
+  lastError: string | null
+  lastAttemptedAt: string | null
 }
 
 // ---------------------------------------------------------------------------
@@ -52,6 +65,10 @@ interface SyncQueueRow {
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null
 let processing = false
+// Single-flight con re-run: si llega un pedido mientras procesamos, lo
+// agendamos para una segunda pasada al terminar. Evita que un drain inicial
+// "se pierda" filas insertadas mientras corría el SELECT.
+let rerunRequested = false
 
 async function getDb(): Promise<SQLite.SQLiteDatabase> {
   if (!dbPromise) {
@@ -77,8 +94,22 @@ export async function initOfflineDb(): Promise<void> {
         synced_at TEXT
       );`,
     )
+    // Migración aditiva: SQLite no tiene `ADD COLUMN IF NOT EXISTS`, por lo
+    // que probamos cada ALTER y silenciamos el error si la columna ya existe.
+    // Esto mantiene compatibilidad con instalaciones previas a este cambio.
+    for (const sql of [
+      `ALTER TABLE sync_queue ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 0;`,
+      `ALTER TABLE sync_queue ADD COLUMN last_error TEXT;`,
+      `ALTER TABLE sync_queue ADD COLUMN last_attempted_at TEXT;`,
+    ]) {
+      try {
+        await db.execAsync(sql)
+      } catch {
+        // Columna ya existe — ignorar.
+      }
+    }
   } catch (err) {
-    // Expo Go or other environments may not support SQLite — fail gracefully.
+    // Expo Go u otros entornos pueden no soportar SQLite — fallo silencioso.
     console.warn('[offline] initOfflineDb failed:', err)
   }
 }
@@ -96,6 +127,34 @@ export async function getPendingCount(): Promise<number> {
     return row?.count ?? 0
   } catch {
     return 0
+  }
+}
+
+/**
+ * Snapshot de los items pendientes con su último error y conteo de intentos.
+ * Útil para una pantalla de diagnóstico en campo o para reportar issues sin
+ * acceso al device.
+ */
+export async function getPendingDebug(): Promise<PendingItemDebug[]> {
+  try {
+    const db = await getDb()
+    const rows = await db.getAllAsync<SyncQueueRow>(
+      `SELECT id, action, payload, file_path, created_at, synced_at,
+              attempt_count, last_error, last_attempted_at
+       FROM sync_queue
+       WHERE synced_at IS NULL
+       ORDER BY id ASC;`,
+    )
+    return rows.map((r) => ({
+      id: r.id,
+      action: r.action,
+      createdAt: r.created_at,
+      attemptCount: r.attempt_count ?? 0,
+      lastError: r.last_error,
+      lastAttemptedAt: r.last_attempted_at,
+    }))
+  } catch {
+    return []
   }
 }
 
@@ -118,6 +177,10 @@ export async function enqueueOperation(
       filePath ?? null,
       new Date().toISOString(),
     )
+    // Best-effort drain: si hay red, intentamos vaciar de inmediato en lugar
+    // de esperar a la próxima transición de conectividad. Sin await para no
+    // bloquear al caller (la UI ya cerró el flujo).
+    void processSyncQueue()
     return result.lastInsertRowId ?? null
   } catch (err) {
     console.warn('[offline] enqueueOperation failed:', err)
@@ -158,7 +221,9 @@ async function markRowSynced(id: number): Promise<void> {
   try {
     const db = await getDb()
     await db.runAsync(
-      `UPDATE sync_queue SET synced_at = ? WHERE id = ?;`,
+      `UPDATE sync_queue
+       SET synced_at = ?, last_error = NULL
+       WHERE id = ?;`,
       new Date().toISOString(),
       id,
     )
@@ -167,44 +232,43 @@ async function markRowSynced(id: number): Promise<void> {
   }
 }
 
+async function markRowFailed(id: number, error: string): Promise<void> {
+  try {
+    const db = await getDb()
+    await db.runAsync(
+      `UPDATE sync_queue
+       SET attempt_count = COALESCE(attempt_count, 0) + 1,
+           last_error = ?,
+           last_attempted_at = ?
+       WHERE id = ?;`,
+      error.slice(0, 500),
+      new Date().toISOString(),
+      id,
+    )
+  } catch (err) {
+    console.warn('[offline] markRowFailed failed:', err)
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Process queue
 // ---------------------------------------------------------------------------
 
+type OperationResult = { ok: true } | { ok: false; error: string }
+
 export async function processSyncQueue(): Promise<void> {
-  if (processing) return
+  if (processing) {
+    // Hay un drain en curso. Pedimos una segunda pasada para no perder filas
+    // insertadas después del SELECT inicial.
+    rerunRequested = true
+    return
+  }
   processing = true
   try {
-    const db = await getDb()
-    const rows = await db.getAllAsync<SyncQueueRow>(
-      `SELECT id, action, payload, file_path, created_at, synced_at
-       FROM sync_queue
-       WHERE synced_at IS NULL
-       ORDER BY id ASC;`,
-    )
-
-    for (const row of rows) {
-      try {
-        let payload: unknown = {}
-        try {
-          payload = JSON.parse(row.payload)
-        } catch {
-          payload = {}
-        }
-
-        const ok = await runOperation(
-          row.action,
-          payload,
-          row.file_path,
-        )
-        if (ok) {
-          await markRowSynced(row.id)
-        }
-      } catch (err) {
-        console.warn(`[offline] row ${row.id} (${row.action}) failed:`, err)
-        // Leave row pending — no rollback.
-      }
-    }
+    do {
+      rerunRequested = false
+      await drainOnce()
+    } while (rerunRequested)
   } catch (err) {
     console.warn('[offline] processSyncQueue failed:', err)
   } finally {
@@ -212,49 +276,85 @@ export async function processSyncQueue(): Promise<void> {
   }
 }
 
+async function drainOnce(): Promise<void> {
+  const db = await getDb()
+  const rows = await db.getAllAsync<SyncQueueRow>(
+    `SELECT id, action, payload, file_path, created_at, synced_at,
+            attempt_count, last_error, last_attempted_at
+     FROM sync_queue
+     WHERE synced_at IS NULL
+     ORDER BY id ASC;`,
+  )
+
+  for (const row of rows) {
+    try {
+      let payload: unknown = {}
+      try {
+        payload = JSON.parse(row.payload)
+      } catch {
+        payload = {}
+      }
+
+      const result = await runOperation(
+        row.action,
+        payload,
+        row.file_path,
+      )
+      if (result.ok) {
+        await markRowSynced(row.id)
+      } else {
+        console.warn(
+          `[offline] row ${row.id} (${row.action}) failed: ${result.error}`,
+        )
+        await markRowFailed(row.id, result.error)
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'unknown error'
+      console.warn(`[offline] row ${row.id} (${row.action}) threw:`, err)
+      await markRowFailed(row.id, msg)
+      // Leave row pending — no rollback.
+    }
+  }
+}
+
 async function runOperation(
   action: OfflineAction,
   payload: unknown,
   filePath: string | null,
-): Promise<boolean> {
+): Promise<OperationResult> {
   switch (action) {
     case 'update_plan_stop': {
       const p = payload as UpdatePlanStopPayload
-      if (!p?.id || !p?.fields) return false
+      if (!p?.id || !p?.fields) {
+        return { ok: false, error: 'invalid update_plan_stop payload' }
+      }
       const { error } = await supabase
         .from('plan_stops')
         .update(p.fields)
         .eq('id', p.id)
-      if (error) {
-        console.warn('[offline] update_plan_stop error:', error.message)
-        return false
-      }
-      return true
+      if (error) return { ok: false, error: error.message }
+      return { ok: true }
     }
 
     case 'upload_photo': {
       const p = payload as UploadPhotoPayload
-      if (!p?.planStopId || !p?.path || !filePath) return false
+      if (!p?.planStopId || !p?.path || !filePath) {
+        return { ok: false, error: 'invalid upload_photo payload' }
+      }
       const { error } = await uploadLocalFileToBucket(
         'delivery-photos',
         p.path,
         filePath,
         'image/jpeg',
       )
-      if (error) {
-        console.warn('[offline] upload_photo error:', error)
-        return false
-      }
+      if (error) return { ok: false, error: `storage: ${error}` }
       // Append path to report_images[] on the plan_stop.
       const { data: existing, error: fetchError } = await supabase
         .from('plan_stops')
         .select('report_images')
         .eq('id', p.planStopId)
         .maybeSingle()
-      if (fetchError) {
-        console.warn('[offline] upload_photo fetch error:', fetchError.message)
-        return false
-      }
+      if (fetchError) return { ok: false, error: `fetch: ${fetchError.message}` }
       const existingImages = (existing?.report_images as string[] | null) ?? []
       const nextImages = existingImages.includes(p.path)
         ? existingImages
@@ -263,53 +363,40 @@ async function runOperation(
         .from('plan_stops')
         .update({ report_images: nextImages })
         .eq('id', p.planStopId)
-      if (updateError) {
-        console.warn('[offline] upload_photo update error:', updateError.message)
-        return false
-      }
-      return true
+      if (updateError) return { ok: false, error: `update: ${updateError.message}` }
+      return { ok: true }
     }
 
     case 'upload_signature': {
       const p = payload as UploadSignaturePayload
-      if (!p?.planStopId || !p?.path || !filePath) return false
+      if (!p?.planStopId || !p?.path || !filePath) {
+        return { ok: false, error: 'invalid upload_signature payload' }
+      }
       const { error } = await uploadLocalFileToBucket(
         'signatures',
         p.path,
         filePath,
         'image/png',
       )
-      if (error) {
-        console.warn('[offline] upload_signature error:', error)
-        return false
-      }
+      if (error) return { ok: false, error: `storage: ${error}` }
       const { error: updateError } = await supabase
         .from('plan_stops')
         .update({ report_signature_url: p.path })
         .eq('id', p.planStopId)
-      if (updateError) {
-        console.warn(
-          '[offline] upload_signature update error:',
-          updateError.message,
-        )
-        return false
-      }
-      return true
+      if (updateError) return { ok: false, error: `update: ${updateError.message}` }
+      return { ok: true }
     }
 
     case 'insert_location': {
       const p = payload as InsertLocationPayload
-      if (!p) return false
+      if (!p) return { ok: false, error: 'invalid insert_location payload' }
       const { error } = await supabase.from('driver_locations').insert(p)
-      if (error) {
-        console.warn('[offline] insert_location error:', error.message)
-        return false
-      }
-      return true
+      if (error) return { ok: false, error: error.message }
+      return { ok: true }
     }
 
     default:
-      return false
+      return { ok: false, error: `unknown action: ${String(action)}` }
   }
 }
 
@@ -317,22 +404,64 @@ async function runOperation(
 // Auto-sync on connectivity changes
 // ---------------------------------------------------------------------------
 
+// Cuánto esperar entre intentos de drenar la cola cuando quedan pendientes.
+// 30s es suficientemente bajo para no dejar al chofer mirando "sincronizando"
+// y suficientemente alto para no martillar Supabase si hay un error persistente.
+const RETRY_INTERVAL_MS = 30_000
+
 export function startOfflineSync(): () => void {
   try {
     let lastConnected: boolean | null = null
-    const unsubscribe = NetInfo.addEventListener((state) => {
+    let intervalId: ReturnType<typeof setInterval> | null = null
+
+    async function tickIfPending() {
+      const pending = await getPendingCount()
+      if (pending > 0) void processSyncQueue()
+    }
+
+    const netUnsubscribe = NetInfo.addEventListener((state) => {
       const isConnected = state.isConnected === true
       if (isConnected && lastConnected !== true) {
-        // Transitioned to connected: try flushing the queue.
         void processSyncQueue()
       }
       lastConnected = isConnected
     })
+
+    // Estado inicial: si la app arranca con red y hay pendientes, drena ya.
+    NetInfo.fetch()
+      .then((state) => {
+        if (state.isConnected === true) void tickIfPending()
+      })
+      .catch(() => {})
+
+    // Volver del background a foreground: drena la cola.
+    const appStateSub = AppState.addEventListener(
+      'change',
+      (status: AppStateStatus) => {
+        if (status === 'active') void tickIfPending()
+      },
+    )
+
+    // Retry periódico: cubre fallos transitorios (timeout supabase, RLS
+    // intermitente, storage) sin requerir transición de red ni navegación.
+    intervalId = setInterval(() => {
+      void tickIfPending()
+    }, RETRY_INTERVAL_MS)
+
     return () => {
       try {
-        unsubscribe()
+        netUnsubscribe()
       } catch (err) {
-        console.warn('[offline] unsubscribe failed:', err)
+        console.warn('[offline] netinfo unsubscribe failed:', err)
+      }
+      try {
+        appStateSub.remove()
+      } catch (err) {
+        console.warn('[offline] appstate unsubscribe failed:', err)
+      }
+      if (intervalId !== null) {
+        clearInterval(intervalId)
+        intervalId = null
       }
     }
   } catch (err) {
