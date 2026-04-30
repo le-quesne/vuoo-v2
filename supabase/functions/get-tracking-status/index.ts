@@ -110,7 +110,7 @@ serve(async (req) => {
     // 4. Get org info + notification settings (branding)
     const { data: orgData } = await adminClient
       .from('organizations')
-      .select('name')
+      .select('name, is_demo')
       .eq('id', planStop.org_id)
       .single()
 
@@ -276,6 +276,12 @@ serve(async (req) => {
 
       if (reportImages && reportImages.length > 0) {
         for (const imagePath of reportImages) {
+          // External URLs (demo seed uses picsum.photos) come through as full URLs.
+          // Real POD photos are storage paths and need a signed URL.
+          if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
+            photos.push(imagePath)
+            continue
+          }
           const { data: signedUrl } = await adminClient.storage
             .from('delivery-photos')
             .createSignedUrl(imagePath, 3600) // 1 hour expiry
@@ -286,15 +292,20 @@ serve(async (req) => {
         }
       }
 
-      // Generate signed URL for signature
+      // Generate signed URL for signature (or pass through demo external URLs)
       let signatureUrl: string | null = null
       if (planStop.report_signature_url) {
-        const { data: signedSig } = await adminClient.storage
-          .from('signatures')
-          .createSignedUrl(planStop.report_signature_url as string, 3600)
+        const sigPath = planStop.report_signature_url as string
+        if (sigPath.startsWith('http://') || sigPath.startsWith('https://')) {
+          signatureUrl = sigPath
+        } else {
+          const { data: signedSig } = await adminClient.storage
+            .from('signatures')
+            .createSignedUrl(sigPath, 3600)
 
-        if (signedSig?.signedUrl) {
-          signatureUrl = signedSig.signedUrl
+          if (signedSig?.signedUrl) {
+            signatureUrl = signedSig.signedUrl
+          }
         }
       }
 
@@ -351,6 +362,7 @@ serve(async (req) => {
         name: orgData?.name ?? '',
         logo_url: orgSettings?.logo_url ?? null,
         primary_color: orgSettings?.primary_color ?? '#6366f1',
+        is_demo: orgData?.is_demo ?? false,
       },
       route_id: planStop.route_id ?? null,
       stop_lat: (stop.lat as number) ?? null,

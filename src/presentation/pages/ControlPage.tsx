@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { format } from 'date-fns';
 import { useAuth } from '@/application/hooks/useAuth';
+import { DemoBadge } from '@/presentation/components/DemoBadge';
 import { RouteMap, ROUTE_COLORS } from '@/presentation/components/RouteMap';
 import { isAlertSoundMuted, setAlertSoundMuted } from '@/application/lib/alertSound';
 import type { DriverLocation } from '@/data/types/database';
@@ -158,6 +159,7 @@ export function ControlPage() {
 
   return (
     <div className="flex flex-col h-screen">
+      {currentOrg?.is_demo && <DemoBadge variant="banner" />}
       <ControlHeader
         selectedDate={selectedDate}
         onDateChange={setSelectedDate}
