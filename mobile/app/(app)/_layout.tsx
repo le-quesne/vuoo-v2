@@ -41,8 +41,12 @@ export default function AppLayout() {
     >
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen
-        name="route/[id]"
+        name="route/[id]/index"
         options={{ title: 'Ruta', headerBackTitle: 'Volver' }}
+      />
+      <Stack.Screen
+        name="route/[id]/done"
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="stop/[id]"

@@ -15,6 +15,13 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { router, Stack } from 'expo-router'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import {
+  formatRut,
+  isValidRut,
+  formatPhoneCl,
+  isValidPhoneCl,
+  canonicalPhoneCl,
+} from '@/lib/validation'
 import { colors, spacing, radius } from '@/theme'
 
 // license_expiry se guarda como ISO date (YYYY-MM-DD) en la DB.
@@ -51,17 +58,15 @@ export default function EditProfileScreen() {
 
   const [firstName, setFirstName] = useState(driver?.first_name ?? '')
   const [lastName, setLastName] = useState(driver?.last_name ?? '')
-  const [phone, setPhone] = useState(driver?.phone ?? '')
-  const [nationalId, setNationalId] = useState(driver?.national_id ?? '')
+  // Aplicamos los formateadores al cargar para mostrar el input legible
+  // aunque venga sin puntos/guion en DB.
+  const [phone, setPhone] = useState(formatPhoneCl(driver?.phone ?? ''))
+  const [nationalId, setNationalId] = useState(formatRut(driver?.national_id ?? ''))
   const [licenseNumber, setLicenseNumber] = useState(driver?.license_number ?? '')
   const [licenseExpiry, setLicenseExpiry] = useState(
     isoToDisplay(driver?.license_expiry),
   )
   const [savingProfile, setSavingProfile] = useState(false)
-
-  const [newPassword, setNewPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const [savingPassword, setSavingPassword] = useState(false)
 
   async function handleSaveProfile() {
     if (!driver) return
@@ -69,6 +74,22 @@ export default function EditProfileScreen() {
     const trimmedLast = lastName.trim()
     if (!trimmedFirst || !trimmedLast) {
       Alert.alert('Datos incompletos', 'Nombre y apellido son obligatorios.')
+      return
+    }
+
+    if (phone.trim() && !isValidPhoneCl(phone)) {
+      Alert.alert(
+        'Teléfono inválido',
+        'Ingresa un móvil chileno válido (ej. +56 9 1234 5678).',
+      )
+      return
+    }
+
+    if (nationalId.trim() && !isValidRut(nationalId)) {
+      Alert.alert(
+        'RUT inválido',
+        'El dígito verificador no coincide. Revisa que el RUT esté bien escrito.',
+      )
       return
     }
 
@@ -87,8 +108,8 @@ export default function EditProfileScreen() {
       .update({
         first_name: trimmedFirst,
         last_name: trimmedLast,
-        phone: phone.trim() || null,
-        national_id: nationalId.trim() || null,
+        phone: phone.trim() ? canonicalPhoneCl(phone) : null,
+        national_id: nationalId.trim() ? formatRut(nationalId) : null,
         license_number: licenseNumber.trim() || null,
         license_expiry: expiryParsed.iso,
       })
@@ -105,32 +126,6 @@ export default function EditProfileScreen() {
     Alert.alert('Listo', 'Tus datos fueron actualizados.', [
       { text: 'OK', onPress: () => router.back() },
     ])
-  }
-
-  async function handleChangePassword() {
-    if (newPassword.length < 8) {
-      Alert.alert(
-        'Contraseña muy corta',
-        'La contraseña debe tener al menos 8 caracteres.',
-      )
-      return
-    }
-    if (newPassword !== confirmPassword) {
-      Alert.alert('No coincide', 'Las contraseñas ingresadas no coinciden.')
-      return
-    }
-
-    setSavingPassword(true)
-    const { error } = await supabase.auth.updateUser({ password: newPassword })
-    setSavingPassword(false)
-
-    if (error) {
-      Alert.alert('No se pudo cambiar la contraseña', error.message)
-      return
-    }
-    setNewPassword('')
-    setConfirmPassword('')
-    Alert.alert('Contraseña actualizada', 'Tu nueva contraseña está activa.')
   }
 
   if (!driver) {
@@ -180,22 +175,24 @@ export default function EditProfileScreen() {
             <Text style={styles.label}>Teléfono</Text>
             <TextInput
               value={phone}
-              onChangeText={setPhone}
-              placeholder="+56 9 ..."
+              onChangeText={(v) => setPhone(formatPhoneCl(v))}
+              placeholder="+56 9 1234 5678"
               placeholderTextColor={colors.textLight}
               style={styles.input}
               keyboardType="phone-pad"
+              maxLength={17}
             />
 
             <Text style={styles.label}>RUT</Text>
             <TextInput
               value={nationalId}
-              onChangeText={setNationalId}
+              onChangeText={(v) => setNationalId(formatRut(v))}
               placeholder="12.345.678-9"
               placeholderTextColor={colors.textLight}
               style={styles.input}
               autoCapitalize="characters"
               autoCorrect={false}
+              maxLength={12}
             />
           </View>
 
@@ -242,55 +239,6 @@ export default function EditProfileScreen() {
             </Pressable>
           </View>
 
-          <View style={[styles.card, { marginTop: spacing.lg }]}>
-            <Text style={styles.sectionTitle}>Cambiar contraseña</Text>
-
-            <Text style={styles.label}>Nueva contraseña</Text>
-            <TextInput
-              value={newPassword}
-              onChangeText={setNewPassword}
-              placeholder="Mínimo 8 caracteres"
-              placeholderTextColor={colors.textLight}
-              style={styles.input}
-              secureTextEntry
-              autoCapitalize="none"
-              autoComplete="password-new"
-              textContentType="newPassword"
-            />
-
-            <Text style={styles.label}>Confirmar contraseña</Text>
-            <TextInput
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              placeholder="Repite la contraseña"
-              placeholderTextColor={colors.textLight}
-              style={styles.input}
-              secureTextEntry
-              autoCapitalize="none"
-              autoComplete="password-new"
-              textContentType="newPassword"
-            />
-
-            <Pressable
-              onPress={handleChangePassword}
-              disabled={savingPassword || !newPassword || !confirmPassword}
-              style={({ pressed }) => [
-                styles.primaryBtn,
-                (savingPassword || !newPassword || !confirmPassword) && {
-                  opacity: 0.55,
-                },
-                pressed &&
-                  !savingPassword &&
-                  newPassword.length > 0 && { backgroundColor: colors.primaryDark },
-              ]}
-            >
-              {savingPassword ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.primaryBtnText}>Actualizar contraseña</Text>
-              )}
-            </Pressable>
-          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

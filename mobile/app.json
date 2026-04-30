@@ -2,17 +2,23 @@
   "expo": {
     "name": "Vuoo",
     "slug": "vuoo-mobile",
-    "version": "0.0.1",
+    "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "vuoo",
     "newArchEnabled": true,
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0a0e1a"
+    },
     "assetBundlePatterns": [
       "**/*"
     ],
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "cl.vuoo.app",
+      "bundleIdentifier": "cl.vuoo.driver",
       "infoPlist": {
         "NSCameraUsageDescription": "Vuoo necesita acceso a la camara para registrar pruebas de entrega.",
         "NSPhotoLibraryUsageDescription": "Vuoo necesita acceso a tus fotos para adjuntar pruebas de entrega.",
@@ -28,7 +34,11 @@
       }
     },
     "android": {
-      "package": "cl.vuoo.app",
+      "package": "cl.vuoo.driver",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0a0e1a"
+      },
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",

@@ -150,6 +150,43 @@ export default function HistoryScreen() {
     loadHistory().finally(() => setLoading(false))
   }, [loadHistory])
 
+  // Realtime: recargamos cuando una parada del chofer cambia de status
+  // (ej. al completar o marcar fallida desde otra pantalla). Asi el historial
+  // se actualiza solo, sin que el chofer tenga que tirar para refrescar.
+  useEffect(() => {
+    if (!driver?.id) return
+    const channel = supabase
+      .channel(`history-${driver.id}-${Date.now()}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'plan_stops',
+        },
+        () => {
+          void loadHistory()
+        },
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'routes',
+          filter: `driver_id=eq.${driver.id}`,
+        },
+        () => {
+          void loadHistory()
+        },
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [driver?.id, loadHistory])
+
   const handleRefresh = useCallback(async () => {
     if (refreshingRef.current) return
     refreshingRef.current = true
