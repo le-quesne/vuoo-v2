@@ -25,6 +25,7 @@ dist-ssr
 .env
 .playwright-mcp
 *.png
+!mobile/assets/*.png
 .vercel
 .obsidian/
 supabase/.temp/
