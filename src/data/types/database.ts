@@ -27,6 +27,7 @@ export interface Organization {
   default_depot_lat: number | null
   default_depot_lng: number | null
   default_depot_address: string | null
+  is_demo: boolean
 }
 
 export interface OrganizationMember {

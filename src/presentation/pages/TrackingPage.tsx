@@ -56,6 +56,7 @@ interface TrackingResponse {
     name: string
     logo_url: string | null
     primary_color: string | null
+    is_demo?: boolean
   }
   route_id: string | null
   stop_lat: number
@@ -520,6 +521,11 @@ export default function TrackingPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
+      {data.org.is_demo && (
+        <div className="bg-amber-50 border-b border-amber-200 text-amber-900 text-xs text-center py-1.5 px-4">
+          <span className="font-semibold">Datos demo simulados</span> · entorno de prueba, no es una entrega real
+        </div>
+      )}
       <div className="max-w-lg mx-auto pb-8">
         <div className="px-4 pt-6 space-y-4">
 

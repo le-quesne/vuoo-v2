@@ -1,9 +1,13 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Eye, Trash2 } from 'lucide-react'
+import { ArrowLeft, Eye, Trash2, RefreshCw } from 'lucide-react'
 import { supabase } from '@/application/lib/supabase'
 import { useAuth } from '@/application/hooks/useAuth'
+import { ConfirmDialog } from '@/presentation/components/ConfirmDialog'
 import type { Organization } from '@/data/types/database'
+
+// Local alias kept for clarity even though Organization already has is_demo.
+type OrgWithDemoFlag = Organization
 
 interface MemberRow {
   id: string
@@ -17,10 +21,12 @@ export function AdminOrgDetail() {
   const { orgId } = useParams<{ orgId: string }>()
   const navigate = useNavigate()
   const { setCurrentOrg } = useAuth()
-  const [org, setOrg] = useState<Organization | null>(null)
+  const [org, setOrg] = useState<OrgWithDemoFlag | null>(null)
   const [members, setMembers] = useState<MemberRow[]>([])
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState({ plans: 0, stops: 0, vehicles: 0, routes: 0 })
+  const [resetOpen, setResetOpen] = useState(false)
+  const [resetError, setResetError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!orgId) return
@@ -71,6 +77,20 @@ export function AdminOrgDetail() {
     navigate('/admin')
   }
 
+  async function handleResetDemo() {
+    if (!org) return
+    setResetError(null)
+    const { data, error } = await supabase.rpc('reset_demo_org_rpc', { p_org_id: org.id })
+    if (error) {
+      setResetError(error.message)
+      throw error
+    }
+    setResetOpen(false)
+    await loadData()
+    // eslint-disable-next-line no-console
+    console.info('[demo-reset]', data)
+  }
+
   if (loading) {
     return (
       <div className="p-6 flex items-center justify-center h-64">
@@ -93,10 +113,27 @@ export function AdminOrgDetail() {
 
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-semibold">{org.name}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-semibold">{org.name}</h1>
+            {org.is_demo && (
+              <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-amber-100 text-amber-800">
+                DEMO
+              </span>
+            )}
+          </div>
           <p className="text-sm text-gray-500">{org.slug}</p>
         </div>
         <div className="flex gap-2">
+          {org.is_demo && (
+            <button
+              onClick={() => setResetOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600"
+              title="Limpia data del demo y la regenera al baseline"
+            >
+              <RefreshCw size={16} />
+              Reset demo
+            </button>
+          )}
           <button
             onClick={handleImpersonate}
             className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600"
@@ -113,6 +150,24 @@ export function AdminOrgDetail() {
           </button>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={resetOpen}
+        title="Reset demo org"
+        message={
+          resetError
+            ? `Error: ${resetError}`
+            : `Esto borrara todos los planes, paradas, rutas, drivers, vehiculos y POD del demo "${org.name}" y los regenerara al baseline (5 planes, 80 paradas, 5 rutas). Los users y la org se mantienen. Tipea "RESET" para confirmar.`
+        }
+        confirmLabel="Reset"
+        confirmText="RESET"
+        variant="danger"
+        onConfirm={handleResetDemo}
+        onCancel={() => {
+          setResetOpen(false)
+          setResetError(null)
+        }}
+      />
 
       {/* Stats */}
       <div className="grid grid-cols-4 gap-4 mb-8">
