@@ -9,7 +9,9 @@
     "build": "tsc -p .",
     "start": "node dist/server.js",
     "typecheck": "tsc -p . --noEmit",
-    "enrich:customers": "tsx scripts/enrich-customer-addresses.ts"
+    "enrich:customers": "tsx scripts/enrich-customer-addresses.ts",
+    "seed:apple-review": "tsx scripts/seed-apple-review.ts",
+    "demo:reset": "tsx scripts/demo-reset.ts"
   },
   "engines": {
     "node": ">=20"
