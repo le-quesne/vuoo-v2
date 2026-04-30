@@ -112,6 +112,13 @@ export default function LoginScreen() {
           <Text style={styles.footer}>
             Si aun no tienes credenciales, contacta a tu dispatcher.
           </Text>
+
+          <Pressable
+            onPress={() => router.push('/(auth)/demo')}
+            style={({ pressed }) => [styles.demoLink, pressed && { opacity: 0.6 }]}
+          >
+            <Text style={styles.demoLinkText}>Probar con cuenta demo</Text>
+          </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -199,5 +206,17 @@ const styles = StyleSheet.create({
     color: '#cbd5e1', // slate-300
     fontSize: 12,
     paddingHorizontal: spacing.lg,
+  },
+  demoLink: {
+    marginTop: spacing.md,
+    alignSelf: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  demoLinkText: {
+    color: '#94a3b8',
+    fontSize: 12,
+    textDecorationLine: 'underline',
+    textAlign: 'center',
   },
 })

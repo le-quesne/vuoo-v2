@@ -2,6 +2,63 @@
 
 App Expo (React Native) para que los conductores ejecuten sus rutas en terreno.
 
+## Credenciales demo
+
+Una org demo (`demo-apple-review`, `is_demo=true`) está aislada de clientes
+reales y poblada con 5 planes, 80 paradas en Santiago, 5 rutas activas y
+drivers que se mueven solos por un simulador (Edge Function `demo-simulator`
++ pg_cron cada minuto).
+
+### Apple App Review
+
+Cargar en App Store Connect → "App Review Information" → "Sign-In Information":
+
+- **Email:** `apple-review@vuoo.cl`
+- **Password:** `apple2026`
+
+Atajos para que el reviewer encuentre la cuenta:
+- En la pantalla de login hay un link discreto **"Probar con cuenta demo"** que
+  hace auto-login con estas credenciales.
+- Deeplink universal: `vuoo://demo` abre la app y auto-logea (TestFlight links
+  pueden apuntar acá).
+
+Son credenciales públicas (App Store Connect ya las expone a todos los
+reviewers Apple) y el user no tiene acceso a data de ningún cliente real.
+
+### Sales / prospectos
+
+Para demos de ventas en el panel web (no la mobile app):
+
+- `sales1@vuoo.cl`, `sales2@vuoo.cl`, `sales3@vuoo.cl`, `demo@vuoo.cl` —
+  todos password `vuoo-demo-2026`, todos admin de la org demo.
+- Cada sales puede demoear en paralelo sin pisarse.
+- En `/control` y `/tracking` aparece un badge "Datos demo simulados" para
+  evitar confusión con producción.
+
+### Reset del demo
+
+El demo se ensucia naturalmente durante una sesión (paradas movidas, status
+flippeados). Tres formas de volver al baseline:
+
+1. **CLI** (rápido, ~400ms):
+   ```bash
+   cd backend-railway
+   npm run demo:reset
+   ```
+
+2. **Botón en super-admin:** abrir `/admin/orgs/<demo-org-id>` → click
+   "Reset demo" → tipear `RESET` para confirmar.
+
+3. **Cron automático:** corre cada hora en :00. Se skipea si detecta
+   actividad humana (sales-edit) en los últimos 5 min.
+
+### Apple-review seed legacy (deprecated)
+
+`npm run seed:apple-review` aún funciona pero está superseded por
+`npm run demo:reset`. La diferencia: el seed-apple-review solo crea el usuario
++ plan mínimo (5 paradas), `demo:reset` regenera la base completa. Apple
+review funciona con cualquiera de los dos.
+
 ## Features
 
 - **Auth con Supabase** — el conductor debe existir en `drivers` con `user_id` vinculado.
