@@ -1,0 +1,16 @@
+node_modules/
+.expo/
+dist/
+npm-debug.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+web-build/
+expo-env.d.ts
+
+# Override .gitignore for EAS uploads: ship env file into the build
+# so EXPO_PUBLIC_* vars get inlined by Metro at bundle time.
+!.env

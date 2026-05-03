@@ -30,9 +30,6 @@ interface DriverLocationRow {
   recorded_at: string
 }
 
-let taskDefined = false
-let foregroundSubscription: Location.LocationSubscription | null = null
-
 function toRow(
   loc: Location.LocationObject,
   driverId: string,
@@ -59,8 +56,12 @@ async function insertLocationRows(rows: DriverLocationRow[]): Promise<void> {
   }
 }
 
-export function defineLocationTask(): void {
-  if (taskDefined || isExpoGo) return
+// IMPORTANTE: defineTask DEBE ejecutarse en top-level del módulo, NO dentro de
+// un useEffect. Cuando iOS reactiva la app en background para entregar location
+// updates, ejecuta el bundle JS sin montar React — si el registro está dentro
+// de un componente, el task no existe y iOS desactiva el tracking en silencio.
+// Ref: https://docs.expo.dev/versions/latest/sdk/task-manager/
+if (!isExpoGo) {
   try {
     TaskManager.defineTask<LocationTaskData>(
       LOCATION_TASK_NAME,
@@ -84,17 +85,14 @@ export function defineLocationTask(): void {
         }
       },
     )
-    taskDefined = true
   } catch (e) {
-    console.warn('[location] defineLocationTask failed:', e)
+    console.warn('[location] defineTask failed:', e)
   }
 }
 
-export function initLocationTask(): void {
-  defineLocationTask()
-}
+let foregroundSubscription: Location.LocationSubscription | null = null
 
-async function startForegroundTracking(
+async function startForegroundFallback(
   routeId: string,
   driverId: string,
 ): Promise<boolean> {
@@ -107,7 +105,6 @@ async function startForegroundTracking(
         timeInterval: 5000,
       },
       (loc) => {
-        // Fire and forget; errors son logueados dentro de insertLocationRows
         insertLocationRows([toRow(loc, driverId, routeId)]).catch((e) =>
           console.warn('[location fg] insert threw:', e),
         )
@@ -115,87 +112,84 @@ async function startForegroundTracking(
     )
     return true
   } catch (e) {
-    console.warn('[location] startForegroundTracking failed:', e)
+    console.warn('[location] startForegroundFallback failed:', e)
     return false
   }
 }
 
-async function stopForegroundTracking(): Promise<void> {
+async function stopForegroundFallback(): Promise<void> {
   if (foregroundSubscription) {
     try {
       foregroundSubscription.remove()
     } catch (e) {
-      console.warn('[location] stopForegroundTracking failed:', e)
+      console.warn('[location] stopForegroundFallback failed:', e)
     }
     foregroundSubscription = null
   }
 }
 
+export type TrackingMode = 'background' | 'foreground-only' | 'denied'
+
 /**
  * Pide permisos y arranca el tracking GPS:
- * - En Expo Go: solo foreground (watchPositionAsync).
- * - En dev client / standalone: background via TaskManager.
- * Retorna `true` si al menos un modo arrancó correctamente.
+ * - `background`: dev client / standalone con permiso "Siempre" — el task
+ *   sigue corriendo aunque el usuario salga de la app, e iOS muestra el
+ *   indicador azul/verde de uso de ubicación.
+ * - `foreground-only`: Expo Go o permiso "Mientras se usa" — solo se rastrea
+ *   con la app abierta. La UI debería avisar al usuario.
+ * - `denied`: el usuario rechazó el permiso de foreground.
  */
 export async function startTracking(
   routeId: string,
   driverId: string,
-): Promise<boolean> {
+): Promise<TrackingMode> {
   try {
     const fg = await Location.requestForegroundPermissionsAsync()
-    if (fg.status !== 'granted') {
-      console.warn('[location] foreground permission denied')
-      return false
-    }
+    if (fg.status !== 'granted') return 'denied'
 
     await AsyncStorage.setItem(ACTIVE_ROUTE_KEY, routeId)
     await AsyncStorage.setItem(ACTIVE_DRIVER_KEY, driverId)
 
     if (isExpoGo) {
-      return await startForegroundTracking(routeId, driverId)
+      const ok = await startForegroundFallback(routeId, driverId)
+      return ok ? 'foreground-only' : 'denied'
     }
 
-    // Dev client / standalone: arrancamos foreground primero (feedback inmediato)
-    // y además background task para cuando la app se minimice.
-    const fgOk = await startForegroundTracking(routeId, driverId)
+    const bg = await Location.requestBackgroundPermissionsAsync()
+    if (bg.status !== 'granted') {
+      // Sin permiso "Siempre" no podemos correr el background task. Caemos a
+      // foreground watcher para que al menos haya tracking con la app abierta.
+      const ok = await startForegroundFallback(routeId, driverId)
+      return ok ? 'foreground-only' : 'denied'
+    }
 
-    try {
-      const bg = await Location.requestBackgroundPermissionsAsync()
-      if (bg.status !== 'granted') {
-        console.warn('[location] background permission denied — solo foreground')
-        return fgOk
-      }
-
-      const alreadyStarted = await Location.hasStartedLocationUpdatesAsync(
-        LOCATION_TASK_NAME,
-      ).catch(() => false)
-      if (alreadyStarted) return true
-
+    const alreadyStarted = await Location.hasStartedLocationUpdatesAsync(
+      LOCATION_TASK_NAME,
+    ).catch(() => false)
+    if (!alreadyStarted) {
       await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
         accuracy: Location.Accuracy.Balanced,
         distanceInterval: 50,
         timeInterval: 10000,
         pausesUpdatesAutomatically: false,
         showsBackgroundLocationIndicator: true,
+        activityType: Location.ActivityType.AutomotiveNavigation,
         foregroundService: {
           notificationTitle: 'Ruta activa',
           notificationBody: 'Seguimiento de ubicacion',
           notificationColor: '#3b82f6',
         },
       })
-      return true
-    } catch (e) {
-      console.warn('[location] background task failed, keeping foreground:', e)
-      return fgOk
     }
+    return 'background'
   } catch (e) {
     console.warn('[location] startTracking failed:', e)
-    return false
+    return 'denied'
   }
 }
 
 export async function stopTracking(): Promise<void> {
-  await stopForegroundTracking()
+  await stopForegroundFallback()
 
   if (!isExpoGo) {
     try {

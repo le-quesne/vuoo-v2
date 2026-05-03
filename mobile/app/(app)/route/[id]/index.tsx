@@ -287,12 +287,25 @@ export default function RouteDetailScreen() {
           .eq('id', driver.id)
         await refreshDriver()
       }
-      const ok = await startTracking(route.id, driver.id)
-      setTracking(ok)
-      if (!ok) {
+      const mode = await startTracking(route.id, driver.id)
+      setTracking(mode !== 'denied')
+      if (mode === 'foreground-only') {
         Alert.alert(
-          'Seguimiento de ubicacion',
-          'No se pudo iniciar el seguimiento GPS en background. La ruta sigue activa pero las ubicaciones no se enviaran.',
+          'GPS solo en primer plano',
+          'No se otorgó el permiso "Siempre". El tracking se detendrá si salís de la app. Cambialo en Ajustes para que el dispatcher te vea en vivo aunque tengas la pantalla apagada.',
+          [
+            { text: 'Continuar así', style: 'cancel' },
+            { text: 'Abrir Ajustes', onPress: () => Linking.openSettings() },
+          ],
+        )
+      } else if (mode === 'denied') {
+        Alert.alert(
+          'Permiso de ubicación denegado',
+          'Vuoo no puede rastrear sin acceso a tu ubicación. La ruta sigue activa pero el dispatcher no podrá verte en vivo.',
+          [
+            { text: 'Cerrar', style: 'cancel' },
+            { text: 'Abrir Ajustes', onPress: () => Linking.openSettings() },
+          ],
         )
       }
     } else {
@@ -327,8 +340,10 @@ export default function RouteDetailScreen() {
       .update({ status: 'in_transit' })
       .eq('id', route.id)
     // Reanuda el GPS tracking para que el dispatcher lo vea en vivo.
-    const ok = await startTracking(route.id, driver.id).catch(() => false)
-    setTracking(!!ok)
+    const mode = await startTracking(route.id, driver.id).catch(
+      () => 'denied' as const,
+    )
+    setTracking(mode !== 'denied')
     setFinishingRoute(false)
     await load()
   }
