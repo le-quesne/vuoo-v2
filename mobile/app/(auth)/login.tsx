@@ -114,7 +114,7 @@ export default function LoginScreen() {
           </Text>
 
           <Pressable
-            onPress={() => router.push('/(auth)/demo')}
+            onPress={() => router.push('/(auth)/demo' as never)}
             style={({ pressed }) => [styles.demoLink, pressed && { opacity: 0.6 }]}
           >
             <Text style={styles.demoLinkText}>Probar con cuenta demo</Text>

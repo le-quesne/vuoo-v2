@@ -6,7 +6,6 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "vuoo",
-    "newArchEnabled": true,
     "icon": "./assets/icon.png",
     "splash": {
       "image": "./assets/splash.png",
@@ -68,6 +67,7 @@
           "locationWhenInUsePermission": "Vuoo necesita tu ubicacion para mostrar tu avance en la ruta.",
           "locationAlwaysAndWhenInUsePermission": "Vuoo rastrea tu ubicacion durante la ruta para que el dispatcher pueda verte en vivo.",
           "locationAlwaysPermission": "Vuoo rastrea tu ubicacion durante la ruta para que el dispatcher pueda verte en vivo.",
+          "isIosBackgroundLocationEnabled": true,
           "isAndroidBackgroundLocationEnabled": true,
           "isAndroidForegroundServiceEnabled": true
         }

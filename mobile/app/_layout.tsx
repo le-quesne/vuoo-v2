@@ -6,12 +6,10 @@ import * as Notifications from 'expo-notifications'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { initOfflineDb, startOfflineSync } from '@/lib/offline'
 import { setupNotificationHandler } from '@/lib/notifications'
-import { initLocationTask } from '@/lib/location'
-
-// Register the background location task once at module load. This must run
-// before the OS may wake the app in the background to deliver location
-// updates, so we keep it as a top-level side-effect rather than in an effect.
-initLocationTask()
+// Side-effect import: registra el background location task a top-level del
+// módulo. Necesario para que iOS encuentre el callback cuando reactiva la app
+// en background sin montar React.
+import '@/lib/location'
 
 function routeForNotificationData(
   data: Record<string, unknown> | null | undefined,

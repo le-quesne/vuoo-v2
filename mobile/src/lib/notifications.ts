@@ -40,14 +40,17 @@ export async function registerForPushNotifications(
       return null
     }
 
-    // 1. Permisos
-    const { status: existingStatus } = await Notifications.getPermissionsAsync()
-    let finalStatus = existingStatus
-    if (existingStatus !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync()
-      finalStatus = status
+    // 1. Permisos — SDK 55 expone el resultado con `granted: boolean`. El campo
+    // `status` ya no es accesible en el tipo de TS porque el extends a
+    // PermissionResponse no resuelve sin tener expo-modules-core como dep
+    // explicita (Expo recomienda no instalarlo directo). El boolean nos basta.
+    const existing = await Notifications.getPermissionsAsync()
+    let granted = existing.granted
+    if (!granted) {
+      const requested = await Notifications.requestPermissionsAsync()
+      granted = requested.granted
     }
-    if (finalStatus !== 'granted') {
+    if (!granted) {
       console.log('[notifications] Push permission not granted')
       return null
     }
