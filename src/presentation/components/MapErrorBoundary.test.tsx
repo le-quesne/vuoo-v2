@@ -4,9 +4,10 @@
 // Report: .gstack/qa-reports/qa-report-localhost-5180-2026-05-06.md
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import type { ReactElement } from 'react'
 import { MapErrorBoundary } from './MapErrorBoundary'
 
-function Boom(): JSX.Element {
+function Boom(): ReactElement {
   throw new Error('Failed to initialize WebGL')
 }
 
