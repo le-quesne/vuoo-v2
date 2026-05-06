@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Plus, Search, MapPin, Map as MapIcon, List, Download, ChevronLeft, ChevronRight, Pencil, Phone } from 'lucide-react'
 import { supabase } from '@/application/lib/supabase'
 import { SimpleMap } from '@/presentation/components/RouteMap'
+import { MapErrorBoundary } from '@/presentation/components/MapErrorBoundary'
 import type { Stop } from '@/data/types/database'
 import { EditStopModal, CreateStopModal } from '@/presentation/features/stops/components'
 
@@ -240,11 +241,13 @@ export function StopsPage() {
 
       {viewMode === 'split' && (
         <div className="w-1/2 border-l border-gray-200">
-          <SimpleMap
-            stops={filtered}
-            onStopClick={(stop) => setSelectedStopId(stop.id)}
-            selectedStopId={selectedStopId}
-          />
+          <MapErrorBoundary>
+            <SimpleMap
+              stops={filtered}
+              onStopClick={(stop) => setSelectedStopId(stop.id)}
+              selectedStopId={selectedStopId}
+            />
+          </MapErrorBoundary>
         </div>
       )}
 

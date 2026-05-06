@@ -83,9 +83,15 @@ export function RouteMap({
     [driverLocations]
   )
 
-  // Init map once
+  // Init map once. Throws to MapErrorBoundary if WebGL/Mapbox can't initialize
+  // (bad token, missing GPU, transient driver crash) so the host page keeps
+  // rendering its non-map UI instead of whitescreening.
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
+
+    if (!mapboxgl.supported()) {
+      throw new Error('WebGL no disponible en este navegador')
+    }
 
     const map = new mapboxgl.Map({
       container: containerRef.current,

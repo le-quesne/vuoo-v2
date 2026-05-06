@@ -34,6 +34,7 @@ import {
 import { supabase } from '@/application/lib/supabase'
 import { useAuth } from '@/application/hooks/useAuth'
 import { RouteMap, ROUTE_COLORS } from '@/presentation/components/RouteMap'
+import { MapErrorBoundary } from '@/presentation/components/MapErrorBoundary'
 import {
   PODModal,
   DepotConfigModal,
@@ -815,13 +816,15 @@ export function PlanDetailPage() {
 
       {/* Map */}
       <div className="flex-1">
-        <RouteMap
-          routeGroups={mapRouteGroups}
-          onStopClick={handleStopClick}
-          selectedStopId={selectedStopId}
-          selectedRouteId={selectedRouteId}
-          depot={orgDepot}
-        />
+        <MapErrorBoundary>
+          <RouteMap
+            routeGroups={mapRouteGroups}
+            onStopClick={handleStopClick}
+            selectedStopId={selectedStopId}
+            selectedRouteId={selectedRouteId}
+            depot={orgDepot}
+          />
+        </MapErrorBoundary>
       </div>
 
       {/* Vroom Wizard */}

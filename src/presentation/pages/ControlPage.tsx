@@ -3,6 +3,7 @@ import { format } from 'date-fns';
 import { useAuth } from '@/application/hooks/useAuth';
 import { DemoBadge } from '@/presentation/components/DemoBadge';
 import { RouteMap, ROUTE_COLORS } from '@/presentation/components/RouteMap';
+import { MapErrorBoundary } from '@/presentation/components/MapErrorBoundary';
 import { isAlertSoundMuted, setAlertSoundMuted } from '@/application/lib/alertSound';
 import type { DriverLocation } from '@/data/types/database';
 import {
@@ -216,14 +217,16 @@ export function ControlPage() {
         </div>
 
         <div className="flex-1 rounded-lg overflow-hidden border border-gray-200 min-h-0">
-          <RouteMap
-            routeGroups={mapRouteGroups}
-            driverLocations={mapDriverLocations}
-            driverColorByRouteId={routeColorById}
-            driverNameByRouteId={driverNameByRouteId}
-            selectedRouteId={selectedRouteId}
-            depot={orgDepot}
-          />
+          <MapErrorBoundary>
+            <RouteMap
+              routeGroups={mapRouteGroups}
+              driverLocations={mapDriverLocations}
+              driverColorByRouteId={routeColorById}
+              driverNameByRouteId={driverNameByRouteId}
+              selectedRouteId={selectedRouteId}
+              depot={orgDepot}
+            />
+          </MapErrorBoundary>
         </div>
       </div>
 
