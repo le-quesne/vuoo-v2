@@ -45,7 +45,7 @@ export function LoginPage() {
             <img src="/logo_vuoo.svg" alt="Vuoo" className="h-10" />
           </div>
           <h1 className="text-xl font-semibold text-center mb-6">
-            {isSignUp ? 'Crear cuenta' : 'Iniciar sesion'}
+            {isSignUp ? 'Crear cuenta' : 'Iniciar sesión'}
           </h1>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -87,7 +87,7 @@ export function LoginPage() {
                 ? 'Cargando...'
                 : isSignUp
                   ? 'Crear cuenta'
-                  : 'Iniciar sesion'}
+                  : 'Iniciar sesión'}
             </button>
           </form>
 

@@ -154,10 +154,10 @@ export function Sidebar({ expanded, onToggle }: { expanded: boolean; onToggle: (
                 : 'text-slate-400 hover:text-white hover:bg-navy-800'
             }`
           }
-          title={expanded ? undefined : 'Configuracion'}
+          title={expanded ? undefined : 'Configuración'}
         >
           <Settings size={20} className="shrink-0" />
-          {expanded && <span className="text-sm truncate">Configuracion</span>}
+          {expanded && <span className="text-sm truncate">Configuración</span>}
         </NavLink>
         {isSuperAdmin && (
           <NavLink
@@ -182,7 +182,7 @@ export function Sidebar({ expanded, onToggle }: { expanded: boolean; onToggle: (
           className={`h-11 flex items-center rounded-lg text-slate-400 hover:text-red-400 hover:bg-navy-800 transition-colors ${
             expanded ? 'px-3 gap-3' : 'w-11 justify-center'
           }`}
-          title={expanded ? undefined : 'Cerrar sesion'}
+          title={expanded ? undefined : 'Cerrar sesión'}
         >
           <LogOut size={20} className="shrink-0" />
           {expanded && <span className="text-sm truncate">Salir</span>}

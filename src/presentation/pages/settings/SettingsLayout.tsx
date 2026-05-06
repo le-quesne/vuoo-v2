@@ -19,7 +19,7 @@ export function SettingsLayout() {
       <div className="px-6 py-3 border-b border-gray-200 bg-white">
         <div className="flex items-center gap-3 mb-3">
           <SettingsIcon size={20} className="text-gray-500" />
-          <h1 className="text-lg font-semibold">Configuracion</h1>
+          <h1 className="text-lg font-semibold">Configuración</h1>
         </div>
         <nav className="flex items-center gap-1 flex-wrap">
           {tabs.map((tab) => (
