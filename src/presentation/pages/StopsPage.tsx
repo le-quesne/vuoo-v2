@@ -67,7 +67,7 @@ export function StopsPage() {
                 className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600"
               >
                 <Plus size={16} />
-                Anadir parada
+                Añadir parada
               </button>
             </div>
           </div>
