@@ -326,7 +326,7 @@ export function OrdersPage() {
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               type="text"
-              placeholder="Buscar por cliente, direccion, numero..."
+              placeholder="Buscar por cliente, dirección, número..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm w-80 focus:outline-none focus:ring-2 focus:ring-blue-400"
@@ -412,7 +412,7 @@ export function OrdersPage() {
                 </th>
                 <th className="p-3 font-medium">#</th>
                 <th className="p-3 font-medium">Cliente</th>
-                <th className="p-3 font-medium">Direccion</th>
+                <th className="p-3 font-medium">Dirección</th>
                 <th className="p-3 font-medium">Peso</th>
                 <th className="p-3 font-medium">Ventana</th>
                 <th className="p-3 font-medium">Fecha</th>

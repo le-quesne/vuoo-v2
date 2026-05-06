@@ -98,8 +98,8 @@ export function DriversPage() {
               <tr className="text-left text-xs text-gray-500 bg-gray-50 border-b border-gray-200">
                 <th className="p-3 font-medium w-8"></th>
                 <th className="p-3 font-medium">Nombre</th>
-                <th className="p-3 font-medium">Telefono</th>
-                <th className="p-3 font-medium">Vehiculo asignado</th>
+                <th className="p-3 font-medium">Teléfono</th>
+                <th className="p-3 font-medium">Vehículo asignado</th>
                 <th className="p-3 font-medium">Disponibilidad</th>
                 <th className="p-3 font-medium">Status</th>
                 <th className="p-3 font-medium">Licencia</th>

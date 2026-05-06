@@ -345,7 +345,7 @@ export function OrderModal({
                   className="input"
                 />
               </Field>
-              <Field label="Telefono">
+              <Field label="Teléfono">
                 <input
                   value={form.customer_phone}
                   onChange={(e) => setForm({ ...form, customer_phone: e.target.value })}
@@ -426,7 +426,7 @@ export function OrderModal({
                   <input
                     value={it.name}
                     onChange={(e) => updateItem(i, { name: e.target.value })}
-                    placeholder="Descripcion"
+                    placeholder="Descripción"
                     className="input"
                   />
                   <input
@@ -480,7 +480,7 @@ export function OrderModal({
                   className="input"
                 />
               </Field>
-              <Field label="Duracion (min)">
+              <Field label="Duración (min)">
                 <input
                   type="number"
                   min="1"

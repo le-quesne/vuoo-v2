@@ -90,7 +90,7 @@ export function StopsPage() {
             <button
               onClick={() => {
                 const csv = [
-                  'Nombre,Ubicacion,Duracion,Peso,Hora inicio,Hora fin',
+                  'Nombre,Ubicación,Duración,Peso,Hora inicio,Hora fin',
                   ...filtered.map((s) =>
                     [s.name, s.address ?? '', s.duration_minutes, s.weight_kg ?? '', s.time_window_start ?? '', s.time_window_end ?? '']
                       .map((v) => `"${String(v).replace(/"/g, '""')}"`)
@@ -119,8 +119,8 @@ export function StopsPage() {
               <thead>
                 <tr className="text-left text-xs text-gray-500 bg-gray-50 border-b border-gray-200">
                   <th className="p-3 font-medium">Nombre</th>
-                  <th className="p-3 font-medium">Ubicacion</th>
-                  <th className="p-3 font-medium">Duracion</th>
+                  <th className="p-3 font-medium">Ubicación</th>
+                  <th className="p-3 font-medium">Duración</th>
                   <th className="p-3 font-medium">Peso (kg)</th>
                   <th className="p-3 font-medium">Horarios</th>
                   <th className="p-3 font-medium">Cliente</th>

@@ -203,7 +203,7 @@ export function DriverModal({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field
-              label="Telefono"
+              label="Teléfono"
               value={form.phone}
               onChange={(v) => setForm({ ...form, phone: v })}
             />
@@ -218,12 +218,12 @@ export function DriverModal({
           </div>
           {!isEditing && (
             <p className="text-xs text-gray-400 -mt-1">
-              Se enviara una invitacion por email al conductor para activar su cuenta.
+              Se enviará una invitación por email al conductor para activar su cuenta.
             </p>
           )}
           <div className="grid grid-cols-2 gap-3">
             <Field
-              label="Numero licencia"
+              label="Número licencia"
               value={form.license_number}
               onChange={(v) => setForm({ ...form, license_number: v })}
             />

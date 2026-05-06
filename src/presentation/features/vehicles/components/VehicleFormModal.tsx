@@ -105,7 +105,7 @@ export function VehicleFormModal({
           />
           <div className="grid grid-cols-2 gap-3">
             <Field
-              label="Matricula"
+              label="Matrícula"
               value={form.license_plate}
               onChange={(v) => setForm({ ...form, license_plate: v })}
             />
