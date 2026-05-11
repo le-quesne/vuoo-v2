@@ -269,6 +269,7 @@ function PlanDetailView({ planId }: { planId: string }) {
 - La instancia `mapboxgl.Map` vive en un `useRef`, se crea una sola vez en `useEffect([])`, y se limpia en el cleanup.
 - Los sources/layers se actualizan vía hooks auxiliares (`useRouteSource`, `useStopMarkers`) que reciben el `mapRef` por prop.
 - No crear tokens Mapbox fuera de `@/application/lib/mapbox.ts`. El token público va en `VITE_MAPBOX_TOKEN`.
+- Envolver `<RouteMap>` y `<SimpleMap>` en `<MapErrorBoundary>` (en `src/presentation/components/MapErrorBoundary.tsx`) en cualquier página autenticada. Captura WebGL no disponible y errores de inicialización en lugar de tirar whitescreen. Ya aplicado en `ControlPage`, `PlanDetailPage` y `StopsPage`. Para páginas públicas (ej. `TrackingPage` con un token de invitado), usar `mapboxgl.supported()` + try/catch inline porque no hay React tree alrededor que se beneficie del boundary.
 
 ## Realtime Supabase en hooks
 

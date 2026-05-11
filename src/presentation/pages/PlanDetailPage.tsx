@@ -34,6 +34,7 @@ import {
 import { supabase } from '@/application/lib/supabase'
 import { useAuth } from '@/application/hooks/useAuth'
 import { RouteMap, ROUTE_COLORS } from '@/presentation/components/RouteMap'
+import { MapErrorBoundary } from '@/presentation/components/MapErrorBoundary'
 import {
   PODModal,
   DepotConfigModal,
@@ -808,20 +809,22 @@ export function PlanDetailPage() {
             className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50"
           >
             <Plus size={14} />
-            Anadir parada
+            Añadir parada
           </button>
         </div>
       </div>
 
       {/* Map */}
       <div className="flex-1">
-        <RouteMap
-          routeGroups={mapRouteGroups}
-          onStopClick={handleStopClick}
-          selectedStopId={selectedStopId}
-          selectedRouteId={selectedRouteId}
-          depot={orgDepot}
-        />
+        <MapErrorBoundary>
+          <RouteMap
+            routeGroups={mapRouteGroups}
+            onStopClick={handleStopClick}
+            selectedStopId={selectedStopId}
+            selectedRouteId={selectedRouteId}
+            depot={orgDepot}
+          />
+        </MapErrorBoundary>
       </div>
 
       {/* Vroom Wizard */}

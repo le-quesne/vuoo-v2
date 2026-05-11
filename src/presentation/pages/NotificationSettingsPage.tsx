@@ -82,7 +82,7 @@ const SECTIONS = [
   { id: 'email', label: 'Email', icon: Mail },
   { id: 'sms', label: 'SMS', icon: Phone },
   { id: 'events', label: 'Eventos', icon: Bell },
-  { id: 'customization', label: 'Personalizacion', icon: Palette },
+  { id: 'customization', label: 'Personalización', icon: Palette },
 ] as const
 
 type SectionId = (typeof SECTIONS)[number]['id']
@@ -178,7 +178,7 @@ export function NotificationSettingsPage() {
         <div>
           <h1 className="text-xl font-semibold">Notificaciones</h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            Configura los canales y eventos de notificacion para tus entregas
+            Configura los canales y eventos de notificación para tus entregas
           </p>
         </div>
         <button
@@ -219,27 +219,27 @@ export function NotificationSettingsPage() {
       <div className="max-w-2xl">
         {activeSection === 'channels' && (
           <SectionCard
-            title="Canales de notificacion"
+            title="Canales de notificación"
             description="Activa los canales por los que quieres enviar notificaciones a tus clientes."
           >
             <div className="space-y-4">
               <Toggle
                 label="WhatsApp"
-                description="Envia notificaciones por WhatsApp Business API"
+                description="Envía notificaciones por WhatsApp Business API"
                 icon={<MessageSquare size={18} className="text-green-600" />}
                 checked={settings.whatsapp_enabled}
                 onChange={(v) => update('whatsapp_enabled', v)}
               />
               <Toggle
                 label="Email"
-                description="Envia notificaciones por correo electronico"
+                description="Envía notificaciones por correo electrónico"
                 icon={<Mail size={18} className="text-blue-600" />}
                 checked={settings.email_enabled}
                 onChange={(v) => update('email_enabled', v)}
               />
               <Toggle
                 label="SMS"
-                description="Envia notificaciones por mensaje de texto"
+                description="Envía notificaciones por mensaje de texto"
                 icon={<Phone size={18} className="text-purple-600" />}
                 checked={settings.sms_enabled}
                 onChange={(v) => update('sms_enabled', v)}
@@ -250,7 +250,7 @@ export function NotificationSettingsPage() {
 
         {activeSection === 'whatsapp' && settings.whatsapp_enabled && (
           <SectionCard
-            title="Configuracion WhatsApp"
+            title="Configuración WhatsApp"
             description="Conecta tu cuenta de WhatsApp Business API para enviar notificaciones."
           >
             <div className="space-y-3">
@@ -294,7 +294,7 @@ export function NotificationSettingsPage() {
 
         {activeSection === 'email' && settings.email_enabled && (
           <SectionCard
-            title="Configuracion Email"
+            title="Configuración Email"
             description="Configura Resend para enviar correos transaccionales a tus clientes."
           >
             <div className="space-y-3">
@@ -338,7 +338,7 @@ export function NotificationSettingsPage() {
 
         {activeSection === 'sms' && settings.sms_enabled && (
           <SectionCard
-            title="Configuracion SMS"
+            title="Configuración SMS"
             description="Conecta tu cuenta de Twilio para enviar mensajes de texto."
           >
             <div className="space-y-3">
@@ -382,8 +382,8 @@ export function NotificationSettingsPage() {
 
         {activeSection === 'events' && (
           <SectionCard
-            title="Eventos de notificacion"
-            description="Selecciona que eventos disparan notificaciones automaticas."
+            title="Eventos de notificación"
+            description="Selecciona qué eventos disparan notificaciones automáticas."
           >
             <div className="space-y-4">
               <Toggle
@@ -494,7 +494,7 @@ export function NotificationSettingsPage() {
                   className="w-24 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
                 />
                 <p className="text-xs text-gray-400 mt-1">
-                  Numero de paradas restantes para disparar la notificacion "Llegando"
+                  Número de paradas restantes para disparar la notificación "Llegando"
                 </p>
               </div>
             </div>

@@ -136,7 +136,7 @@ export function AddStopToPlanModal({
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
       <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl max-h-[85vh] flex flex-col">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold">Anadir parada</h3>
+          <h3 className="text-lg font-semibold">Añadir parada</h3>
           <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X size={20} />
           </button>
@@ -228,7 +228,7 @@ export function AddStopToPlanModal({
                 disabled={selectedIds.size === 0 || assigning}
                 className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 disabled:opacity-50"
               >
-                {assigning ? 'Asignando...' : `Anadir ${selectedIds.size > 0 ? `(${selectedIds.size})` : ''}`}
+                {assigning ? 'Asignando...' : `Añadir ${selectedIds.size > 0 ? `(${selectedIds.size})` : ''}`}
               </button>
             </div>
           </>

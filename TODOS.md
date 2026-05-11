@@ -98,3 +98,48 @@ Mantener ordenado por prioridad. Cada ítem con: What / Why / Effort (CC) / Depe
 - **What**: Llegar a 100% coverage post-piloto. Hoy P0 son 7 unit + 1 E2E (~85% confianza).
 - **Why**: Regla del proyecto "well-tested code es non-negotiable".
 - **Effort (CC)**: M (~half day).
+
+---
+
+## QA pass 2026-05-06 — issues diferidos
+
+Generado por `/qa` (rama `le-quesne/qa-run`). Reporte completo en
+`.gstack/qa-reports/qa-report-localhost-5180-2026-05-06.md`. 6 fixes
+aplicados (commits `57fc6a1..82651c9`); estos son los que quedaron fuera.
+
+### P2 — pasada bulk de ortografía
+- **What**: Acentos faltantes en >25 strings adicionales (Onboarding, Welcome, Analytics views, DayDashboard, ControlHeader, PlanDetailPage botones de fila, WeekDashboard "De Mayo" capitalización, ImportWizard varios, voseo argentino "Creá" en api-tokens).
+- **Why**: La regla del proyecto (`02-code-style.md`) exige ortografía completa. Hicimos los más visibles (sidebar/nav/forms principales). Falta una pasada bulk.
+- **Effort (CC)**: M (~2 horas) — find+replace asistido + revisión manual del contexto + un solo PR.
+- **Source**: /qa 2026-05-06, ISSUE-007.
+
+### P2 — Migración SQL `list_stop_duplicates`
+- **What**: La función Postgres que llama `stopsService.listDuplicates()` no existe en `supabase/migrations/`. Hoy la página `/settings/duplicates` muestra "funcionalidad no disponible" (gracias al fix `14b310e`). Para activarla, escribir migración con `pg_trgm` similarity sobre stops.address según PRD 12 §A.2.3.
+- **Why**: Feature documentada y prometida; código frontend ya existe; solo falta la función SQL.
+- **Effort (CC)**: M (~3 horas) — diseñar threshold, escribir SQL + tests SQL.
+- **Depends on**: decisión de producto sobre threshold de similitud (0.6? 0.8?).
+- **Source**: /qa 2026-05-06, ISSUE-002 (síntoma fixeado, causa pendiente).
+
+### P3 — aria-label "Acknowledge alert" en español
+- **What**: Botón de marcar alerta como leída en `/control` → popover de Alertas tiene `aria-label="Acknowledge alert"` en inglés.
+- **Why**: Lectores de pantalla lo leen literal. UX inconsistente.
+- **Effort (CC)**: S (~10 min) — buscar en `presentation/features/control/components/`.
+- **Source**: /qa 2026-05-06, ISSUE-008.
+
+### P3 — `/admin` redirect debería notificar
+- **What**: Hoy `/admin` para no-superadmin redirige silenciosamente a `/planner`. Mostrar toast "No tienes permisos para esta sección" antes del redirect.
+- **Why**: Si llegas con bookmark o link compartido te quedás confundido.
+- **Effort (CC)**: S (~30 min) — modificar `RequireAuth requireSuperAdmin` para setear toast antes del `<Navigate>`.
+- **Source**: /qa 2026-05-06, ISSUE-009.
+
+### P3 — Auditoria de RPCs frontend vs migrations
+- **What**: `grep -rn "supabase.rpc(" src/ | head -30` y validar que cada función exista en alguna migración de `supabase/migrations/`. Detecta features rotas tipo `list_stop_duplicates` antes de que el cliente las descubra.
+- **Why**: Patrón observado: features documentadas en PRD con código frontend pero sin SQL.
+- **Effort (CC)**: S (~1 hora) — script de bash + jq sobre PostgREST schema.
+- **Source**: /qa 2026-05-06, recomendación final.
+
+### P4 — Aplicar `userMessage()` en el resto del codebase
+- **What**: `grep -rn "setError(res.error)" src/` para encontrar dónde se renderiza error crudo de Supabase. Envolver con `userMessage()` (ya existe en `application/utils/errorMessages.ts` desde el fix `14b310e`).
+- **Why**: Hace toda la app más suave para errores transient (sesion expirada, RLS, conflicto único). Evita filtraciones de detalles internos al usuario.
+- **Effort (CC)**: M (~2 horas).
+- **Source**: /qa 2026-05-06, follow-up de ISSUE-002.

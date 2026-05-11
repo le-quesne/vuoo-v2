@@ -139,6 +139,7 @@ export default function TrackingPage() {
   const [data, setData] = useState<TrackingResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [mapUnavailable, setMapUnavailable] = useState(false)
 
   // Driver live location (updated via Realtime)
   const [driverLoc, setDriverLoc] = useState<{
@@ -273,18 +274,29 @@ export default function TrackingPage() {
   useEffect(() => {
     if (loading || !mapContainerRef.current || mapRef.current) return
 
+    if (!mapboxgl.supported()) {
+      setMapUnavailable(true)
+      return
+    }
+
     const center: [number, number] =
       data?.stop_lng && data?.stop_lat
         ? [data.stop_lng, data.stop_lat]
         : [-70.6693, -33.4489]
 
-    const map = new mapboxgl.Map({
-      container: mapContainerRef.current,
-      style: MAP_STYLE,
-      center,
-      zoom: 15,
-      attributionControl: false,
-    })
+    let map: mapboxgl.Map
+    try {
+      map = new mapboxgl.Map({
+        container: mapContainerRef.current,
+        style: MAP_STYLE,
+        center,
+        zoom: 15,
+        attributionControl: false,
+      })
+    } catch {
+      setMapUnavailable(true)
+      return
+    }
 
     mapRef.current = map
 
@@ -665,7 +677,17 @@ export default function TrackingPage() {
 
           {/* ══════════════════════ 3. MAPA ══════════════════════ */}
           <div className="rounded-2xl overflow-hidden border border-slate-100 shadow-sm">
-            <div ref={mapContainerRef} className="w-full h-56 sm:h-64" />
+            {mapUnavailable ? (
+              <div className="w-full h-56 sm:h-64 flex items-center justify-center bg-slate-50 px-6 text-center">
+                <div className="text-sm text-slate-500">
+                  No se pudo cargar el mapa. Verifica tu conexión y que tu
+                  navegador soporte WebGL. Los detalles de la entrega siguen
+                  disponibles abajo.
+                </div>
+              </div>
+            ) : (
+              <div ref={mapContainerRef} className="w-full h-56 sm:h-64" />
+            )}
           </div>
 
           {/* ══════════════════════ 4. DETALLE: Timeline ══════════════════════ */}

@@ -11,6 +11,11 @@ Antes de tocar código, lee las reglas en [`.claude/rules/`](./.claude/rules/):
 - [`03-presentation.md`](./.claude/rules/03-presentation.md) — features, hooks, Tailwind, mapas.
 - [`04-data-services.md`](./.claude/rules/04-data-services.md) — services, Supabase, Vroom/OSRM, realtime.
 
+## Utilidades reutilizables
+
+- `src/presentation/components/MapErrorBoundary.tsx` — error boundary para mapas Mapbox GL. Envolver `<RouteMap>` y `<SimpleMap>` para evitar whitescreen en navegadores sin WebGL o cuando la inicialización falla. Ya aplicado en `ControlPage`, `PlanDetailPage`, `StopsPage`. La pública `TrackingPage` usa `mapboxgl.supported()` + try/catch inline en vez del boundary.
+- `src/application/utils/errorMessages.ts` — `userMessage(raw)` traduce errores crudos de Supabase/red a copy en español (network, 401/403/jwt, duplicate key, RLS, schema-cache/404, timeout). Envolver `res.error` con esto antes de renderizarlo al usuario.
+
 ## gstack (recommended)
 
 This project uses [gstack](https://github.com/garrytan/gstack) for AI-assisted workflows.

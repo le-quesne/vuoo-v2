@@ -50,7 +50,7 @@ export function VehiclesPage() {
   return (
     <div className="flex-1 p-6 overflow-y-auto">
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-semibold">Vehiculos</h1>
+        <h1 className="text-xl font-semibold">Vehículos</h1>
         <div className="flex items-center gap-3">
           <div className="relative">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -82,14 +82,14 @@ export function VehiclesPage() {
             <tr className="text-left text-xs text-gray-500 bg-gray-50 border-b border-gray-200">
               <th className="p-3 font-medium w-8"></th>
               <th className="p-3 font-medium">Nombre</th>
-              <th className="p-3 font-medium">Matricula</th>
+              <th className="p-3 font-medium">Matrícula</th>
               <th className="p-3 font-medium">Marca</th>
               <th className="p-3 font-medium">Modelo</th>
               <th className="p-3 font-medium">Precio/km ($)</th>
               <th className="p-3 font-medium">Combustible</th>
               <th className="p-3 font-medium">Consumo medio</th>
               <th className="p-3 font-medium">Capacidad (kg)</th>
-              <th className="p-3 font-medium">Fecha creacion</th>
+              <th className="p-3 font-medium">Fecha creación</th>
               <th className="p-3 font-medium w-20">Acciones</th>
             </tr>
           </thead>

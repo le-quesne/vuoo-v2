@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, GitMerge } from 'lucide-react';
 import { stopsService } from '@/data/services/stops';
 import { useAuth } from '@/application/hooks/useAuth';
+import { userMessage } from '@/application/utils/errorMessages';
 import type { Stop } from '@/data/types/database';
 import { MergeStopsModal } from './MergeStopsModal';
 
@@ -35,7 +36,7 @@ export function DuplicatesView() {
     const res = await stopsService.listDuplicates(currentOrg.id);
     setIsLoading(false);
     if (!res.success) {
-      setError(res.error);
+      setError(userMessage(res.error));
       setPairs([]);
       return;
     }

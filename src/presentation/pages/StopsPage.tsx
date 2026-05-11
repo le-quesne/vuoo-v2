@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Plus, Search, MapPin, Map as MapIcon, List, Download, ChevronLeft, ChevronRight, Pencil, Phone } from 'lucide-react'
 import { supabase } from '@/application/lib/supabase'
 import { SimpleMap } from '@/presentation/components/RouteMap'
+import { MapErrorBoundary } from '@/presentation/components/MapErrorBoundary'
 import type { Stop } from '@/data/types/database'
 import { EditStopModal, CreateStopModal } from '@/presentation/features/stops/components'
 
@@ -66,7 +67,7 @@ export function StopsPage() {
                 className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600"
               >
                 <Plus size={16} />
-                Anadir parada
+                Añadir parada
               </button>
             </div>
           </div>
@@ -89,14 +90,16 @@ export function StopsPage() {
             <button
               onClick={() => {
                 const csv = [
-                  'Nombre,Ubicacion,Duracion,Peso,Hora inicio,Hora fin',
+                  'Nombre,Ubicación,Duración,Peso,Hora inicio,Hora fin',
                   ...filtered.map((s) =>
                     [s.name, s.address ?? '', s.duration_minutes, s.weight_kg ?? '', s.time_window_start ?? '', s.time_window_end ?? '']
                       .map((v) => `"${String(v).replace(/"/g, '""')}"`)
                       .join(',')
                   ),
                 ].join('\n')
-                const blob = new Blob([csv], { type: 'text/csv' })
+                // BOM UTF-8 para que Excel/Numbers no convierta acentos
+                // (Ubicación, Duración) en mojibake.
+                const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
                 const url = URL.createObjectURL(blob)
                 const a = document.createElement('a')
                 a.href = url
@@ -118,8 +121,8 @@ export function StopsPage() {
               <thead>
                 <tr className="text-left text-xs text-gray-500 bg-gray-50 border-b border-gray-200">
                   <th className="p-3 font-medium">Nombre</th>
-                  <th className="p-3 font-medium">Ubicacion</th>
-                  <th className="p-3 font-medium">Duracion</th>
+                  <th className="p-3 font-medium">Ubicación</th>
+                  <th className="p-3 font-medium">Duración</th>
                   <th className="p-3 font-medium">Peso (kg)</th>
                   <th className="p-3 font-medium">Horarios</th>
                   <th className="p-3 font-medium">Cliente</th>
@@ -240,11 +243,13 @@ export function StopsPage() {
 
       {viewMode === 'split' && (
         <div className="w-1/2 border-l border-gray-200">
-          <SimpleMap
-            stops={filtered}
-            onStopClick={(stop) => setSelectedStopId(stop.id)}
-            selectedStopId={selectedStopId}
-          />
+          <MapErrorBoundary>
+            <SimpleMap
+              stops={filtered}
+              onStopClick={(stop) => setSelectedStopId(stop.id)}
+              selectedStopId={selectedStopId}
+            />
+          </MapErrorBoundary>
         </div>
       )}
 
