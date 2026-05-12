@@ -1,448 +1,342 @@
-# Vuoo V2 - Funcionalidades Faltantes vs Competencia
+# Vuoo V2 — Funcionalidades faltantes vs competencia
 
-> Analisis comparativo contra: OptimoRoute, Routific, Route4Me, Circuit/Spoke, Onfleet, Beetrack/DispatchTrack, SimpliRoute
+> Análisis comparativo contra competidores LATAM y globales del espacio TMS / last-mile.
 >
-> Fecha: Abril 2026
+> **Última actualización:** Mayo 2026
+> **Versión anterior:** Abril 2026 (varios P0 ya cerrados — ver sección "Lo que se shippeó")
 
 ---
 
-## Resumen Ejecutivo
+## Resumen ejecutivo
 
-Vuoo tiene una base solida (multi-tenant, optimizacion basica con Mapbox, gestion de paradas y vehiculos, panel admin). Sin embargo, le faltan funcionalidades criticas que **todos** los competidores ya ofrecen. Este documento prioriza las features faltantes en 3 niveles:
+Vuoo cerró en las últimas 6 semanas los 4 gaps críticos identificados en Abril 2026: **app móvil con POD + GPS + offline**, **tracking GPS en vivo con Torre de Control**, **tablas de customer experience** (tracking token, notification logs, feedback) y **API tokens por organización**.
 
-- **P0 - Critico**: Sin esto no puedes competir. Todos los competidores lo tienen.
-- **P1 - Importante**: La mayoria de competidores lo tienen. Diferencia entre un MVP y un producto real.
-- **P2 - Diferenciador**: Features avanzadas que separan lideres de seguidores.
+Pero el cierre de esos gaps revela uno nuevo: las **tablas existen pero el loop end-to-end de experiencia del cliente todavía no está cerrado** (faltan Edge Functions de WhatsApp, página pública `/track/:token`, surveys en mobile). Además, el mercado se movió en 2026 hacia tres tendencias que el análisis original no capturaba: **agentes IA autónomos**, **orquestación multi-carrier** y **compliance enterprise como wedge de venta**.
 
----
-
-## P0 - CRITICO (Must-Have)
-
-### 1. App Movil para Conductores
-**Estado actual:** No existe
-**Que tiene la competencia:**
-- OptimoRoute: App nativa iOS/Android con navegacion, POD, barcode scanning, modo offline, 20 idiomas
-- Routific: App + Lite version, offline completo, navegacion via Google/Waze/Apple Maps
-- SimpliRoute: App nativa con Waze/Google Maps integrado
-- Circuit/Spoke: App con input por voz, Package Finder, 19 idiomas
-- Onfleet: App con scanner ID, chat in-app, navegacion deep-linked
-
-**Que necesita Vuoo:**
-- [ ] App React Native / Expo para iOS y Android
-- [ ] Lista de paradas del dia con orden y ETA
-- [ ] Navegacion turn-by-turn (deep link a Google Maps/Waze)
-- [ ] Marcar parada como completada/fallida/cancelada
-- [ ] Captura de fotos como prueba de entrega
-- [ ] Firma digital del receptor
-- [ ] Notas del conductor por parada
-- [ ] Modo offline con sync automatico
-- [ ] Push notifications cuando se asigna/modifica ruta
+Este documento actualiza la matriz P0/P1/P2 reflejando estado real, agrega 4 competidores nuevos (Routal, Drivin, Shipsy, Locus) y reordena el roadmap.
 
 ---
 
-### 2. Tracking en Tiempo Real (GPS)
-**Estado actual:** No existe
-**Que tiene la competencia:**
-- OptimoRoute: GPS en vivo, breadcrumbs (ruta real vs planificada), ETAs dinamicos
-- Route4Me: GPS cada 1 segundo, replay animado, integracion telematica con 12+ proveedores
-- Beetrack: Geofencing, ETAs con ML 98% precision, widget embeddable
-- SimpliRoute: Tracking predictivo con alertas, monitoreo de temperatura
+## Lo que se shippeó desde Abril 2026
 
-**Que necesita Vuoo:**
-- [ ] Reporte de ubicacion GPS desde app del conductor (cada 30-60s)
-- [ ] Mapa en vivo en dashboard del dispatcher con posicion de todos los conductores
-- [ ] ETA dinamico por parada basado en posicion actual + trafico
-- [ ] Historial de rutas recorridas (breadcrumbs) vs ruta planificada
-- [ ] Geofencing basico: deteccion automatica de llegada/salida a parada
+Cerrado total o parcialmente (ya no son P0):
 
----
+| Feature original | Estado | Evidencia en código |
+|---|---|---|
+| App móvil para conductores | Cerrado | `mobile/` Expo Router, home + ruta detalle + ejecución parada |
+| GPS tracking en vivo + Torre de Control | Cerrado | `useLiveRoutes`, `useControlRealtime`, clusterización de markers (commit 770b8e6) |
+| GPS en background iOS | Cerrado | TaskManager + `expo-location`, TestFlight production (commit 83f705f) |
+| POD foto + firma + GPS geo-stamped | Cerrado | `SignatureCapture.tsx`, `PODModal.tsx`, buckets `delivery-photos` + `signatures` |
+| Modo offline con sync queue | Cerrado | `mobile/src/lib/offline.ts` (SQLite + NetInfo) |
+| Push notifications | Cerrado | Edge Function `send-push`, `device_tokens`, deep-link a ruta |
+| Gestión de conductores separada de vehículos | Cerrado | Migration 003 + `drivers/` feature + `useDriverAvailability` |
+| Customer experience — esquema | Cerrado | Migration 005 (tracking_token, customer_*, notification_logs, delivery_feedback, org_notification_settings) |
+| Org API tokens | Cerrado | Migration 024 + `apiTokens.services.ts` + `ApiTokensTab` |
+| Import CSV de pedidos + geocoding + dedupe | Cerrado | `ImportWizard/` con PinDropMap, MatchReviewModal, hooks de recovery |
+| Cuenta demo aislada para sales/Apple review | Cerrado | `is_demo=true`, `demo-simulator` edge function, reset CLI |
+| Datasul ERP (Renner) — primer conector | Cerrado | `DatasulDownloadPage`, enrich script |
 
-### 3. Notificaciones al Cliente
-**Estado actual:** No existe
-**Que tiene la competencia:**
-- TODOS ofrecen SMS + Email como minimo
-- Beetrack/SimpliRoute: WhatsApp como canal principal (critico para LATAM)
-- Onfleet: Notificaciones predictivas con ML, numeros enmascarados
-- OptimoRoute: Pagina de tracking branded, 24 idiomas
-- Routific: 4 tipos de notificacion automatica + Delivery Tracker
+Sigue pendiente o parcial:
 
-**Que necesita Vuoo:**
-- [ ] Pagina de tracking publica con ETA en vivo y mapa
-- [ ] Notificacion "Tu pedido esta en camino" (WhatsApp/SMS/Email)
-- [ ] Notificacion "Tu conductor esta a X paradas" (proximity trigger)
-- [ ] Notificacion "Entrega completada" con foto POD
-- [ ] Integracion WhatsApp Business API (critico para Chile/LATAM)
-- [ ] Templates personalizables por organizacion
+| Feature | Estado | Qué falta |
+|---|---|---|
+| WhatsApp customer flow end-to-end | Esquema listo | Edge Function `send-notification` con Meta Cloud API + templates aprobados + UI de configuración wizard |
+| Página pública de tracking `/track/:token` | Esquema listo | Componente React + Edge Function `get-tracking-status` + branding por org |
+| Surveys post-entrega + NPS dashboard | Esquema listo | Edge Function `send-survey` + UI captura rating en tracking page + dashboard en analytics |
+| Optimización con time-windows + capacity como hard constraints | Parcial | Verificar que `VroomWizardModal` exponga estos parámetros al usuario |
+| Webhooks salientes | No iniciado | Tabla de suscripciones, retry exponential, eventos plan_created/route_started/stop_completed |
+| API REST documentada (no solo tokens) | Parcial | Tokens existen, falta capa REST estable + OpenAPI/Swagger + rate limiting + SDK |
 
 ---
 
-### 4. Proof of Delivery (POD) Completo
-**Estado actual:** Campos en DB pero sin implementacion funcional (no hay app movil)
-**Que tiene la competencia:**
-- OptimoRoute: Fotos, firma, notas, barcode/QR, formularios custom
-- Route4Me: Fotos, firma, video, barcode, geotagged, workflows obligatorios
-- Beetrack: Fotos, firma, PIN delivery via WhatsApp, barcode, formularios custom
-- Onfleet: Fotos, firma, barcode, scanner de ID/edad
+## P0 — Crítico (must-have, mercado lo exige)
 
-**Que necesita Vuoo:**
-- [ ] Captura de foto geotagged y timestamped (desde app movil)
-- [ ] Firma digital del receptor
-- [ ] Scanner de barcode/QR para verificacion de paquetes
-- [ ] Registro automatico de hora y coordenadas GPS al completar
-- [ ] Visualizacion de POD en dashboard del dispatcher
-- [ ] Razon de fallo cuando entrega no se completa
+### 1. Loop completo de experiencia del cliente
 
----
+Las tablas ya existen (migración 005). Falta cerrar el ciclo:
 
-### 5. Webhook / Event System
-**Estado actual:** No existe
-**Que tiene la competencia:**
-- Routific: Webhooks para eventos de ruta
-- SimpliRoute: 9 eventos webhook (plan_created, visit_checkout, etc.)
-- Onfleet: Webhooks con scoped API keys
-- Route4Me: Sistema completo de eventos + marketplace
+- [ ] Edge Function `get-tracking-status` (lee `plan_stops` + `driver_locations` + POD por token)
+- [ ] Página pública `/track/:token` con mapa Realtime + timeline + ETA dinámico + branding por org
+- [ ] Edge Function `send-notification` con Meta Cloud API (WhatsApp) + Resend (email)
+- [ ] Templates WhatsApp pre-aprobados: `delivery_scheduled`, `delivery_in_transit`, `delivery_arriving`, `delivery_completed`, `delivery_failed`
+- [ ] Wizard de configuración de notificaciones en Settings (UI ya empezada en `NotificationSettingsPage`)
+- [ ] Edge Function `send-survey` (cron 30 min post-delivery)
+- [ ] Captura de feedback en `/track/:token#feedback` (rating 1-5 + comentario)
+- [ ] Dashboard NPS por conductor / org en AnalyticsPage
 
-**Que necesita Vuoo:**
-- [ ] Supabase Realtime subscriptions para cambios en tiempo real
-- [ ] Webhook endpoints configurables por organizacion
-- [ ] Eventos: plan_created, route_started, stop_completed, stop_failed, route_completed
-- [ ] Retry logic (3 intentos con backoff exponencial)
+**Por qué P0**: SimpliRoute, Beetrack, Routal, Shipsy y Onfleet lo tienen completo. En LATAM, WhatsApp + página de tracking branded es el primer filtro que aplica un comprador retail. Sin esto el deal se cae en demo.
 
----
+### 2. Webhooks salientes + API REST documentada
 
-### 6. API REST Publica
-**Estado actual:** No existe (solo Supabase client directo)
-**Que tiene la competencia:**
-- TODOS ofrecen REST API documentada
-- SimpliRoute: SDKs en Node.js y Python
-- Route4Me: SDKs en 8+ lenguajes
-- Routific: Engine API standalone para optimizacion
+- [ ] Tabla `org_webhook_subscriptions` (url, secret, eventos suscritos)
+- [ ] Edge Function `dispatch-webhook` con retry exponential (3 intentos, backoff 1m/5m/30m)
+- [ ] Eventos mínimos: `plan.created`, `plan.published`, `route.started`, `route.completed`, `stop.completed`, `stop.failed`, `stop.reassigned`
+- [ ] Capa REST estable sobre los servicios (no exponer Supabase client directo a terceros)
+- [ ] Documentación OpenAPI/Swagger autogenerada
+- [ ] Rate limiting por org token (p.ej. 100 req/min)
+- [ ] SDK Node.js mínimo
 
-**Que necesita Vuoo:**
-- [ ] API REST con autenticacion por API key
-- [ ] Endpoints CRUD para: stops, plans, routes, vehicles
-- [ ] Endpoint de optimizacion de rutas
-- [ ] Documentacion OpenAPI/Swagger
-- [ ] Rate limiting por organizacion
+**Por qué P0**: Routific, Onfleet, SimpliRoute (9 eventos), Route4Me todos tienen webhooks. Sin esto Vuoo no se puede integrar a Shopify/VTEX/Zapier — y sin integraciones no entra a clientes de e-commerce.
 
----
+### 3. Conectores e-commerce nativos (al menos uno)
 
-## P1 - IMPORTANTE (Producto Real)
+- [ ] **VTEX** (dominante en Chile/LATAM retail — Beetrack y SimpliRoute lo tienen)
+- [ ] **Shopify** (referencia global — Track-POD, OptimoRoute, Routal, Circuit lo tienen)
+- [ ] **Tiendanube** (mercado argentino/mexicano)
+- [ ] Mapeo automático orden → parada con geocoding
+- [ ] Sync de status: stop completed → orden marcada como entregada en e-commerce
 
-### 7. Reportes y Analytics Avanzados
-**Estado actual:** Solo conteo basico de planes/paradas/vehiculos
-**Que tiene la competencia:**
-- OptimoRoute: Planned vs Actual, NPS, arrival accuracy, distance analysis
-- Route4Me: 50+ KPIs, Business Insights dashboard, fraud analytics
-- Beetrack: 50+ KPIs, OTIF, Fill Rate
-- SimpliRoute: AI Data Analysis Agent
+**Por qué P0**: Es la palanca de adquisición SMB más fuerte del segmento. VTEX en LATAM no es opcional para retail.
 
-**Que necesita Vuoo:**
-- [ ] On-Time Delivery Rate (OTIF)
-- [ ] Costo por entrega (combustible + tiempo + distancia)
-- [ ] Distancia planificada vs real
-- [ ] Tiempo planificado vs real por ruta/conductor
-- [ ] Tasa de entregas exitosas vs fallidas
-- [ ] Performance por conductor (ranking)
-- [ ] Tendencias por semana/mes
-- [ ] Export a CSV/PDF
-- [ ] Graficos interactivos (charts reales, no solo barras de progreso)
+### 4. POD multi-formato (más allá de foto + firma)
+
+- [ ] **Barcode/QR scanner** en mobile (verificar paquete por SKU/tracking)
+- [ ] **PIN de entrega** (cliente recibe PIN vía WhatsApp, conductor lo ingresa)
+- [ ] **Formularios POD custom** (builder de campos: texto, número, select, checkbox, foto adicional)
+- [ ] **Razón de fallo estructurada** (cliente ausente, dirección errónea, rechazo, etc.) — verificar si ya está en `IncidentReportModal`
+- [ ] Templates de POD por tipo de cliente / tipo de entrega
+
+**Por qué P0**: Track-POD, Onfleet (Scale tier), Beetrack y OptimoRoute tienen barcode + custom forms estándar. Para B2B (distribución mayorista, farma, food service) sin esto el cliente queda fuera.
 
 ---
 
-### 8. Integraciones E-Commerce
-**Estado actual:** No existe
-**Que tiene la competencia:**
-- OptimoRoute: Shopify, SAP, Salesforce, Zapier
-- Routific: Shopify, WooCommerce, Magento, BigCommerce, Zoho
-- Beetrack: VTEX, Shopify, Prestashop, Rappi
-- SimpliRoute: VTEX, WooCommerce, Magento, Tiendanube
-- Circuit: Shopify, Zapier
+## P1 — Importante (diferencia entre MVP y producto real)
 
-**Que necesita Vuoo:**
-- [ ] Integracion Shopify (import de ordenes como paradas)
-- [ ] Integracion WooCommerce
-- [ ] Integracion VTEX (dominante en Chile/LATAM)
-- [ ] Zapier connector (para conectar con cualquier cosa)
-- [ ] Import masivo CSV/Excel mejorado
+### 5. Optimización avanzada del wizard Vroom
 
----
+Vroom soporta time-windows, capacity, skills, pickup+delivery — hay que exponerlos en UI:
 
-### 9. Gestion de Conductores (no solo vehiculos)
-**Estado actual:** Solo vehiculos, sin concepto de "conductor" separado
-**Que tiene la competencia:**
-- OptimoRoute: Perfiles con skills, certificaciones, disponibilidad, horarios, costos
-- Route4Me: Skills matching, RBAC, jerarquia multi-facility
-- Onfleet: Pay calculation, performance analytics, driver ratings
-- SimpliRoute: Co-driver, documentos con vencimiento
+- [ ] Time-windows duras (no solo soft) en la optimización
+- [ ] Restricciones de capacidad (peso + volumen) configurables por vehículo
+- [ ] Balanceo de carga entre vehículos (modos: workload / distancia / costo)
+- [ ] Multi-depot con depot dinámico mid-route (vehicle vuelve a recargar)
+- [ ] Skills matching (refrigerado, certificación, hazmat, idioma)
+- [ ] Pickup + delivery mezclados en una misma ruta
+- [ ] Plantillas de rutas recurrentes (lunes carga X, martes carga Y)
+- [ ] Preview de ruta optimizada antes de aplicar (diff con plan anterior)
 
-**Que necesita Vuoo:**
-- [ ] Entidad "Conductor" separada de "Vehiculo"
-- [ ] Asignacion conductor-vehiculo por dia/ruta
-- [ ] Perfil: nombre, telefono, licencia, disponibilidad
-- [ ] Tracking de documentos (licencia, seguro) con fechas de vencimiento
-- [ ] Horarios de trabajo y disponibilidad semanal
-- [ ] Link de invitacion para que conductor descargue app
+### 6. Analytics avanzados (OTIF, costo, performance)
 
----
+Estado actual: dashboards básicos. Lo que falta es estándar:
 
-### 10. Optimizacion de Rutas Avanzada
-**Estado actual:** Optimizacion basica con Mapbox Optimization API (TSP simple)
-**Que tiene la competencia:**
-- OptimoRoute: Multi-day (5 semanas), workload balancing (3 modos), skills matching, depot recarga
-- Routific: Traffic-aware con 179 modelos ML, driver familiarity, anti-spaghetti
-- SimpliRoute: 3 algoritmos propietarios (BigRVP, JDH, Simplify), trafico en tiempo real
-- Route4Me: SmartZones, multi-depot, avoidance zones, truck routing
+- [ ] **OTIF** (On-Time In-Full) por ruta / conductor / cliente
+- [ ] Costo por entrega (combustible + tiempo + distancia + driver pay)
+- [ ] Planned vs Actual (distancia, tiempo, paradas completadas)
+- [ ] Ranking de conductores con scorecard (entregas a tiempo, fallos, tiempo en parada)
+- [ ] Análisis address-level: qué direcciones consistentemente tienen problemas
+- [ ] Exports a CSV/PDF
+- [ ] Charts interactivos (no solo barras de progreso)
 
-**Que necesita Vuoo:**
-- [ ] Respetar time windows de las paradas en la optimizacion
-- [ ] Respetar capacidad del vehiculo (peso/volumen) como constraint
-- [ ] Balanceo de carga entre multiples vehiculos
-- [ ] Multi-depot: distintos puntos de inicio/fin por vehiculo
-- [ ] Considerar trafico historico por hora del dia
-- [ ] Preview de ruta optimizada antes de aplicar
+### 7. Drag & drop entre rutas + timeline view
+
+- [ ] Mover paradas **entre rutas** (no solo reordenar dentro). Ya hay `RouteDropZone` y `SortablePlanStop` — verificar si soportan cross-route
+- [ ] Timeline / Gantt view de todas las rutas del día
+- [ ] Selección múltiple de paradas (shift-click) para reasignación bulk
+- [ ] Asignar paradas desde el mapa (click en pin → menú "Asignar a ruta…")
+- [ ] Undo/redo para cambios de planificación
+
+### 8. Two-way driver ↔ dispatcher communication
+
+- [ ] Chat in-app simple (mobile ↔ web) — usar Supabase Realtime
+- [ ] Notas por parada visibles al chofer (probablemente ya existe vía `notes`, verificar UX)
+- [ ] Push para mensajes urgentes
+- [ ] Llamada con número anonimizado (referencia Onfleet) — fase 2
 
 ---
 
-### 11. Drag & Drop Avanzado + UX de Planificacion
-**Estado actual:** Drag & drop basico para reordenar paradas dentro de una ruta
-**Que tiene la competencia:**
-- Routific: Timeline view, drag entre rutas, mapa interactivo
-- Circuit: Bulk copy/move stops entre rutas
-- OptimoRoute: Re-planning en tiempo real, drag-and-drop entre conductores
+## P2 — Diferenciador (ventaja competitiva, no urgente)
 
-**Que necesita Vuoo:**
-- [ ] Mover paradas entre rutas (no solo reordenar dentro de una)
-- [ ] Timeline/Gantt view de todas las rutas del dia
-- [ ] Seleccion multiple de paradas para asignar en bulk
-- [ ] Asignar paradas desde el mapa (click en pin -> asignar a ruta)
-- [ ] Undo/redo para cambios de planificacion
+### 9. Gestión de territorios y zonas
 
----
+- Dibujar zonas en el mapa (geofencing)
+- Asignar conductores a zonas
+- Auto-clustering de paradas por zona en planificación
+- Zonas de exclusión (Beetrack: AI Territory Planner; SimpliRoute: zone blocking)
 
-### 12. Import/Export Robusto
-**Estado actual:** Sin import/export
-**Que tiene la competencia:**
-- TODOS: CSV/Excel import/export minimo
-- OptimoRoute: Drag-and-drop CSV, geocoding con color-coding, export Garmin
-- Route4Me: SFTP sync automatizado
-- Routific: Drag-and-drop spreadsheet upload
+### 10. Multi-fleet / proveedores externos
 
-**Que necesita Vuoo:**
-- [ ] Import CSV/Excel de paradas (nombre, direccion, peso, ventana horaria)
-- [ ] Geocoding automatico de direcciones importadas
-- [ ] Validacion y preview antes de importar
-- [ ] Export de rutas/paradas a CSV
-- [ ] Export de reportes a PDF
+Concepto clave para enterprise:
 
----
+- Modelo de "proveedor de transporte" externo además de flota propia
+- Asignar rutas a 3PL externos
+- Visibilidad unificada propia + tercerizada (Onfleet, Beetrack FleetMaster, Bringg ROAD)
+- Liquidación / settlement automatizado de carriers (referencia Drivin, SimpliRoute, Shipsy Nexa)
 
-## P2 - DIFERENCIADOR (Ventaja Competitiva)
+### 11. Self-scheduling / customer booking
 
-### 13. Auto-Dispatch con IA
-**Que tiene la competencia:**
-- Onfleet: AI Auto-Dispatch que inserta ordenes en rutas activas en tiempo real
-- Beetrack: PlannerPro con adaptacion dinamica
+- Widget embeddable para que cliente final elija ventana de entrega al momento de comprar
+- Slots disponibles calculados según capacidad
+- Reschedule por el cliente cuando falla entrega (referencia DispatchTrack)
 
-**Que necesitaria Vuoo:**
-- [ ] Asignacion automatica de nuevas paradas al conductor mas cercano/optimo
-- [ ] Re-optimizacion dinamica cuando cambian condiciones (cancelacion, nuevo pedido)
-- [ ] Sugerencias de asignacion basadas en proximidad + capacidad + tiempo
+### 12. Sustainability / CO2 tracking
 
----
+- Cálculo de emisiones por ruta (distancia × tipo combustible × consumo)
+- Dashboard de huella de carbono por periodo
+- Soporte vehículos eléctricos (rango, estaciones de carga)
+- Útil para reporting ESG corporativo (empieza a ser bloqueador en RFPs grandes)
 
-### 14. Encuestas de Satisfaccion Post-Entrega
-**Que tiene la competencia:**
-- OptimoRoute: Survey automatico via SMS/email, NPS, ratings por conductor
-- Beetrack: Surveys configurables, NPS, alertas por rating bajo
-- SimpliRoute: Surveys post-entrega
+### 13. Compliance enterprise
 
-**Que necesitaria Vuoo:**
-- [ ] Survey automatico al cliente despues de entrega completada
-- [ ] Rating 1-5 estrellas + comentario
-- [ ] NPS score agregado por conductor/organizacion
-- [ ] Dashboard de satisfaccion del cliente
+Esto es certificación + control, no solo código:
+
+- [ ] SOC 2 Type II (referencia Shipsy)
+- [ ] ISO 27001:2022 (referencia Drivin — lo usan como wedge enterprise)
+- [ ] PII masking en logs y audit trails
+- [ ] Audit logs inmutables (Shipsy)
+- [ ] Certificación en SAP Store (referencia Drivin)
+
+Sin esto el techo de venta enterprise está en USD 30-50k/año.
+
+### 14. Verticales especializadas
+
+Elegir 1 o 2 verticales y profundizar:
+
+- **Cold chain / temperatura** (DispatchTrack, SimpliRoute, Beetrack) → farma + foodservice
+- **Big & bulky** (DispatchTrack es dominante US) → muebles, electrodomésticos
+- **Hazmat / mercancía peligrosa** (Beetrack es único en esto en LATAM) → gas, cemento, químicos
+- **Quick commerce** (DispatchTrack, Shipsy, LogiNext) → entregas en minutos con geofencing
 
 ---
 
-### 15. Sustainability / Huella de Carbono
-**Que tiene la competencia:**
-- Routific: Carbon footprint tracking
-- Route4Me: CO2 per route tracking
-- Tendencia del mercado: ESG reporting cada vez mas requerido
+## Tendencias 2026 — no urgentes pero importantes de observar
 
-**Que necesitaria Vuoo:**
-- [ ] Calculo de CO2 por ruta basado en distancia + tipo combustible + consumo
-- [ ] Dashboard de emisiones por periodo
-- [ ] Comparacion: emisiones con optimizacion vs sin optimizacion
-- [ ] Soporte para vehiculos electricos (rango, estaciones de carga)
+### Agentes IA autónomos
 
----
+No recomendación, sino ejecución autónoma:
 
-### 16. Territorios y Zonas
-**Que tiene la competencia:**
-- Route4Me: Dibujar territorios, SmartZones automaticos, address clustering
-- Beetrack: AI Territory Planner
-- SimpliRoute: Zonas custom, bloqueo de zonas no operacionales
+- **SimpliRoute ADA**: agentes que reintentan entregas fallidas y resuelven incidentes sin escalar a humano
+- **Shipsy AgentFleet**: 4 agentes nombrados (Clara para CX/WhatsApp, Astra para driver-ops, Nexa para finanzas, Vera para disputas)
+- **Locus**: "agentic TMS" enterprise
 
-**Que necesitaria Vuoo:**
-- [ ] Dibujar zonas/territorios en el mapa
-- [ ] Asignar conductores a zonas
-- [ ] Auto-clustering de paradas por zona
-- [ ] Zonas de exclusion (areas no operacionales)
+**Para Vuoo**: requiere histórico que aún no tienes. Ir poblando `event_log` con esto en mente (etiquetar causas, intervenciones, resultados) para tener data de entrenamiento en 12-18 meses.
 
----
+### Multi-carrier orchestration
 
-### 17. Self-Scheduling / Booking del Cliente
-**Que tiene la competencia:**
-- Beetrack: Self-scheduling donde el cliente elige su slot de entrega
-- Tendencia de mercado: Customer self-service es clave para CX
+Donde está moviéndose el dinero enterprise:
 
-**Que necesitaria Vuoo:**
-- [ ] Widget embeddable para que clientes elijan ventana de entrega
-- [ ] Slots disponibles calculados automaticamente segun capacidad
-- [ ] Confirmacion automatica + notificacion
+- **Bringg**: 250+ carriers integrados, 70 países
+- **Locus ShipFlex**: allocation dinámica según performance live por shipment/lane
+- **Shipsy**: 240+ carrier integrations
+
+**Para Vuoo**: empezar por el modelo de "proveedor externo" + liquidación (P2 #10) antes de pensar en orchestration global.
+
+### Compliance como wedge de venta
+
+Drivin está agresivamente usando ISO 27001 + SOC 1 + cert SAP Store para abrir puertas enterprise que Vuoo no puede tocar todavía. Inversión proporcionalmente baja (USD 30-60k de consultoría + auditoría) y desbloquea pricing 3x.
+
+### Conectores ERP certificados
+
+SAP B1, S/4HANA, Oracle NetSuite, Microsoft Dynamics, Manhattan. **Drivin** lo está usando como vector de entrada al mid-market industrial. **SimpliRoute** lo tiene. **Vuoo** tiene Datasul custom (Renner) pero no producto repetible.
 
 ---
 
-### 18. Multi-Fleet / Proveedores Externos
-**Que tiene la competencia:**
-- Onfleet: Gestionar flota propia + couriers externos en una vista
-- Beetrack: Dashboard unificado flota propia + terceros
-
-**Que necesitaria Vuoo:**
-- [ ] Concepto de "proveedor de transporte" ademas de flota propia
-- [ ] Asignar rutas a proveedores externos
-- [ ] Visibilidad unificada de entregas propias y tercerizadas
-
----
-
-### 19. Comunicacion Bidireccional Conductor-Dispatcher
-**Que tiene la competencia:**
-- Onfleet: Chat in-app + llamadas con numero enmascarado
-- OptimoRoute: Comunicacion bidireccional
-- Circuit: Customer notes al conductor via tracking link
-
-**Que necesitaria Vuoo:**
-- [ ] Chat simple entre dispatcher y conductor
-- [ ] Notificaciones push para mensajes urgentes
-- [ ] Notas por parada visibles para el conductor
-
----
-
-### 20. Formularios Custom de Entrega
-**Que tiene la competencia:**
-- OptimoRoute: Formularios POD custom con campos configurables
-- Beetrack: Custom forms por tipo de operacion
-- Route4Me: Workflows obligatorios configurables
-
-**Que necesitaria Vuoo:**
-- [ ] Builder de formularios: campos texto, numerico, select, checkbox, foto
-- [ ] Asignar formularios por tipo de entrega o cliente
-- [ ] Datos de formularios visibles en dashboard y exportables
-
----
-
-## Matriz de Prioridad vs Esfuerzo
+## Matriz prioridad vs esfuerzo (actualizada)
 
 | Feature | Prioridad | Esfuerzo | Impacto |
-|---------|-----------|----------|---------|
-| App Movil Conductor | P0 | Alto | Critico - sin esto no hay producto |
-| GPS Tracking en Vivo | P0 | Alto | Critico - feature #1 que buscan |
-| Notificaciones Cliente | P0 | Medio | Critico - WhatsApp es obligatorio en LATAM |
-| POD Completo | P0 | Medio | Critico - dependiente de app movil |
-| Webhooks/Events | P0 | Medio | Critico - base para integraciones |
-| API REST Publica | P0 | Medio | Critico - base para ecosistema |
-| Analytics Avanzados | P1 | Medio | Alto - decision de compra |
-| Integraciones E-Commerce | P1 | Medio | Alto - Shopify/VTEX = mas clientes |
-| Gestion Conductores | P1 | Bajo | Alto - estructura de datos faltante |
-| Optimizacion Avanzada | P1 | Alto | Alto - calidad de producto |
-| DnD Avanzado + Timeline | P1 | Medio | Medio - UX de planificacion |
-| Import/Export | P1 | Bajo | Alto - onboarding de clientes |
-| Auto-Dispatch IA | P2 | Alto | Medio - diferenciador |
-| Encuestas Satisfaccion | P2 | Bajo | Medio - valor agregado |
-| Huella de Carbono | P2 | Bajo | Bajo - tendencia futura |
-| Territorios/Zonas | P2 | Medio | Medio - operaciones grandes |
-| Self-Scheduling | P2 | Alto | Medio - CX avanzado |
-| Multi-Fleet | P2 | Alto | Medio - enterprise |
-| Chat Conductor | P2 | Medio | Medio - operaciones |
-| Formularios Custom | P2 | Medio | Bajo - nicho |
-
----
-
-## Orden Sugerido de Implementacion
-
-### Fase 1 - Foundation (hacer funcionar el core)
-1. **Gestion de Conductores** (P1, bajo esfuerzo - desbloquea todo lo demas)
-2. **App Movil Conductor** (P0 - sin esto no hay producto)
-3. **POD basico** (P0 - foto + firma + GPS, viene con la app)
-4. **GPS Tracking** (P0 - viene con la app)
-
-### Fase 2 - Customer-Facing
-5. **Pagina de Tracking publica** (P0)
-6. **Notificaciones WhatsApp/SMS/Email** (P0)
-7. **Import/Export CSV** (P1)
-
-### Fase 3 - Platform
-8. **API REST Publica** (P0)
-9. **Webhooks/Events** (P0)
-10. **Integracion Shopify** (P1)
-
-### Fase 4 - Intelligence
-11. **Analytics Avanzados** (P1)
-12. **Optimizacion Avanzada** (P1 - time windows, capacidad, balanceo)
-13. **Timeline/Gantt view** (P1)
-
-### Fase 5 - Diferenciacion
-14. **Encuestas de Satisfaccion** (P2)
-15. **Territorios/Zonas** (P2)
-16. **Huella de Carbono** (P2)
-17. **Auto-Dispatch** (P2)
-
----
-
-## Competidores Directos en Chile/LATAM
-
-| | SimpliRoute | Beetrack | **Vuoo** |
 |---|---|---|---|
-| **Precio** | $32-40/vehiculo/mes | Enterprise custom | ? |
-| **App Movil** | Si | Si | **No** |
-| **GPS Tracking** | Si | Si | **No** |
-| **WhatsApp** | Si | Si | **No** |
-| **POD** | Si | Si | **No** |
-| **API** | Si + SDKs | Si | **No** |
-| **Optimizacion** | 3 algoritmos propios | AI/ML | Mapbox TSP basico |
-| **Multi-tenant SaaS** | Si | Si | **Si** |
-| **Admin Panel** | No publico | No publico | **Si** |
-| **Mapas interactivos** | Basico | Basico | **Si (Mapbox GL)** |
-| **Self-service signup** | Si | No (enterprise) | **Si** |
-| **Open pricing** | Si | No | **Pendiente** |
-
-### Ventajas actuales de Vuoo:
-1. Multi-tenant con self-service signup y onboarding
-2. UI moderna con Mapbox GL (mapas mas ricos que SimpliRoute/Beetrack)
-3. Panel super-admin para gestionar toda la plataforma
-4. Stack moderno (React 19, Vite 8, Supabase) = iteracion rapida
-5. Precio potencialmente mas bajo que Beetrack (enterprise) y SimpliRoute
-
-### Donde Vuoo pierde:
-1. Sin app movil = sin producto real para conductores
-2. Sin tracking = sin visibilidad operacional
-3. Sin notificaciones = sin experiencia de cliente
-4. Sin API = sin integraciones posibles
-5. Optimizacion muy basica vs algoritmos avanzados de la competencia
+| Loop customer experience (WhatsApp + tracking page + surveys) | P0 | Medio | Crítico — bloqueador en demo |
+| Webhooks + REST API + SDK | P0 | Medio | Crítico — desbloquea ecosistema |
+| Conector VTEX o Shopify | P0 | Medio | Crítico — adquisición SMB retail |
+| POD multi-formato (barcode + PIN + custom forms) | P0 | Medio | Crítico — bloqueador B2B |
+| Optimización Vroom avanzada (time-windows, capacity, multi-depot) | P1 | Bajo-Medio | Alto — calidad de producto |
+| Analytics avanzados (OTIF, costo, ranking) | P1 | Medio | Alto — decisión de compra |
+| Drag & drop entre rutas + timeline | P1 | Medio | Medio — UX de planificación |
+| Two-way driver-dispatcher chat | P1 | Bajo | Medio — operaciones |
+| Conector SAP B1 certificado | P1 | Alto | Alto enterprise — wedge Drivin |
+| Liquidación de carriers 3PL | P2 | Alto | Medio — abre vertical 3PL |
+| Territorios / zonas | P2 | Medio | Medio — operaciones grandes |
+| Multi-fleet / proveedores externos | P2 | Alto | Medio — enterprise |
+| Self-scheduling cliente | P2 | Alto | Medio — CX avanzado |
+| Sustainability / CO2 | P2 | Bajo | Bajo-Medio — ESG futuro |
+| SOC 2 + ISO 27001 | P2 | Alto (no-código) | Alto enterprise — techo de venta |
+| Cold chain | P2 | Medio | Alto si entras a farma/food |
+| Agentes IA autónomos | P3 | Muy alto | Diferenciador 2027+ |
 
 ---
 
-## Conclusion
+## Top 5 picks recomendados para los próximos 60 días
 
-Vuoo tiene un **buen foundation** tecnico y una **UI superior** a SimpliRoute/Beetrack en el dashboard web. Pero le faltan las **4 patas criticas** de cualquier plataforma de gestion de entregas:
+1. **Cerrar el loop customer experience** — Edge Functions de WhatsApp + tracking page pública + surveys. Las tablas ya están, el costo marginal es ~1 sprint y desbloquea la conversación con cualquier prospecto retail en LATAM.
+2. **Webhooks + REST API estable + OpenAPI** — pre-requisito para todo lo demás. Sin esto los conectores e-commerce son frágiles.
+3. **Conector VTEX nativo** — entry point retail LATAM. Beetrack y SimpliRoute lo tienen; sin esto pierdes a Falabella, Ripley, Walmart, Cencosud.
+4. **POD multi-formato (barcode + PIN + razón fallo estructurada)** — bloqueador B2B y abre verticales (farma, food, big & bulky).
+5. **Optimización Vroom avanzada en wizard** — exponer time-windows duras, capacity y multi-depot que Vroom ya soporta. Esfuerzo bajo, calidad de producto alta.
 
-1. **App movil** (el conductor no puede usar un sitio web mientras maneja)
-2. **Tracking GPS** (el dispatcher necesita ver donde estan los conductores)
-3. **Notificaciones** (el cliente necesita saber cuando llega su entrega)
-4. **POD** (la empresa necesita prueba de que se entrego)
+**No hacer todavía**: agentes IA autónomos, multi-carrier orchestration enterprise tipo Bringg/Locus, reverse logistics. Son apuestas grandes que requieren datos o equipo que aún no se tiene.
 
-Sin estas 4 features, Vuoo es una herramienta de **planificacion** pero no de **ejecucion**. La competencia ofrece ambas.
+---
 
-La buena noticia: con el stack actual (React Native + Supabase Realtime + WhatsApp API), estas features son implementables de forma incremental sin reescribir nada.
+## Mapa competitivo actualizado
+
+### Competidores LATAM directos
+
+| Capacidad | SimpliRoute | Beetrack/DispatchTrack | Drivin | Routal | **Vuoo (Mayo 2026)** |
+|---|---|---|---|---|---|
+| Precio público | USD 32-40/veh/mes | Enterprise custom | Enterprise custom | USD 20-95/veh/mes | Pendiente |
+| App móvil | Sí | Sí | Sí | Sí | **Sí** |
+| GPS tracking en vivo | Sí | Sí (geofencing) | Sí | Sí | **Sí** |
+| WhatsApp customer flow | Sí (nativo) | Sí | Sí | Sí (nativo) | Esquema listo, falta E2E |
+| Tracking page branded | Sí | Sí | Sí | Sí (white-label) | Esquema listo, falta UI |
+| POD multi-formato | Foto+firma+PIN+barcode | Foto+firma+PIN | Foto+firma+barcode | Foto+firma+PIN+barcode+forms | Solo foto+firma |
+| API + Webhooks | Sí + SDKs | Sí | Sí | Sí | API tokens, falta REST + webhooks |
+| Optimización | 3 algoritmos propios | AI/ML + cold chain | IA + capacity | Estándar | Vroom (potente, sub-expuesto) |
+| Conector VTEX | Sí | Sí | — | — | No |
+| Conector SAP B1 certificado | Sí | — | **Sí (SAP Store)** | — | No (Datasul custom) |
+| ISO 27001 / SOC | — | — | **ISO 27001:2022 + SOC 1** | — | No |
+| Cold chain | Sí | Sí | Indirecto | Sí | No |
+| Agentes IA autónomos | **Sí (ADA)** | — | — | — | No |
+| Multi-tenant SaaS self-serve | Sí | No (enterprise) | No (enterprise) | Sí (trial 10 días) | **Sí** |
+| Admin panel super-admin | No público | No público | No público | No público | **Sí** |
+| Mapas interactivos (Mapbox GL) | Básico | Básico | Básico | Estándar | **Mapbox GL avanzado** |
+
+### Competidores globales relevantes
+
+| Plataforma | Diferenciador clave | Pricing | Vertical fuerte |
+|---|---|---|---|
+| **Onfleet** | Mejor mobile UX + API mid-market más madura | USD 619-3,099/mes | Grocery, pharmacy, courier |
+| **Circuit / Spoke** | Simplicidad extrema para SMB | USD 100-750/mes | Owner-operators, courier locales |
+| **OptimoRoute** | Optimización multi-day + skills + capacity | USD 35-44/driver/mes | Field service, HVAC, B2B |
+| **Routific** | Pricing por orden, no por driver | USD 0-150 flat + volumen | SMB grocery, 3PL |
+| **Track-POD** | El más fuerte en POD/paperwork | USD 59-99/driver/mes | B2B distribution, food wholesale |
+| **Bringg** | Multi-carrier orchestration (250+) | Enterprise USD 50k+/año | Enterprise retail, grocery |
+| **Locus.sh** | Geocoding + optimización para mercados emergentes | Enterprise | Retail, FMCG, manufacturing |
+| **Wise Systems** | "Autonomous routing" con ML sobre histórico | Enterprise | F&B distribution, fuel |
+| **DispatchTrack** | Líder big & bulky / furniture | USD 50k+/año | Furniture, appliances, white-glove |
+| **Project44** | Visibility platform multi-modal | Enterprise | Enterprise shippers, 3PL globales |
+
+---
+
+## Ventajas competitivas actuales de Vuoo (Mayo 2026)
+
+1. **Multi-tenant SaaS con self-serve signup** — Beetrack/Drivin/Locus son todos enterprise puro, no compiten en SMB.
+2. **UI moderna con Mapbox GL** — gana visualmente vs SimpliRoute / Beetrack (mapas más ricos).
+3. **Panel super-admin** — capacidad de operar la plataforma como ops team, no la tienen los competidores LATAM públicamente.
+4. **Stack moderno (React 19, Vite, Supabase, Expo)** — iteración rápida vs stacks legacy de Beetrack/Drivin.
+5. **Vroom + OSRM en Railway** — engine de optimización serio (potencialmente superior a SimpliRoute/Beetrack si se expone bien al usuario).
+6. **Mobile app shipped en TestFlight** — paridad con SimpliRoute/Beetrack en lo crítico.
+7. **Demo aislada para sales** — capacidad de demoear en paralelo sin pisarse, no la tiene nadie más en el espacio.
+8. **Cuenta Apple review pública** — facilita certificación iOS recurrente.
+
+## Donde Vuoo todavía pierde
+
+1. **Customer flow end-to-end no cerrado** — esquema sin Edge Functions ni UI pública.
+2. **Sin conectores e-commerce** — VTEX/Shopify es no-negociable en LATAM retail.
+3. **Sin webhooks ni REST API estable** — bloqueador de integraciones serias.
+4. **POD solo foto + firma** — sin barcode/PIN/forms custom queda fuera de B2B.
+5. **Optimización avanzada del wizard subexpuesta** — Vroom soporta más de lo que la UI permite.
+6. **Sin conector ERP certificado** (SAP B1, NetSuite) — bloqueador mid-market industrial.
+7. **Sin compliance enterprise** (SOC 2, ISO 27001) — techo de pricing.
+8. **Sin verticales especializadas** (cold chain, hazmat, big & bulky) — comoditización en horizontal.
+
+---
+
+## Conclusión
+
+Vuoo cerró Mayo 2026 con paridad funcional **core operativa** vs los competidores LATAM de referencia: planificación, ejecución móvil con POD + GPS + offline, tracking en vivo y panel de control. El siguiente cuello de botella ya **no es el producto operativo**, sino:
+
+1. **Cerrar el loop con el cliente final** (WhatsApp + tracking + surveys) — costo bajo, valor alto en LATAM.
+2. **Abrir el ecosistema** (REST + webhooks + Shopify/VTEX) — palanca de adquisición SMB.
+3. **Profundizar el wizard de optimización** — sacar ventaja del engine Vroom que ya pagaste en infraestructura.
+4. **Decidir el camino enterprise** (compliance + ERP + verticales) o **doblar SMB self-serve** (pricing público + onboarding + integraciones).
+
+La buena noticia: con el stack actual (Supabase + Vroom Railway + React Native), los 4 picks del top recomendado son implementables en 60-90 días sin reescribir nada.
