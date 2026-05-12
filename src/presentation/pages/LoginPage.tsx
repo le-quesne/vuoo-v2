@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Link, Navigate } from 'react-router-dom'
 import { supabase } from '@/application/lib/supabase'
 import { useAuth } from '@/application/hooks/useAuth'
 
@@ -10,6 +10,7 @@ export function LoginPage() {
   const [isSignUp, setIsSignUp] = useState(false)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [hasFailedSignIn, setHasFailedSignIn] = useState(false)
 
   if (loading) {
     return (
@@ -34,7 +35,10 @@ export function LoginPage() {
       : await supabase.auth.signInWithPassword({ email, password })
 
     setSubmitting(false)
-    if (authError) setError(authError.message)
+    if (authError) {
+      setError(authError.message)
+      if (!isSignUp) setHasFailedSignIn(true)
+    }
   }
 
   return (
@@ -91,8 +95,21 @@ export function LoginPage() {
             </button>
           </form>
 
+          {!isSignUp && hasFailedSignIn && (
+            <Link
+              to="/forgot-password"
+              className="block w-full text-center text-sm text-blue-500 mt-4 hover:underline"
+            >
+              ¿Olvidaste tu contraseña?
+            </Link>
+          )}
+
           <button
-            onClick={() => setIsSignUp(!isSignUp)}
+            onClick={() => {
+              setIsSignUp(!isSignUp)
+              setError('')
+              setHasFailedSignIn(false)
+            }}
             className="w-full text-center text-sm text-blue-500 mt-4 hover:underline"
           >
             {isSignUp ? 'Ya tengo cuenta' : 'Crear una cuenta nueva'}
