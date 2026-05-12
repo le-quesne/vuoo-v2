@@ -10,65 +10,48 @@ import {
   Loader2,
   Check,
   AlertTriangle,
-  ChevronLeft,
+  ChevronDown,
+  Settings2,
 } from 'lucide-react'
 import { supabase } from '@/application/lib/supabase'
 import { optimize as optimizeVroom } from '@/data/services/vroom'
+import type { VroomMode, VroomResponse } from '@/data/services/vroom'
 
-type Mode = 'efficiency' | 'balance_stops' | 'balance_time' | 'consolidate'
-
-type VroomRoute = {
-  route_id: string
-  vehicle_id: string
-  total_duration: number
-  total_distance: number | null
-  ordered_plan_stop_ids: string[]
-}
-
-export type VroomResponse = {
-  summary: { cost: number; routes: number; unassigned: number; duration: number }
-  routes: VroomRoute[]
-  unassigned: Array<{ plan_stop_id: string | null; reason: string }>
-}
+export type { VroomResponse }
 
 const MODES: Array<{
-  id: Mode
+  id: VroomMode
   icon: typeof Zap
   title: string
   desc: string
-  color: string
 }> = [
   {
     id: 'efficiency',
     icon: Zap,
     title: 'Eficiencia',
     desc: 'Mínima distancia y tiempo totales. Puede dejar camiones vacíos.',
-    color: 'amber',
   },
   {
     id: 'balance_stops',
     icon: Scale,
     title: 'Balancear paradas',
     desc: 'Reparte un número similar de paradas entre todos los vehículos.',
-    color: 'blue',
   },
   {
     id: 'balance_time',
     icon: Clock,
     title: 'Balancear tiempo',
     desc: 'Distribuye el tiempo de conducción para que terminen a hora parecida.',
-    color: 'indigo',
   },
   {
     id: 'consolidate',
     icon: Package,
-    title: 'Consolidar',
+    title: 'Consolidar rutas',
     desc: 'Usa el menor número posible de vehículos. Los sobrantes quedan libres.',
-    color: 'emerald',
   },
 ]
 
-function modeLabel(mode: Mode) {
+function modeLabel(mode: VroomMode) {
   return MODES.find((m) => m.id === mode)?.title ?? mode
 }
 
@@ -95,6 +78,8 @@ export function VroomWizardModal({
   onDepotMissing,
   initialPreview,
   initialMode,
+  defaultMode = 'efficiency',
+  defaultReturnToDepot = true,
 }: {
   planId: string
   numStops: number
@@ -108,16 +93,21 @@ export function VroomWizardModal({
    * el wizard abre directamente en el step 'result' y omite config/preview.
    */
   initialPreview?: VroomResponse
-  /** Modo seleccionado cuando viene un `initialPreview`. */
-  initialMode?: Mode
+  /** Modo usado cuando viene un `initialPreview`. */
+  initialMode?: VroomMode
+  /** Modo por defecto de la organización (de settings). */
+  defaultMode?: VroomMode
+  /** Regreso al depot por defecto de la organización (de settings). */
+  defaultReturnToDepot?: boolean
 }) {
-  const [step, setStep] = useState<'config' | 'preview' | 'running' | 'result' | 'applying'>(
+  const [step, setStep] = useState<'config' | 'running' | 'result' | 'applying'>(
     initialPreview ? 'result' : 'config',
   )
-  const [mode, setMode] = useState<Mode>(initialMode ?? 'efficiency')
-  const [returnToDepot, setReturnToDepot] = useState(true)
+  const [mode, setMode] = useState<VroomMode>(initialMode ?? defaultMode)
+  const [returnToDepot, setReturnToDepot] = useState(initialPreview ? defaultReturnToDepot : defaultReturnToDepot)
   const [result, setResult] = useState<VroomResponse | null>(initialPreview ?? null)
   const [error, setError] = useState<string | null>(null)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
 
   async function handleOptimize() {
     setStep('running')
@@ -126,7 +116,6 @@ export function VroomWizardModal({
     const res = await optimizeVroom({ plan_id: planId, mode, return_to_depot: returnToDepot })
 
     if (!res.success) {
-      // Semántica compatible con la vieja Edge Function ("No depot configured").
       if (/no\s*depot/i.test(res.error)) {
         onDepotMissing()
         return
@@ -167,16 +156,12 @@ export function VroomWizardModal({
     }
   }
 
-  const estStopsPerVehicle = numVehicles > 0 ? Math.ceil(numStops / numVehicles) : 0
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-xl">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <div className="flex items-center gap-2">
-            <h2 className="text-base font-semibold text-gray-900">Optimizar con Vuoo</h2>
-          </div>
+          <h2 className="text-base font-semibold text-gray-900">Optimizar con Vuoo</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X size={18} />
           </button>
@@ -185,91 +170,115 @@ export function VroomWizardModal({
         {/* Body */}
         <div className="p-5 min-h-[280px]">
           {step === 'config' && (
-            <div className="space-y-5">
-              <div>
-                <div className="text-sm font-semibold text-gray-900 mb-2">
-                  1. ¿Qué querés optimizar?
-                </div>
-                <div className="grid grid-cols-1 gap-2">
-                  {MODES.map((m) => {
-                    const Icon = m.icon
-                    const selected = mode === m.id
-                    return (
-                      <button
-                        key={m.id}
-                        onClick={() => setMode(m.id)}
-                        className={`flex items-start gap-3 text-left p-3 rounded-lg border transition-colors ${
-                          selected
-                            ? 'border-indigo-500 bg-indigo-50'
-                            : 'border-gray-200 hover:border-gray-300'
-                        }`}
-                      >
-                        <div
-                          className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center ${
-                            selected ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'
-                          }`}
-                        >
-                          <Icon size={16} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium text-gray-900">{m.title}</div>
-                          <div className="text-xs text-gray-500 mt-0.5">{m.desc}</div>
-                        </div>
-                        {selected && <Check size={16} className="text-indigo-600 shrink-0 mt-1" />}
-                      </button>
-                    )
-                  })}
-                </div>
+            <div className="space-y-4">
+              {/* Summary card */}
+              <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-4 space-y-1.5 text-sm text-gray-800">
+                <p>
+                  Asignando <strong>{numStops} paradas</strong> a{' '}
+                  <strong>{numVehicles} vehículo{numVehicles === 1 ? '' : 's'}</strong>
+                  {depotAddress ? (
+                    <>, desde <strong>{depotAddress}</strong></>
+                  ) : null}.
+                </p>
+                <p>
+                  Modo: <strong>{modeLabel(mode)}</strong> ·{' '}
+                  {returnToDepot ? 'Regresa al depot' : 'Termina en última parada'}.
+                </p>
               </div>
 
-              <div>
-                <div className="text-sm font-semibold text-gray-900 mb-2">2. ¿El depot?</div>
-                <div className="grid grid-cols-1 gap-2">
-                  <button
-                    onClick={() => setReturnToDepot(true)}
-                    className={`flex items-center gap-3 text-left p-3 rounded-lg border transition-colors ${
-                      returnToDepot
-                        ? 'border-indigo-500 bg-indigo-50'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <RotateCcw
-                      size={16}
-                      className={returnToDepot ? 'text-indigo-600' : 'text-gray-500'}
-                    />
-                    <div className="flex-1">
-                      <div className="text-sm font-medium text-gray-900">
-                        Salir y volver al depot
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        Cada vehículo termina donde empezó
+              {/* Advanced config collapsible */}
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <button
+                  onClick={() => setAdvancedOpen((v) => !v)}
+                  className="w-full flex items-center justify-between px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <Settings2 size={15} className="text-gray-400" />
+                    <span className="font-medium">Configuración avanzada</span>
+                  </div>
+                  <ChevronDown
+                    size={15}
+                    className={`text-gray-400 transition-transform ${advancedOpen ? 'rotate-180' : ''}`}
+                  />
+                </button>
+
+                {advancedOpen && (
+                  <div className="border-t border-gray-100 p-4 space-y-4 bg-gray-50">
+                    {/* Mode selector */}
+                    <div>
+                      <div className="text-xs font-semibold text-gray-700 mb-2">Modo de optimización</div>
+                      <div className="grid grid-cols-1 gap-2">
+                        {MODES.map((m) => {
+                          const Icon = m.icon
+                          const selected = mode === m.id
+                          return (
+                            <button
+                              key={m.id}
+                              onClick={() => setMode(m.id)}
+                              className={`flex items-start gap-3 text-left p-3 rounded-lg border transition-colors ${
+                                selected
+                                  ? 'border-indigo-500 bg-white'
+                                  : 'border-gray-200 bg-white hover:border-gray-300'
+                              }`}
+                            >
+                              <div
+                                className={`shrink-0 w-7 h-7 rounded-md flex items-center justify-center ${
+                                  selected ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-500'
+                                }`}
+                              >
+                                <Icon size={14} />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium text-gray-900">{m.title}</div>
+                                <div className="text-xs text-gray-500 mt-0.5">{m.desc}</div>
+                              </div>
+                              {selected && <Check size={14} className="text-indigo-600 shrink-0 mt-1" />}
+                            </button>
+                          )
+                        })}
                       </div>
                     </div>
-                    {returnToDepot && <Check size={16} className="text-indigo-600" />}
-                  </button>
-                  <button
-                    onClick={() => setReturnToDepot(false)}
-                    className={`flex items-center gap-3 text-left p-3 rounded-lg border transition-colors ${
-                      !returnToDepot
-                        ? 'border-indigo-500 bg-indigo-50'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <ArrowRight
-                      size={16}
-                      className={!returnToDepot ? 'text-indigo-600' : 'text-gray-500'}
-                    />
-                    <div className="flex-1">
-                      <div className="text-sm font-medium text-gray-900">
-                        Terminar en última parada
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        No suma el tramo de vuelta al depot
+
+                    {/* Return to depot */}
+                    <div>
+                      <div className="text-xs font-semibold text-gray-700 mb-2">Regreso al depot</div>
+                      <div className="grid grid-cols-1 gap-2">
+                        <button
+                          onClick={() => setReturnToDepot(true)}
+                          className={`flex items-center gap-3 text-left p-3 rounded-lg border bg-white transition-colors ${
+                            returnToDepot ? 'border-indigo-500' : 'border-gray-200 hover:border-gray-300'
+                          }`}
+                        >
+                          <RotateCcw
+                            size={15}
+                            className={returnToDepot ? 'text-indigo-600' : 'text-gray-400'}
+                          />
+                          <div className="flex-1">
+                            <div className="text-sm font-medium text-gray-900">Salir y volver al depot</div>
+                            <div className="text-xs text-gray-500">Cada vehículo termina donde empezó</div>
+                          </div>
+                          {returnToDepot && <Check size={14} className="text-indigo-600" />}
+                        </button>
+                        <button
+                          onClick={() => setReturnToDepot(false)}
+                          className={`flex items-center gap-3 text-left p-3 rounded-lg border bg-white transition-colors ${
+                            !returnToDepot ? 'border-indigo-500' : 'border-gray-200 hover:border-gray-300'
+                          }`}
+                        >
+                          <ArrowRight
+                            size={15}
+                            className={!returnToDepot ? 'text-indigo-600' : 'text-gray-400'}
+                          />
+                          <div className="flex-1">
+                            <div className="text-sm font-medium text-gray-900">Terminar en última parada</div>
+                            <div className="text-xs text-gray-500">No suma el tramo de vuelta al depot</div>
+                          </div>
+                          {!returnToDepot && <Check size={14} className="text-indigo-600" />}
+                        </button>
                       </div>
                     </div>
-                    {!returnToDepot && <Check size={16} className="text-indigo-600" />}
-                  </button>
-                </div>
+                  </div>
+                )}
               </div>
 
               {error && (
@@ -278,40 +287,6 @@ export function VroomWizardModal({
                   <span>{error}</span>
                 </div>
               )}
-            </div>
-          )}
-
-          {step === 'preview' && (
-            <div className="space-y-4">
-              <div className="text-sm font-semibold text-gray-900">Esto va a hacer:</div>
-              <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-4 space-y-2 text-sm text-gray-800">
-                <p>
-                  Vuoo va a asignar <strong>{numStops} paradas</strong> a{' '}
-                  <strong>{numVehicles} vehículo{numVehicles === 1 ? '' : 's'}</strong>
-                  {depotAddress ? (
-                    <>
-                      , saliendo desde <strong>{depotAddress}</strong>
-                    </>
-                  ) : null}
-                  .
-                </p>
-                <p>
-                  Modo: <strong>{modeLabel(mode)}</strong>
-                  {mode === 'balance_stops' && estStopsPerVehicle > 0 && (
-                    <> (~{estStopsPerVehicle} paradas por vehículo)</>
-                  )}
-                  .
-                </p>
-                <p>
-                  {returnToDepot
-                    ? 'Cada vehículo volverá al depot al terminar.'
-                    : 'Cada vehículo terminará en su última parada (ruta abierta).'}
-                </p>
-              </div>
-              <div className="text-xs text-gray-500">
-                Tiempo estimado de cálculo: &lt;2 segundos. Podés revisar el resultado antes de
-                aplicarlo al plan.
-              </div>
             </div>
           )}
 
@@ -378,27 +353,10 @@ export function VroomWizardModal({
                 Cancelar
               </button>
               <button
-                onClick={() => setStep('preview')}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-              >
-                Siguiente <ArrowRight size={14} />
-              </button>
-            </>
-          )}
-
-          {step === 'preview' && (
-            <>
-              <button
-                onClick={() => setStep('config')}
-                className="flex items-center gap-1 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg"
-              >
-                <ChevronLeft size={14} /> Atrás
-              </button>
-              <button
                 onClick={handleOptimize}
                 className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
               >
-                Optimizar
+                <Zap size={14} /> Optimizar
               </button>
             </>
           )}

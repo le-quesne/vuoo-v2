@@ -61,7 +61,10 @@ export function OrdersPage() {
     resolvedAddress: number
   }>({ pendingAddress: 0, resolvedAddress: 0 })
 
-  const oneClick = useOneClickOptimize(currentOrg?.id ?? '')
+  const oneClick = useOneClickOptimize(currentOrg?.id ?? '', {
+    mode: currentOrg?.default_optimization_mode,
+    returnToDepot: currentOrg?.default_return_to_depot,
+  })
 
   const handleOptimizeDay = useCallback(async () => {
     if (!currentOrg) return

@@ -1,25 +1,12 @@
 import { useCallback, useState } from 'react';
 import { supabase } from '@/application/lib/supabase';
 import { optimize as optimizeVroom } from '@/data/services/vroom';
+import type { VroomMode, VroomResponse } from '@/data/services/vroom';
 import type { ServiceResult } from '@/data/services/_shared/response';
 import type { Plan, Vehicle } from '@/data/types/database';
 
-/**
- * Shape that Vroom (Railway) returns after optimizing a plan.
- * Kept in sync with VroomWizardModal's local type — eventually este tipo
- * debería vivir en `@/data/services/vroom/vroom.types.ts`.
- */
-export interface VroomPreview {
-  summary: { cost: number; routes: number; unassigned: number; duration: number };
-  routes: Array<{
-    route_id: string;
-    vehicle_id: string;
-    total_duration: number;
-    total_distance: number | null;
-    ordered_plan_stop_ids: string[];
-  }>;
-  unassigned: Array<{ plan_stop_id: string | null; reason: string }>;
-}
+/** @deprecated use VroomResponse from @/data/services/vroom */
+export type VroomPreview = VroomResponse;
 
 export interface OneClickOptimizeResult {
   plan: Plan;
@@ -40,10 +27,8 @@ export interface UseOneClickOptimizeReturn {
   reset: () => void;
 }
 
-type OptimizeMode = 'efficiency' | 'balance_stops' | 'balance_time' | 'consolidate';
-
 interface OneClickOptimizeOptions {
-  mode?: OptimizeMode;
+  mode?: VroomMode;
   returnToDepot?: boolean;
 }
 
@@ -64,7 +49,7 @@ export function useOneClickOptimize(
   orgId: string | undefined,
   options: OneClickOptimizeOptions = {},
 ): UseOneClickOptimizeReturn {
-  const { mode = 'balance_stops', returnToDepot = true } = options;
+  const { mode = 'efficiency', returnToDepot = true } = options;
 
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);

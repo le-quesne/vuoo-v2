@@ -19,6 +19,8 @@ export type MatchQuality = 'high' | 'medium' | 'low' | 'none'
 export type GeocodingProvider = 'mapbox' | 'google' | 'manual'
 export type ImportTemplateSource = 'csv' | 'xlsx' | 'shopify' | 'vtex' | 'api' | 'whatsapp'
 
+export type OptimizationMode = 'efficiency' | 'balance_stops' | 'balance_time' | 'consolidate'
+
 export interface Organization {
   id: string
   name: string
@@ -28,6 +30,8 @@ export interface Organization {
   default_depot_lng: number | null
   default_depot_address: string | null
   is_demo: boolean
+  default_optimization_mode: OptimizationMode
+  default_return_to_depot: boolean
 }
 
 export interface OrganizationMember {

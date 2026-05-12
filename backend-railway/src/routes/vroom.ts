@@ -177,15 +177,31 @@ vroomRoutes.post('/optimize', async (c) => {
   // Aplicar modos de balanceo después de resolver depots.
   if (vroomVehicles.length > 0 && usableStops.length > 0) {
     if (mode === 'balance_stops') {
-      const maxTasks = Math.ceil(usableStops.length / vroomVehicles.length);
-      for (const v of vroomVehicles) v.max_tasks = maxTasks;
-    } else if (mode === 'balance_time' && vroomVehicles.length > 1) {
-      const totalWindowSec = vroomVehicles.reduce((acc, v) => {
-        if (v.time_window) return acc + (v.time_window[1] - v.time_window[0]);
-        return acc + 8 * 3600;
+      // Solo limitar max_tasks cuando hay más paradas que vehículos.
+      // Si hay más vehículos que paradas, Vroom asigna naturalmente y el cap
+      // de 1 task por vehículo desperdiciaría flotilla.
+      if (usableStops.length > vroomVehicles.length) {
+        const maxTasks = Math.ceil(usableStops.length / vroomVehicles.length);
+        for (const v of vroomVehicles) v.max_tasks = maxTasks;
+      }
+    } else if (mode === 'balance_time') {
+      // Estimamos el tiempo de servicio promedio por vehículo para descontarlo
+      // de max_travel_time. Vroom solo controla tiempo de viaje (no de servicio),
+      // así que el cap debe ser: ventana_propia - servicio_estimado_por_vehículo.
+      const totalServiceSec = usableStops.reduce((acc, ps) => {
+        const stop = ps.stop as unknown as Record<string, unknown>;
+        const durationMin = (stop.duration_minutes as number | null) ?? 5;
+        return acc + Math.max(0, Math.round(durationMin * 60));
       }, 0);
-      const perVehicleCap = Math.ceil(totalWindowSec / vroomVehicles.length);
-      for (const v of vroomVehicles) v.max_travel_time = perVehicleCap;
+      const avgServicePerVehicle = Math.ceil(totalServiceSec / vroomVehicles.length);
+
+      for (const v of vroomVehicles) {
+        // Usar la ventana del propio vehículo, no un promedio global.
+        const windowSec = v.time_window
+          ? v.time_window[1] - v.time_window[0]
+          : 8 * 3600;
+        v.max_travel_time = Math.max(0, windowSec - avgServicePerVehicle);
+      }
     }
   }
 

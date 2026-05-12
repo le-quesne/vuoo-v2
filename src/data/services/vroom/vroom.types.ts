@@ -2,11 +2,10 @@
 // El backend hace el mapeo exacto al contrato de Vroom; en el frontend
 // trabajamos con la forma que devuelve/acepta el endpoint `/vroom/optimize`.
 
-export type VroomMode =
-  | 'efficiency'
-  | 'balance_stops'
-  | 'balance_time'
-  | 'consolidate';
+import type { OptimizationMode } from '@/data/types/database';
+
+/** Alias — mismo union que OptimizationMode en database.ts. */
+export type VroomMode = OptimizationMode;
 
 export interface VroomRequest {
   plan_id: string;

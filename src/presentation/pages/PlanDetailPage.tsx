@@ -836,6 +836,8 @@ export function PlanDetailPage() {
           ).length}
           numVehicles={routes.length}
           depotAddress={orgDepot?.address ?? null}
+          defaultMode={currentOrg?.default_optimization_mode}
+          defaultReturnToDepot={currentOrg?.default_return_to_depot}
           onClose={() => setShowVroomWizard(false)}
           onApplied={() => {
             setShowVroomWizard(false)

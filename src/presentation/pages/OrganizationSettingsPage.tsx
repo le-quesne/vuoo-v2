@@ -1,21 +1,64 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { MapPin, Save, Loader2, Check, Trash2 } from 'lucide-react'
+import { MapPin, Save, Loader2, Check, Trash2, Zap, Scale, Clock, Package, RotateCcw, ArrowRight } from 'lucide-react'
 import { supabase } from '@/application/lib/supabase'
 import { useAuth } from '@/application/hooks/useAuth'
+import { refreshMemberships } from '@/application/lib/auth'
 import { MAPBOX_TOKEN } from '@/application/lib/mapbox'
+import type { OptimizationMode } from '@/data/types/database'
 
 type Suggestion = { place_name: string; center: [number, number] }
+
+const OPTIMIZATION_MODES: Array<{
+  id: OptimizationMode
+  icon: typeof Zap
+  title: string
+  desc: string
+}> = [
+  {
+    id: 'efficiency',
+    icon: Zap,
+    title: 'Eficiencia',
+    desc: 'Mínima distancia y tiempo totales. Ideal para flota propia con costos fijos.',
+  },
+  {
+    id: 'balance_stops',
+    icon: Scale,
+    title: 'Balancear paradas',
+    desc: 'Reparte un número similar de paradas entre todos los vehículos. Ideal si se paga por entrega.',
+  },
+  {
+    id: 'balance_time',
+    icon: Clock,
+    title: 'Balancear tiempo',
+    desc: 'Distribuye el tiempo de conducción para que terminen a hora parecida.',
+  },
+  {
+    id: 'consolidate',
+    icon: Package,
+    title: 'Consolidar rutas',
+    desc: 'Usa el menor número posible de vehículos. Ideal si se paga por vuelta/ruta.',
+  },
+]
 
 export function OrganizationSettingsPage() {
   const { currentOrg } = useAuth()
   const [loading, setLoading] = useState(true)
+
+  // Depot state
   const [saving, setSaving] = useState(false)
   const [savedAt, setSavedAt] = useState<number | null>(null)
   const [depotAddress, setDepotAddress] = useState('')
   const [depotCoords, setDepotCoords] = useState<{ lat: number; lng: number } | null>(null)
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const [open, setOpen] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [depotError, setDepotError] = useState<string | null>(null)
+
+  // Optimization mode state
+  const [optMode, setOptMode] = useState<OptimizationMode>('efficiency')
+  const [optReturnToDepot, setOptReturnToDepot] = useState(true)
+  const [savingMode, setSavingMode] = useState(false)
+  const [modeSavedAt, setModeSavedAt] = useState<number | null>(null)
+  const [modeError, setModeError] = useState<string | null>(null)
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -25,7 +68,7 @@ export function OrganizationSettingsPage() {
     let cancelled = false
     supabase
       .from('organizations')
-      .select('default_depot_lat, default_depot_lng, default_depot_address')
+      .select('default_depot_lat, default_depot_lng, default_depot_address, default_optimization_mode, default_return_to_depot')
       .eq('id', currentOrg.id)
       .single()
       .then(({ data }) => {
@@ -34,6 +77,8 @@ export function OrganizationSettingsPage() {
         if (data.default_depot_lat != null && data.default_depot_lng != null) {
           setDepotCoords({ lat: data.default_depot_lat, lng: data.default_depot_lng })
         }
+        setOptMode((data.default_optimization_mode as OptimizationMode) ?? 'efficiency')
+        setOptReturnToDepot(data.default_return_to_depot ?? true)
         setLoading(false)
       })
     return () => {
@@ -73,10 +118,10 @@ export function OrganizationSettingsPage() {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
-  async function handleSave() {
+  async function handleSaveDepot() {
     if (!currentOrg || !depotCoords) return
     setSaving(true)
-    setError(null)
+    setDepotError(null)
     const { error: updErr } = await supabase
       .from('organizations')
       .update({
@@ -87,18 +132,19 @@ export function OrganizationSettingsPage() {
       .eq('id', currentOrg.id)
     setSaving(false)
     if (updErr) {
-      setError(updErr.message)
+      setDepotError(updErr.message)
       return
     }
     setSavedAt(Date.now())
     setTimeout(() => setSavedAt(null), 2000)
+    await refreshMemberships()
   }
 
   async function handleClear() {
     if (!currentOrg) return
     if (!confirm('¿Eliminar el depot configurado?')) return
     setSaving(true)
-    setError(null)
+    setDepotError(null)
     const { error: updErr } = await supabase
       .from('organizations')
       .update({
@@ -109,11 +155,32 @@ export function OrganizationSettingsPage() {
       .eq('id', currentOrg.id)
     setSaving(false)
     if (updErr) {
-      setError(updErr.message)
+      setDepotError(updErr.message)
       return
     }
     setDepotAddress('')
     setDepotCoords(null)
+  }
+
+  async function handleSaveMode() {
+    if (!currentOrg) return
+    setSavingMode(true)
+    setModeError(null)
+    const { error: updErr } = await supabase
+      .from('organizations')
+      .update({
+        default_optimization_mode: optMode,
+        default_return_to_depot: optReturnToDepot,
+      })
+      .eq('id', currentOrg.id)
+    setSavingMode(false)
+    if (updErr) {
+      setModeError(updErr.message)
+      return
+    }
+    setModeSavedAt(Date.now())
+    setTimeout(() => setModeSavedAt(null), 2000)
+    await refreshMemberships()
   }
 
   if (loading) {
@@ -194,8 +261,8 @@ export function OrganizationSettingsPage() {
               </div>
             )}
 
-            {error && (
-              <div className="text-xs text-red-600 bg-red-50 rounded px-3 py-2">{error}</div>
+            {depotError && (
+              <div className="text-xs text-red-600 bg-red-50 rounded px-3 py-2">{depotError}</div>
             )}
           </div>
 
@@ -214,7 +281,7 @@ export function OrganizationSettingsPage() {
                 </span>
               )}
               <button
-                onClick={handleSave}
+                onClick={handleSaveDepot}
                 disabled={!depotCoords || saving}
                 className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
               >
@@ -222,6 +289,116 @@ export function OrganizationSettingsPage() {
                 Guardar
               </button>
             </div>
+          </div>
+        </div>
+
+        {/* Optimization Mode Section */}
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-100">
+            <div className="flex items-center gap-2">
+              <Zap size={18} className="text-indigo-600" />
+              <h2 className="text-sm font-semibold text-gray-900">Modo de optimización por defecto</h2>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              Este modo se usará automáticamente en el optimizador. Se puede cambiar puntualmente desde la ventana de optimización en el plan.
+            </p>
+          </div>
+
+          <div className="p-5 space-y-5">
+            {/* Mode cards */}
+            <div className="grid grid-cols-1 gap-2">
+              {OPTIMIZATION_MODES.map((m) => {
+                const Icon = m.icon
+                const selected = optMode === m.id
+                return (
+                  <button
+                    key={m.id}
+                    onClick={() => setOptMode(m.id)}
+                    className={`flex items-start gap-3 text-left p-3 rounded-lg border transition-colors ${
+                      selected
+                        ? 'border-indigo-500 bg-indigo-50'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <div
+                      className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center ${
+                        selected ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'
+                      }`}
+                    >
+                      <Icon size={16} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-gray-900">{m.title}</div>
+                      <div className="text-xs text-gray-500 mt-0.5">{m.desc}</div>
+                    </div>
+                    {selected && <Check size={16} className="text-indigo-600 shrink-0 mt-1" />}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Return to depot toggle */}
+            <div>
+              <div className="text-xs font-medium text-gray-700 mb-2">Regreso al depot</div>
+              <div className="grid grid-cols-1 gap-2">
+                <button
+                  onClick={() => setOptReturnToDepot(true)}
+                  className={`flex items-center gap-3 text-left p-3 rounded-lg border transition-colors ${
+                    optReturnToDepot
+                      ? 'border-indigo-500 bg-indigo-50'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <RotateCcw
+                    size={16}
+                    className={optReturnToDepot ? 'text-indigo-600' : 'text-gray-500'}
+                  />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-gray-900">Salir y volver al depot</div>
+                    <div className="text-xs text-gray-500">Cada vehículo termina donde empezó</div>
+                  </div>
+                  {optReturnToDepot && <Check size={16} className="text-indigo-600" />}
+                </button>
+                <button
+                  onClick={() => setOptReturnToDepot(false)}
+                  className={`flex items-center gap-3 text-left p-3 rounded-lg border transition-colors ${
+                    !optReturnToDepot
+                      ? 'border-indigo-500 bg-indigo-50'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <ArrowRight
+                    size={16}
+                    className={!optReturnToDepot ? 'text-indigo-600' : 'text-gray-500'}
+                  />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-gray-900">Terminar en última parada</div>
+                    <div className="text-xs text-gray-500">No suma el tramo de vuelta al depot</div>
+                  </div>
+                  {!optReturnToDepot && <Check size={16} className="text-indigo-600" />}
+                </button>
+              </div>
+            </div>
+
+            {modeError && (
+              <div className="text-xs text-red-600 bg-red-50 rounded px-3 py-2">{modeError}</div>
+            )}
+          </div>
+
+          <div className="flex items-center justify-end gap-3 px-5 py-3 border-t border-gray-100 bg-gray-50">
+            {modeSavedAt && (
+              <span className="flex items-center gap-1 text-xs text-emerald-600">
+                <Check size={12} /> Guardado
+              </span>
+            )}
+            <button
+              onClick={handleSaveMode}
+              disabled={savingMode}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {savingMode ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              Guardar
+            </button>
           </div>
         </div>
       </div>
