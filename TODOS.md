@@ -119,6 +119,25 @@ Generado por `/plan-eng-review` tras diseño del Planificador + Torre de Control
 - **Depends on**: 5+ clientes concurrentes, decisión de infra.
 - **Pri**: P3 (post-piloto).
 
+### Autorización en send-push Edge Function (P2)
+- **What**: La Edge Function `send-push` verifica JWT pero no que los `user_ids` del payload pertenezcan a la org del caller. Agregar verificación: cada `user_id` debe ser un driver de la misma org.
+- **Why**: Un usuario autenticado podría llamar directamente a `send-push` con `user_ids` arbitrarios y spamear choferes de otras orgs.
+- **Effort (CC)**: S (~1 hora).
+- **Pri**: P2.
+
+### RLS en plans/routes permite publish a cualquier miembro (no solo admin) (P2)
+- **What**: La política `"Members can update plans"` en RLS permite UPDATE a cualquier miembro autenticado. Restringir publish/unpublish a roles `admin` y `owner` via `is_org_admin()`.
+- **Why**: Un chofer o miembro sin permisos podría publicar/despublicar planes llamando directo al API de Supabase.
+- **Effort (CC)**: S (~30 min) — agregar WITH CHECK en la policy de UPDATE en plans.
+- **Pri**: P2.
+
+### Mobile: route detail screen no filtra plan.status (P3)
+- **What**: La pantalla de detalle de ruta en mobile (`route/[id]/index.tsx`) no filtra `plan.status = 'published'`. Un chofer que tenía la pantalla abierta cuando se despublica puede seguir viendo datos.
+- **Why**: Decisión de producto: ¿un unpublish debe interrumpir operaciones in-flight? Si sí, se necesita filtro + WebSocket que cierre la pantalla.
+- **Effort (CC)**: M (~1-2 horas + decisión de producto).
+- **Depends on**: decisión de si unpublish debe forzar cierre de pantalla en mobile.
+- **Pri**: P3 (post-piloto).
+
 ---
 
 ## QA pass 2026-05-06 — issues diferidos

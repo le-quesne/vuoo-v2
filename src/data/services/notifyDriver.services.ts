@@ -127,18 +127,20 @@ export async function notifyDriverStopReassigned(args: {
   await Promise.all(tasks)
 }
 
-export async function notifyDriversOnPublish(planId: string): Promise<void> {
+export async function notifyDriversOnPublish(planId: string, orgId: string): Promise<void> {
   try {
     const { data: plan } = await supabase
       .from('plans')
       .select('name, date')
       .eq('id', planId)
+      .eq('org_id', orgId)
       .maybeSingle()
 
     const { data: planRoutes } = await supabase
       .from('routes')
       .select('id, driver_id')
       .eq('plan_id', planId)
+      .eq('org_id', orgId)
       .not('driver_id', 'is', null)
 
     if (!planRoutes?.length) return
@@ -167,19 +169,22 @@ export async function notifyDriversOnPublish(planId: string): Promise<void> {
   }
 }
 
-export async function notifyDriversOnUnpublish(planId: string): Promise<void> {
+export async function notifyDriversOnUnpublish(planId: string, orgId: string): Promise<void> {
   try {
     const { data: plan } = await supabase
       .from('plans')
       .select('name, date')
       .eq('id', planId)
+      .eq('org_id', orgId)
       .maybeSingle()
 
     const { data: planRoutes } = await supabase
       .from('routes')
       .select('id, driver_id')
       .eq('plan_id', planId)
+      .eq('org_id', orgId)
       .not('driver_id', 'is', null)
+      .not('status', 'eq', 'completed')
 
     if (!planRoutes?.length) return
 

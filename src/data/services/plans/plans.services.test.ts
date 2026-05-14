@@ -104,4 +104,13 @@ describe('unpublishPlan', () => {
     expect(res.success).toBe(false)
     if (!res.success) expect(res.error).toBe('RPC error')
   })
+
+  it('passes through not_found when plan does not exist or caller lacks membership', async () => {
+    mockRpc.mockResolvedValue({ data: 'not_found', error: null })
+
+    const res = await unpublishPlan('ghost-plan', 'org-1')
+
+    expect(res.success).toBe(true)
+    if (res.success) expect(res.data).toBe('not_found')
+  })
 })

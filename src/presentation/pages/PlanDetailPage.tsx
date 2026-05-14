@@ -54,6 +54,7 @@ import { fetchDirections } from '@/application/lib/mapbox'
 import type { Plan, Route, Stop, Vehicle, Driver, PlanStopWithStop, NotificationLog, Order } from '@/data/types/database'
 import { plansService } from '@/data/services/plans'
 import { notifyDriversOnPublish, notifyDriversOnUnpublish } from '@/data/services/notifyDriver.services'
+import { userMessage } from '@/application/utils/errorMessages'
 
 const UNASSIGNED_ID = 'unassigned'
 
@@ -470,9 +471,9 @@ export function PlanDetailPage() {
     const res = await plansService.publishPlan(plan.id, currentOrg.id)
     if (res.success) {
       setPlan({ ...plan, status: 'published' })
-      void notifyDriversOnPublish(plan.id)
+      void notifyDriversOnPublish(plan.id, currentOrg.id)
     } else {
-      setPublishError(res.error)
+      setPublishError(userMessage(res.error))
     }
     setPublishing(false)
   }
@@ -485,12 +486,14 @@ export function PlanDetailPage() {
     if (res.success) {
       if (res.data === 'ok') {
         setPlan({ ...plan, status: 'draft' })
-        void notifyDriversOnUnpublish(plan.id)
+        void notifyDriversOnUnpublish(plan.id, currentOrg.id)
       } else if (res.data === 'routes_active') {
         setPublishError('Hay rutas en tránsito. Esperá a que los choferes completen sus rutas.')
+      } else {
+        setPublishError('El plan no existe o ya está en borrador.')
       }
     } else {
-      setPublishError(res.error)
+      setPublishError(userMessage(res.error))
     }
     setPublishing(false)
   }
