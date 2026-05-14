@@ -52,6 +52,8 @@ import { calculateRouteWeight, getCapacityStatus } from '@/presentation/features
 import { routePlannedKm, routeTraveledKm } from '@/presentation/features/plans/utils/routeMetrics'
 import { fetchDirections } from '@/application/lib/mapbox'
 import type { Plan, Route, Stop, Vehicle, Driver, PlanStopWithStop, NotificationLog, Order } from '@/data/types/database'
+import { plansService } from '@/data/services/plans'
+import { notifyDriversOnPublish, notifyDriversOnUnpublish } from '@/data/services/notifyDriver.services'
 
 const UNASSIGNED_ID = 'unassigned'
 
@@ -85,6 +87,8 @@ export function PlanDetailPage() {
   const [ordersByPlanStop, setOrdersByPlanStop] = useState<Map<string, Order>>(new Map())
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [showActivity, setShowActivity] = useState(false)
+  const [publishing, setPublishing] = useState(false)
+  const [publishError, setPublishError] = useState<string | null>(null)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
   const planRouteIds = useMemo(() => routes.map((r) => r.id), [routes])
@@ -459,6 +463,38 @@ export function PlanDetailPage() {
     setTimeout(() => setCopiedId((prev) => (prev === planStop.id ? null : prev)), 2000)
   }
 
+  async function handlePublish() {
+    if (!plan || !currentOrg?.id) return
+    setPublishing(true)
+    setPublishError(null)
+    const res = await plansService.publishPlan(plan.id, currentOrg.id)
+    if (res.success) {
+      setPlan({ ...plan, status: 'published' })
+      void notifyDriversOnPublish(plan.id)
+    } else {
+      setPublishError(res.error)
+    }
+    setPublishing(false)
+  }
+
+  async function handleUnpublish() {
+    if (!plan || !currentOrg?.id) return
+    setPublishing(true)
+    setPublishError(null)
+    const res = await plansService.unpublishPlan(plan.id, currentOrg.id)
+    if (res.success) {
+      if (res.data === 'ok') {
+        setPlan({ ...plan, status: 'draft' })
+        void notifyDriversOnUnpublish(plan.id)
+      } else if (res.data === 'routes_active') {
+        setPublishError('Hay rutas en tránsito. Esperá a que los choferes completen sus rutas.')
+      }
+    } else {
+      setPublishError(res.error)
+    }
+    setPublishing(false)
+  }
+
   if (!plan) return <PlanDetailSkeleton />
 
 
@@ -497,6 +533,13 @@ export function PlanDetailPage() {
           ) : (
             <div className="flex items-center gap-1 group">
               <h2 className="text-lg font-semibold">{plan.name}</h2>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                plan.status === 'published'
+                  ? 'bg-green-100 text-green-700'
+                  : 'bg-gray-100 text-gray-500'
+              }`}>
+                {plan.status === 'published' ? 'Publicado' : 'Borrador'}
+              </span>
               <button
                 onClick={startRenamePlan}
                 className="p-1 rounded text-gray-300 hover:text-gray-600 hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -506,6 +549,28 @@ export function PlanDetailPage() {
               </button>
             </div>
           )}
+
+          {/* Publish / Unpublish */}
+          <div className="mt-3">
+            <button
+              onClick={plan.status === 'published' ? handleUnpublish : handlePublish}
+              disabled={publishing}
+              className={`w-full text-sm font-medium py-1.5 rounded border transition-colors disabled:opacity-50 ${
+                plan.status === 'published'
+                  ? 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
+                  : 'border-green-300 bg-green-50 text-green-700 hover:bg-green-100'
+              }`}
+            >
+              {publishing
+                ? 'Procesando...'
+                : plan.status === 'published'
+                  ? 'Despublicar plan'
+                  : 'Publicar plan'}
+            </button>
+            {publishError && (
+              <p className="text-xs text-red-600 mt-1">{publishError}</p>
+            )}
+          </div>
 
           {/* Stats + depot */}
           <div className="flex items-center justify-between mt-3 gap-2">

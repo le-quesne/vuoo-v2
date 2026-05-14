@@ -93,6 +93,8 @@ export interface Driver {
   default_vehicle?: Vehicle | null
 }
 
+export type PlanStatus = 'draft' | 'published';
+
 export interface Plan {
   id: string
   name: string
@@ -100,6 +102,7 @@ export interface Plan {
   created_at: string
   user_id: string
   org_id: string
+  status: PlanStatus
 }
 
 export interface Stop {

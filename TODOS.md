@@ -101,6 +101,26 @@ Mantener ordenado por prioridad. Cada ítem con: What / Why / Effort (CC) / Depe
 
 ---
 
+## plan.status — gaps diferidos (2026-05-14)
+
+Generado por `/plan-eng-review` tras diseño del Planificador + Torre de Control.
+
+### Push notifications reliability (P2)
+- **What**: La v1 de `publishPlan` / `unpublishPlan` notifica con fire-and-forget. Agregar retry y un campo `notifications_sent_at` en `plans`. Si el push falla, mostrar badge de advertencia en el plan del dispatcher.
+- **Why**: El dispatcher no tiene visibilidad de si el chofer recibió el aviso. Para el piloto es aceptable; para producción no.
+- **Effort (CC)**: M (~2 horas).
+- **Depends on**: feedback del piloto sobre tasa de fallos reales.
+- **Pri**: P2.
+
+### Migrar a RLS nativo — Approach B (P3)
+- **What**: Cuando la plataforma supere 5 clientes concurrentes, migrar visibilidad de planes a RLS nativo: `plan.published_at` timestamp, policies en `routes` que filtran por `plan.status`. La visibilidad queda garantizada en la DB, no depende del cliente.
+- **Why**: El Approach A actual depende de que el código mobile tenga el filtro correcto. Un bug podría exponer rutas borrador a choferes.
+- **Effort (CC)**: L (~1 hora con tests).
+- **Depends on**: 5+ clientes concurrentes, decisión de infra.
+- **Pri**: P3 (post-piloto).
+
+---
+
 ## QA pass 2026-05-06 — issues diferidos
 
 Generado por `/qa` (rama `le-quesne/qa-run`). Reporte completo en

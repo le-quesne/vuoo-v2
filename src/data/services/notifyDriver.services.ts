@@ -7,11 +7,6 @@ interface NotifyDriverRouteAssignedArgs {
   planDate?: string | null
 }
 
-/**
- * Fires a push to the user linked to `driverId` announcing a route assignment.
- * Non-blocking from the caller's perspective — errors are swallowed to a
- * console warn so the main save flow never fails because a push didn't go out.
- */
 export async function notifyDriverRouteAssigned({
   driverId,
   routeId,
@@ -19,33 +14,20 @@ export async function notifyDriverRouteAssigned({
   planDate,
 }: NotifyDriverRouteAssignedArgs): Promise<void> {
   try {
-    const { data: driver, error } = await supabase
-      .from('drivers')
-      .select('user_id, first_name')
-      .eq('id', driverId)
-      .maybeSingle()
+    const userId = await resolveDriverUserId(driverId)
+    if (!userId) return
 
-    if (error || !driver?.user_id) {
-      if (error) console.warn('[notifyDriver] lookup failed', error.message)
-      return
-    }
-
-    const titleBase = planName?.trim() ? `Nueva ruta: ${planName.trim()}` : 'Nueva ruta asignada'
+    const title = planName?.trim() ? `Nueva ruta: ${planName.trim()}` : 'Nueva ruta asignada'
     const bodyParts: string[] = []
     if (planDate) bodyParts.push(planDate)
     bodyParts.push('Abre la app para ver las paradas.')
 
-    const { error: invokeError } = await supabase.functions.invoke('send-push', {
-      body: {
-        user_ids: [driver.user_id],
-        title: titleBase,
-        body: bodyParts.join(' · '),
-        data: { type: 'route_assigned', routeId },
-      },
+    await sendPushToUser({
+      userId,
+      title,
+      body: bodyParts.join(' · '),
+      data: { type: 'route_assigned', routeId },
     })
-    if (invokeError) {
-      console.warn('[notifyDriver] send-push failed', invokeError.message)
-    }
   } catch (err) {
     console.warn('[notifyDriver] unexpected error', err)
   }
@@ -143,6 +125,86 @@ export async function notifyDriverStopReassigned(args: {
   }
 
   await Promise.all(tasks)
+}
+
+export async function notifyDriversOnPublish(planId: string): Promise<void> {
+  try {
+    const { data: plan } = await supabase
+      .from('plans')
+      .select('name, date')
+      .eq('id', planId)
+      .maybeSingle()
+
+    const { data: planRoutes } = await supabase
+      .from('routes')
+      .select('id, driver_id')
+      .eq('plan_id', planId)
+      .not('driver_id', 'is', null)
+
+    if (!planRoutes?.length) return
+
+    const title = plan?.name?.trim() ? `Ruta lista: ${plan.name.trim()}` : 'Ruta lista para hoy'
+    const body = [plan?.date, 'Abre la app para ver tus paradas.'].filter(Boolean).join(' · ')
+
+    await Promise.all(
+      planRoutes.map(async (route) => {
+        try {
+          const userId = await resolveDriverUserId(route.driver_id as string)
+          if (!userId) return
+          await sendPushToUser({
+            userId,
+            title,
+            body,
+            data: { type: 'plan_published', planId, routeId: route.id },
+          })
+        } catch (err) {
+          console.warn('[notifyDriver] plan-published push unexpected error', err)
+        }
+      }),
+    )
+  } catch (err) {
+    console.warn('[notifyDriver] notifyDriversOnPublish unexpected error', err)
+  }
+}
+
+export async function notifyDriversOnUnpublish(planId: string): Promise<void> {
+  try {
+    const { data: plan } = await supabase
+      .from('plans')
+      .select('name, date')
+      .eq('id', planId)
+      .maybeSingle()
+
+    const { data: planRoutes } = await supabase
+      .from('routes')
+      .select('id, driver_id')
+      .eq('plan_id', planId)
+      .not('driver_id', 'is', null)
+
+    if (!planRoutes?.length) return
+
+    const title = plan?.name?.trim() ? `Ruta modificada: ${plan.name.trim()}` : 'Ruta modificada'
+    const body = 'Tu ruta fue pausada. Espera instrucciones del despachador.'
+
+    await Promise.all(
+      planRoutes.map(async (route) => {
+        try {
+          const userId = await resolveDriverUserId(route.driver_id as string)
+          if (!userId) return
+          await sendPushToUser({
+            userId,
+            title,
+            body,
+            data: { type: 'plan_unpublished', planId, routeId: route.id },
+          })
+        } catch (err) {
+          console.warn('[notifyDriver] plan-unpublished push unexpected error', err)
+        }
+      }),
+    )
+  } catch (err) {
+    console.warn('[notifyDriver] notifyDriversOnUnpublish unexpected error', err)
+  }
 }
 
 export async function notifyDriversCustom(args: {
