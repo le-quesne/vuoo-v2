@@ -553,28 +553,6 @@ export function PlanDetailPage() {
             </div>
           )}
 
-          {/* Publish / Unpublish */}
-          <div className="mt-3">
-            <button
-              onClick={plan.status === 'published' ? handleUnpublish : handlePublish}
-              disabled={publishing}
-              className={`w-full text-sm font-medium py-1.5 rounded border transition-colors disabled:opacity-50 ${
-                plan.status === 'published'
-                  ? 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
-                  : 'border-green-300 bg-green-50 text-green-700 hover:bg-green-100'
-              }`}
-            >
-              {publishing
-                ? 'Procesando...'
-                : plan.status === 'published'
-                  ? 'Despublicar plan'
-                  : 'Publicar plan'}
-            </button>
-            {publishError && (
-              <p className="text-xs text-red-600 mt-1">{publishError}</p>
-            )}
-          </div>
-
           {/* Stats + depot */}
           <div className="flex items-center justify-between mt-3 gap-2">
             <div className="flex gap-3 text-sm text-gray-600">
@@ -879,6 +857,24 @@ export function PlanDetailPage() {
             <Plus size={14} />
             Añadir parada
           </button>
+          <button
+            onClick={plan.status === 'published' ? handleUnpublish : handlePublish}
+            disabled={publishing}
+            className={`w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 ${
+              plan.status === 'published'
+                ? 'bg-amber-500 text-white hover:bg-amber-600'
+                : 'bg-green-600 text-white hover:bg-green-700'
+            }`}
+          >
+            {publishing
+              ? 'Procesando...'
+              : plan.status === 'published'
+                ? 'Despublicar plan'
+                : 'Publicar plan'}
+          </button>
+          {publishError && (
+            <p className="text-xs text-red-600">{publishError}</p>
+          )}
         </div>
       </div>
 
