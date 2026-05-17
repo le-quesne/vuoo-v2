@@ -90,6 +90,7 @@ export function PlanDetailPage() {
   const [showActivity, setShowActivity] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [publishError, setPublishError] = useState<string | null>(null)
+  const [showPublishConfirm, setShowPublishConfirm] = useState(false)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
   const planRouteIds = useMemo(() => routes.map((r) => r.id), [routes])
@@ -858,7 +859,7 @@ export function PlanDetailPage() {
             Añadir parada
           </button>
           <button
-            onClick={plan.status === 'published' ? handleUnpublish : handlePublish}
+            onClick={plan.status === 'published' ? handleUnpublish : () => setShowPublishConfirm(true)}
             disabled={publishing}
             className={`w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 ${
               plan.status === 'published'
@@ -1066,6 +1067,57 @@ export function PlanDetailPage() {
             />
           )
         })()}
+
+      {/* Publish confirmation modal */}
+      {showPublishConfirm && (() => {
+        const assignedCount = routes.reduce((sum, r) => sum + r.planStops.length, 0)
+        const vehicleCount = routes.length
+        const unassignedCount = unassignedStops.length
+        return (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+              <h2 className="text-lg font-semibold text-gray-900 mb-1">
+                ¿Estás seguro que querés publicar el plan?
+              </h2>
+              <p className="text-sm text-gray-500 mb-5">
+                Los choferes asignados recibirán una notificación con sus rutas.
+              </p>
+              <div className="grid grid-cols-3 gap-3 mb-6">
+                <div className="bg-gray-50 rounded-xl p-3 text-center">
+                  <div className="text-2xl font-bold text-gray-900">{assignedCount}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">parada{assignedCount === 1 ? '' : 's'} asignada{assignedCount === 1 ? '' : 's'}</div>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-3 text-center">
+                  <div className="text-2xl font-bold text-gray-900">{vehicleCount}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">vehículo{vehicleCount === 1 ? '' : 's'}</div>
+                </div>
+                <div className={`rounded-xl p-3 text-center ${unassignedCount > 0 ? 'bg-amber-50' : 'bg-gray-50'}`}>
+                  <div className={`text-2xl font-bold ${unassignedCount > 0 ? 'text-amber-600' : 'text-gray-900'}`}>{unassignedCount}</div>
+                  <div className={`text-xs mt-0.5 ${unassignedCount > 0 ? 'text-amber-600' : 'text-gray-500'}`}>sin asignar</div>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowPublishConfirm(false)}
+                  className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  Descartar
+                </button>
+                <button
+                  onClick={() => {
+                    setShowPublishConfirm(false)
+                    void handlePublish()
+                  }}
+                  disabled={publishing}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+                >
+                  ✓ Publicar plan
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
