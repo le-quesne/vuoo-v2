@@ -5,6 +5,7 @@ export type StopStatus = 'pending' | 'completed' | 'cancelled' | 'incomplete'
 export type RouteStatus = 'not_started' | 'in_transit' | 'completed'
 export type DriverStatus = 'active' | 'inactive' | 'on_leave'
 export type DriverAvailability = 'off_shift' | 'online' | 'on_break' | 'busy'
+export type PlanStatus = 'draft' | 'published'
 
 export interface Organization {
   id: string
@@ -52,6 +53,7 @@ export interface Plan {
   name: string
   date: string
   org_id: string
+  status: PlanStatus
   created_at: string
 }
 

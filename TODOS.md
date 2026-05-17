@@ -101,6 +101,45 @@ Mantener ordenado por prioridad. Cada ítem con: What / Why / Effort (CC) / Depe
 
 ---
 
+## plan.status — gaps diferidos (2026-05-14)
+
+Generado por `/plan-eng-review` tras diseño del Planificador + Torre de Control.
+
+### Push notifications reliability (P2)
+- **What**: La v1 de `publishPlan` / `unpublishPlan` notifica con fire-and-forget. Agregar retry y un campo `notifications_sent_at` en `plans`. Si el push falla, mostrar badge de advertencia en el plan del dispatcher.
+- **Why**: El dispatcher no tiene visibilidad de si el chofer recibió el aviso. Para el piloto es aceptable; para producción no.
+- **Effort (CC)**: M (~2 horas).
+- **Depends on**: feedback del piloto sobre tasa de fallos reales.
+- **Pri**: P2.
+
+### Migrar a RLS nativo — Approach B (P3)
+- **What**: Cuando la plataforma supere 5 clientes concurrentes, migrar visibilidad de planes a RLS nativo: `plan.published_at` timestamp, policies en `routes` que filtran por `plan.status`. La visibilidad queda garantizada en la DB, no depende del cliente.
+- **Why**: El Approach A actual depende de que el código mobile tenga el filtro correcto. Un bug podría exponer rutas borrador a choferes.
+- **Effort (CC)**: L (~1 hora con tests).
+- **Depends on**: 5+ clientes concurrentes, decisión de infra.
+- **Pri**: P3 (post-piloto).
+
+### Autorización en send-push Edge Function (P2)
+- **What**: La Edge Function `send-push` verifica JWT pero no que los `user_ids` del payload pertenezcan a la org del caller. Agregar verificación: cada `user_id` debe ser un driver de la misma org.
+- **Why**: Un usuario autenticado podría llamar directamente a `send-push` con `user_ids` arbitrarios y spamear choferes de otras orgs.
+- **Effort (CC)**: S (~1 hora).
+- **Pri**: P2.
+
+### RLS en plans/routes permite publish a cualquier miembro (no solo admin) (P2)
+- **What**: La política `"Members can update plans"` en RLS permite UPDATE a cualquier miembro autenticado. Restringir publish/unpublish a roles `admin` y `owner` via `is_org_admin()`.
+- **Why**: Un chofer o miembro sin permisos podría publicar/despublicar planes llamando directo al API de Supabase.
+- **Effort (CC)**: S (~30 min) — agregar WITH CHECK en la policy de UPDATE en plans.
+- **Pri**: P2.
+
+### Mobile: route detail screen no filtra plan.status (P3)
+- **What**: La pantalla de detalle de ruta en mobile (`route/[id]/index.tsx`) no filtra `plan.status = 'published'`. Un chofer que tenía la pantalla abierta cuando se despublica puede seguir viendo datos.
+- **Why**: Decisión de producto: ¿un unpublish debe interrumpir operaciones in-flight? Si sí, se necesita filtro + WebSocket que cierre la pantalla.
+- **Effort (CC)**: M (~1-2 horas + decisión de producto).
+- **Depends on**: decisión de si unpublish debe forzar cierre de pantalla en mobile.
+- **Pri**: P3 (post-piloto).
+
+---
+
 ## QA pass 2026-05-06 — issues diferidos
 
 Generado por `/qa` (rama `le-quesne/qa-run`). Reporte completo en

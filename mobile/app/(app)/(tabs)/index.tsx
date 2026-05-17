@@ -86,6 +86,7 @@ export default function HomeScreen() {
       .select('*, plan:plans!inner(*), vehicle:vehicles(*)')
       .eq('driver_id', driver.id)
       .eq('plan.date', today)
+      .eq('plan.status', 'published')
 
     if (routesError || !routesData) {
       setRoutes([])
