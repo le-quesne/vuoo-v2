@@ -153,20 +153,20 @@ export function DayDashboardPage() {
               key={plan.id}
               className="group relative p-5 bg-white border border-gray-200 rounded-lg hover:border-blue-300 hover:shadow-sm transition-all flex flex-col"
             >
-              <button
-                onClick={() => {
-                  setDeleteError(null)
-                  setDeleteTarget(plan)
-                }}
-                aria-label={`Eliminar ${plan.name}`}
-                title="Eliminar plan"
-                className="absolute top-2 right-2 p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
-              >
-                <Trash2 size={16} />
-              </button>
-              <div className="flex items-start justify-between gap-2 mb-2 pr-8">
-                <h3 className="text-lg font-semibold text-gray-900 truncate">{plan.name}</h3>
-                <span className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full font-medium ${
+              <div className="flex items-center gap-2 mb-2">
+                <h3 className="text-lg font-semibold text-gray-900 truncate flex-1 min-w-0">{plan.name}</h3>
+                <button
+                  onClick={() => {
+                    setDeleteError(null)
+                    setDeleteTarget(plan)
+                  }}
+                  aria-label={`Eliminar ${plan.name}`}
+                  title="Eliminar plan"
+                  className="shrink-0 p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                >
+                  <Trash2 size={16} />
+                </button>
+                <span className={`shrink-0 text-sm font-semibold px-2.5 py-0.5 rounded-full ${
                   plan.status === 'published'
                     ? 'bg-green-100 text-green-700'
                     : 'bg-gray-100 text-gray-500'
