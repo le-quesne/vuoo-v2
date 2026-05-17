@@ -164,9 +164,16 @@ export function DayDashboardPage() {
               >
                 <Trash2 size={16} />
               </button>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2 truncate pr-8">
-                {plan.name}
-              </h3>
+              <div className="flex items-start justify-between gap-2 mb-2 pr-8">
+                <h3 className="text-lg font-semibold text-gray-900 truncate">{plan.name}</h3>
+                <span className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                  plan.status === 'published'
+                    ? 'bg-green-100 text-green-700'
+                    : 'bg-gray-100 text-gray-500'
+                }`}>
+                  {plan.status === 'published' ? 'Publicado' : 'Borrador'}
+                </span>
+              </div>
               <div className="flex items-center gap-4 text-sm text-gray-500 mb-4">
                 <span className="flex items-center gap-1.5">
                   <Truck size={14} />
