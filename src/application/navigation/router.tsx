@@ -3,6 +3,8 @@ import { RequireAuth } from '@/application/navigation/guards';
 import { Layout } from '@/presentation/components/Layout';
 import { PlannerLayout } from '@/presentation/features/planner/components/PlannerLayout';
 import { LoginPage } from '@/presentation/pages/LoginPage';
+import { ForgotPasswordPage } from '@/presentation/pages/ForgotPasswordPage';
+import { ResetPasswordPage } from '@/presentation/pages/ResetPasswordPage';
 import { OnboardingPage } from '@/presentation/pages/OnboardingPage';
 import { PlannerPage } from '@/presentation/pages/PlannerPage';
 import { DayDashboardPage } from '@/presentation/pages/DayDashboardPage';
@@ -36,6 +38,8 @@ export function AppRouter() {
       <Routes>
         {/* Public */}
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/track/:token" element={<TrackingPage />} />
         <Route path="/driver-welcome" element={<DriverWelcomePage />} />
         <Route path="/welcome" element={<WelcomePage />} />
