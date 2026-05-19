@@ -87,7 +87,7 @@ export function AddStopToPlanModal({
     if (!address) return null
     try {
       const res = await fetch(
-        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(address)}.json?access_token=${MAPBOX_TOKEN}&country=cl&limit=1`
+        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(address)}.json?access_token=${MAPBOX_TOKEN}&country=cl,ar&limit=1`
       )
       const data = await res.json()
       if (data.features?.[0]) {

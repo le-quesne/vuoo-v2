@@ -24,7 +24,7 @@ export function AddressAutocomplete({ value, onChange, onSelect, placeholder }: 
     timerRef.current = setTimeout(async () => {
       try {
         const res = await fetch(
-          `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${MAPBOX_TOKEN}&country=cl&limit=5&language=es`,
+          `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${MAPBOX_TOKEN}&country=cl,ar&limit=5&language=es`,
         );
         const data = await res.json();
         setSuggestions(data.features ?? []);
