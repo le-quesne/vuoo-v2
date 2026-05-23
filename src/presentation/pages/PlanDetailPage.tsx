@@ -411,7 +411,7 @@ export function PlanDetailPage() {
     return [
       ...routes.map((r, i) => ({
         routeId: r.id,
-        vehicleName: r.vehicle?.name ?? 'Sin vehiculo',
+        vehicleName: r.vehicle?.name ?? 'Sin vehículo',
         stops: toStops(r.planStops),
         color: ROUTE_COLORS[i % ROUTE_COLORS.length],
       })),
@@ -661,7 +661,7 @@ export function PlanDetailPage() {
                         ) : (
                           <div className="flex items-center gap-1 min-w-0 group">
                             <span className="font-medium text-sm truncate">
-                              {route.name ?? route.vehicle?.name ?? 'Sin vehiculo'}
+                              {route.name ?? route.vehicle?.name ?? 'Sin vehículo'}
                             </span>
                             <button
                               onClick={(e) => { e.stopPropagation(); startRenameRoute(route.id, route.name ?? '') }}
@@ -692,7 +692,7 @@ export function PlanDetailPage() {
                                   onClick={(e) => { e.stopPropagation(); setEditRouteId(route.id); setMenuRouteId(null) }}
                                   className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 text-left"
                                 >
-                                  <Pencil size={12} /> Editar vehiculo/conductor
+                                  <Pencil size={12} /> Editar vehículo/conductor
                                 </button>
                                 <button
                                   onClick={(e) => { e.stopPropagation(); setDeleteRouteId(route.id); setMenuRouteId(null) }}
@@ -767,7 +767,7 @@ export function PlanDetailPage() {
                     <RouteDropZone id={route.id}>
                       {route.planStops.length === 0 && (
                         <div className="text-[11px] text-gray-400 italic py-2 text-center border border-dashed border-gray-200 rounded">
-                          Arrastra paradas aqui
+                          Arrastra paradas aquí
                         </div>
                       )}
                       {route.planStops.map((ps, i) => (
@@ -805,7 +805,7 @@ export function PlanDetailPage() {
                 <RouteDropZone id={UNASSIGNED_ID}>
                   {unassignedStops.length === 0 ? (
                     <div className="text-[11px] text-gray-400 italic py-2 text-center border border-dashed border-gray-200 rounded">
-                      Arrastra paradas aqui para desasignar
+                      Arrastra paradas aquí para desasignar
                     </div>
                   ) : (
                     unassignedStops.map((ps) => (
@@ -831,7 +831,7 @@ export function PlanDetailPage() {
             {routes.length === 0 && unassignedStops.length === 0 && (
               <div className="text-center py-8 text-gray-400 text-sm">
                 <Truck size={32} className="mx-auto mb-2 opacity-40" />
-                <p>Agrega vehiculos y paradas</p>
+                <p>Agrega vehículos y paradas</p>
               </div>
             )}
 
@@ -861,7 +861,7 @@ export function PlanDetailPage() {
             <button
               onClick={() => setShowVroomWizard(true)}
               className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-              title="Optimiza todas las rutas del plan (multi-vehiculo, capacidad, time windows)"
+              title="Optimiza todas las rutas del plan (multi-vehículo, capacidad, time windows)"
             >
               Optimizar con Vuoo
             </button>
@@ -871,7 +871,7 @@ export function PlanDetailPage() {
             className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50"
           >
             <Truck size={14} />
-            Agregar vehiculo
+            Agregar vehículo
           </button>
           <button
             onClick={() => setShowAddStop(true)}
@@ -1053,7 +1053,7 @@ export function PlanDetailPage() {
       <ConfirmDialog
         open={deletePlanStopId !== null}
         title="Eliminar parada del plan"
-        message="Esta parada se quitara del plan. La parada sigue existiendo en la libreria de stops."
+        message="Esta parada se quitará del plan. La parada sigue existiendo en la librería de stops."
         confirmLabel="Eliminar"
         variant="danger"
         onConfirm={confirmDeletePlanStop}
@@ -1062,7 +1062,7 @@ export function PlanDetailPage() {
       <ConfirmDialog
         open={deleteRouteId !== null}
         title="Eliminar ruta"
-        message="Las paradas asignadas a esta ruta quedaran sin asignar. El vehiculo y conductor se liberan."
+        message="Las paradas asignadas a esta ruta quedarán sin asignar. El vehículo y conductor se liberan."
         confirmLabel="Eliminar ruta"
         variant="danger"
         onConfirm={confirmDeleteRoute}
