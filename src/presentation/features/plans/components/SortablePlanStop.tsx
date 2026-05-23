@@ -105,39 +105,44 @@ export function SortablePlanStop({
           </div>
         )}
       </div>
-      <div className="flex items-center gap-1 shrink-0">
-        {planStop.tracking_token && (
+      <div className="flex items-center gap-1.5 shrink-0">
+        <StatusBadge status={planStop.status} />
+        <div className="flex items-center">
+          {planStop.tracking_token && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onCopyLink();
+              }}
+              className="p-1.5 rounded hover:bg-blue-50 text-gray-400 hover:text-blue-600 transition-colors"
+              title="Copiar link de seguimiento"
+              aria-label="Copiar link de seguimiento"
+            >
+              {copied ? <Check size={14} className="text-green-500" /> : <Link2 size={14} />}
+            </button>
+          )}
           <button
             onClick={(e) => {
               e.stopPropagation();
-              onCopyLink();
             }}
-            className="p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-blue-600 transition-colors"
-            title="Copiar link de seguimiento"
+            className="p-1.5 rounded hover:bg-amber-50 text-gray-400 hover:text-amber-600 transition-colors"
+            title="Reenviar notificación"
+            aria-label="Reenviar notificación"
           >
-            {copied ? <Check size={12} className="text-green-500" /> : <Link2 size={12} />}
+            <Send size={14} />
           </button>
-        )}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-          }}
-          className="p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-blue-600 transition-colors"
-          title="Reenviar notificacion"
-        >
-          <Send size={12} />
-        </button>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-          className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-600 transition-colors"
-          title="Eliminar del plan"
-        >
-          <Trash2 size={12} />
-        </button>
-        <StatusBadge status={planStop.status} />
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-600 transition-colors"
+            title="Eliminar del plan"
+            aria-label="Eliminar parada del plan"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
       </div>
     </div>
   );
