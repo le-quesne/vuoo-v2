@@ -411,7 +411,7 @@ export function PlanDetailPage() {
     return [
       ...routes.map((r, i) => ({
         routeId: r.id,
-        vehicleName: r.vehicle?.name ?? 'Sin vehiculo',
+        vehicleName: r.vehicle?.name ?? 'Sin vehículo',
         stops: toStops(r.planStops),
         color: ROUTE_COLORS[i % ROUTE_COLORS.length],
       })),
@@ -661,7 +661,7 @@ export function PlanDetailPage() {
                         ) : (
                           <div className="flex items-center gap-1 min-w-0 group">
                             <span className="font-medium text-sm truncate">
-                              {route.name ?? route.vehicle?.name ?? 'Sin vehiculo'}
+                              {route.name ?? route.vehicle?.name ?? 'Sin vehículo'}
                             </span>
                             <button
                               onClick={(e) => { e.stopPropagation(); startRenameRoute(route.id, route.name ?? '') }}
@@ -692,7 +692,7 @@ export function PlanDetailPage() {
                                   onClick={(e) => { e.stopPropagation(); setEditRouteId(route.id); setMenuRouteId(null) }}
                                   className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 text-left"
                                 >
-                                  <Pencil size={12} /> Editar vehiculo/conductor
+                                  <Pencil size={12} /> Editar vehículo/conductor
                                 </button>
                                 <button
                                   onClick={(e) => { e.stopPropagation(); setDeleteRouteId(route.id); setMenuRouteId(null) }}
@@ -724,13 +724,35 @@ export function PlanDetailPage() {
                       </div>
                       {capacity && (
                         <div className="mt-2">
-                          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full ${capacityBarColor} transition-all`}
-                              style={{ width: `${Math.min(capacity.percent, 100)}%` }}
-                            />
-                          </div>
-                          <div className="text-[10px] text-gray-400 mt-0.5">{capacity.label}</div>
+                          {capacity.percent > 100 ? (
+                            <>
+                              <div className="flex items-baseline justify-between gap-2">
+                                <span className="text-xs font-semibold text-red-600">
+                                  {capacity.percent}% — sobrecarga
+                                </span>
+                                <span className="text-[10px] text-gray-400 tabular-nums">{capacity.label.split(' (')[0]}</span>
+                              </div>
+                              <div className="h-1 bg-red-100 rounded-full overflow-hidden mt-1">
+                                <div className={`h-full ${capacityBarColor} transition-all`} style={{ width: '100%' }} />
+                              </div>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setShowAddVehicle(true) }}
+                                className="mt-1.5 text-[11px] text-blue-600 hover:text-blue-700 hover:underline"
+                              >
+                                Agregar vehículo →
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full ${capacityBarColor} transition-all`}
+                                  style={{ width: `${Math.min(capacity.percent, 100)}%` }}
+                                />
+                              </div>
+                              <div className="text-[10px] text-gray-400 mt-0.5 tabular-nums">{capacity.label}</div>
+                            </>
+                          )}
                         </div>
                       )}
                     </div>
@@ -745,7 +767,7 @@ export function PlanDetailPage() {
                     <RouteDropZone id={route.id}>
                       {route.planStops.length === 0 && (
                         <div className="text-[11px] text-gray-400 italic py-2 text-center border border-dashed border-gray-200 rounded">
-                          Arrastra paradas aqui
+                          Arrastra paradas aquí
                         </div>
                       )}
                       {route.planStops.map((ps, i) => (
@@ -783,7 +805,7 @@ export function PlanDetailPage() {
                 <RouteDropZone id={UNASSIGNED_ID}>
                   {unassignedStops.length === 0 ? (
                     <div className="text-[11px] text-gray-400 italic py-2 text-center border border-dashed border-gray-200 rounded">
-                      Arrastra paradas aqui para desasignar
+                      Arrastra paradas aquí para desasignar
                     </div>
                   ) : (
                     unassignedStops.map((ps) => (
@@ -809,7 +831,7 @@ export function PlanDetailPage() {
             {routes.length === 0 && unassignedStops.length === 0 && (
               <div className="text-center py-8 text-gray-400 text-sm">
                 <Truck size={32} className="mx-auto mb-2 opacity-40" />
-                <p>Agrega vehiculos y paradas</p>
+                <p>Agrega vehículos y paradas</p>
               </div>
             )}
 
@@ -838,41 +860,43 @@ export function PlanDetailPage() {
           {totalStops >= 2 && routes.length > 0 && (
             <button
               onClick={() => setShowVroomWizard(true)}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-              title="Optimiza todas las rutas del plan (multi-vehiculo, capacidad, time windows)"
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              title="Optimiza todas las rutas del plan (multi-vehículo, capacidad, time windows)"
             >
               Optimizar con Vuoo
             </button>
           )}
           <button
             onClick={() => setShowAddVehicle(true)}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors"
           >
             <Truck size={14} />
-            Agregar vehiculo
+            Agregar vehículo
           </button>
           <button
             onClick={() => setShowAddStop(true)}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors"
           >
             <Plus size={14} />
             Añadir parada
           </button>
-          <button
-            onClick={plan.status === 'published' ? handleUnpublish : () => setShowPublishConfirm(true)}
-            disabled={publishing}
-            className={`w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 ${
-              plan.status === 'published'
-                ? 'bg-amber-500 text-white hover:bg-amber-600'
-                : 'bg-green-600 text-white hover:bg-green-700'
-            }`}
-          >
-            {publishing
-              ? 'Procesando...'
-              : plan.status === 'published'
-                ? 'Despublicar plan'
-                : 'Publicar plan'}
-          </button>
+          {plan.status === 'published' ? (
+            <button
+              onClick={handleUnpublish}
+              disabled={publishing}
+              className="w-full px-4 py-2 text-xs font-medium text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {publishing ? 'Procesando…' : 'Despublicar plan'}
+            </button>
+          ) : (
+            <button
+              onClick={() => setShowPublishConfirm(true)}
+              disabled={publishing}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+            >
+              {publishing ? 'Procesando…' : 'Publicar plan'}
+            </button>
+          )}
           {publishError && (
             <p className="text-xs text-red-600">{publishError}</p>
           )}
@@ -1029,7 +1053,7 @@ export function PlanDetailPage() {
       <ConfirmDialog
         open={deletePlanStopId !== null}
         title="Eliminar parada del plan"
-        message="Esta parada se quitara del plan. La parada sigue existiendo en la libreria de stops."
+        message="Esta parada se quitará del plan. La parada sigue existiendo en la librería de stops."
         confirmLabel="Eliminar"
         variant="danger"
         onConfirm={confirmDeletePlanStop}
@@ -1038,7 +1062,7 @@ export function PlanDetailPage() {
       <ConfirmDialog
         open={deleteRouteId !== null}
         title="Eliminar ruta"
-        message="Las paradas asignadas a esta ruta quedaran sin asignar. El vehiculo y conductor se liberan."
+        message="Las paradas asignadas a esta ruta quedarán sin asignar. El vehículo y conductor se liberan."
         confirmLabel="Eliminar ruta"
         variant="danger"
         onConfirm={confirmDeleteRoute}

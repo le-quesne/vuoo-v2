@@ -74,19 +74,23 @@ export function SortablePlanStop({
         <div className="flex items-center gap-1.5">
           <div className="font-medium truncate">{planStop.stop.name}</div>
           {order_obj && (
-            <span className="font-mono text-[10px] text-blue-600 bg-blue-50 px-1 py-px rounded shrink-0">
+            <span className="font-mono text-[10px] text-gray-500 bg-gray-100 px-1 py-px rounded shrink-0">
               {order_obj.order_number}
             </span>
           )}
         </div>
         <div className="text-gray-400 truncate">{planStop.stop.address ?? ''}</div>
         {order_obj && (
-          <div className="text-[10px] text-gray-400 truncate">
+          <div className="text-[10px] text-gray-400 truncate tabular-nums">
             {(() => {
               const itemCount = order_obj.items?.length ?? 0;
               const parts: string[] = [];
               if (itemCount > 0) parts.push(`${itemCount} item${itemCount === 1 ? '' : 's'}`);
-              if (order_obj.total_weight_kg > 0) parts.push(`${order_obj.total_weight_kg} kg`);
+              if (order_obj.total_weight_kg > 0) {
+                const kg = order_obj.total_weight_kg;
+                const formatted = kg < 10 ? kg.toFixed(1) : Math.round(kg).toString();
+                parts.push(`${formatted} kg`);
+              }
               return parts.join(' · ');
             })()}
           </div>
@@ -105,39 +109,44 @@ export function SortablePlanStop({
           </div>
         )}
       </div>
-      <div className="flex items-center gap-1 shrink-0">
-        {planStop.tracking_token && (
+      <div className="flex items-center gap-1.5 shrink-0">
+        <StatusBadge status={planStop.status} />
+        <div className="flex items-center">
+          {planStop.tracking_token && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onCopyLink();
+              }}
+              className="p-1.5 rounded hover:bg-blue-50 text-gray-400 hover:text-blue-600 transition-colors"
+              title="Copiar link de seguimiento"
+              aria-label="Copiar link de seguimiento"
+            >
+              {copied ? <Check size={14} className="text-green-500" /> : <Link2 size={14} />}
+            </button>
+          )}
           <button
             onClick={(e) => {
               e.stopPropagation();
-              onCopyLink();
             }}
-            className="p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-blue-600 transition-colors"
-            title="Copiar link de seguimiento"
+            className="p-1.5 rounded hover:bg-amber-50 text-gray-400 hover:text-amber-600 transition-colors"
+            title="Reenviar notificación"
+            aria-label="Reenviar notificación"
           >
-            {copied ? <Check size={12} className="text-green-500" /> : <Link2 size={12} />}
+            <Send size={14} />
           </button>
-        )}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-          }}
-          className="p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-blue-600 transition-colors"
-          title="Reenviar notificacion"
-        >
-          <Send size={12} />
-        </button>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-          className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-600 transition-colors"
-          title="Eliminar del plan"
-        >
-          <Trash2 size={12} />
-        </button>
-        <StatusBadge status={planStop.status} />
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-600 transition-colors"
+            title="Eliminar del plan"
+            aria-label="Eliminar parada del plan"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
       </div>
     </div>
   );
