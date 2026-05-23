@@ -858,21 +858,23 @@ export function PlanDetailPage() {
             <Plus size={14} />
             Añadir parada
           </button>
-          <button
-            onClick={plan.status === 'published' ? handleUnpublish : () => setShowPublishConfirm(true)}
-            disabled={publishing}
-            className={`w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 ${
-              plan.status === 'published'
-                ? 'bg-amber-500 text-white hover:bg-amber-600'
-                : 'bg-green-600 text-white hover:bg-green-700'
-            }`}
-          >
-            {publishing
-              ? 'Procesando...'
-              : plan.status === 'published'
-                ? 'Despublicar plan'
-                : 'Publicar plan'}
-          </button>
+          {plan.status === 'published' ? (
+            <button
+              onClick={handleUnpublish}
+              disabled={publishing}
+              className="w-full px-4 py-2 text-xs font-medium text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {publishing ? 'Procesando…' : 'Despublicar plan'}
+            </button>
+          ) : (
+            <button
+              onClick={() => setShowPublishConfirm(true)}
+              disabled={publishing}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+            >
+              {publishing ? 'Procesando…' : 'Publicar plan'}
+            </button>
+          )}
           {publishError && (
             <p className="text-xs text-red-600">{publishError}</p>
           )}
