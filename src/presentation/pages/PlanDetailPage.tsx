@@ -860,7 +860,7 @@ export function PlanDetailPage() {
           {totalStops >= 2 && routes.length > 0 && (
             <button
               onClick={() => setShowVroomWizard(true)}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
               title="Optimiza todas las rutas del plan (multi-vehículo, capacidad, time windows)"
             >
               Optimizar con Vuoo
@@ -868,14 +868,14 @@ export function PlanDetailPage() {
           )}
           <button
             onClick={() => setShowAddVehicle(true)}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors"
           >
             <Truck size={14} />
             Agregar vehículo
           </button>
           <button
             onClick={() => setShowAddStop(true)}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors"
           >
             <Plus size={14} />
             Añadir parada
