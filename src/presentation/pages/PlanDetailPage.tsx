@@ -724,13 +724,35 @@ export function PlanDetailPage() {
                       </div>
                       {capacity && (
                         <div className="mt-2">
-                          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full ${capacityBarColor} transition-all`}
-                              style={{ width: `${Math.min(capacity.percent, 100)}%` }}
-                            />
-                          </div>
-                          <div className="text-[10px] text-gray-400 mt-0.5">{capacity.label}</div>
+                          {capacity.percent > 100 ? (
+                            <>
+                              <div className="flex items-baseline justify-between gap-2">
+                                <span className="text-xs font-semibold text-red-600">
+                                  {capacity.percent}% — sobrecarga
+                                </span>
+                                <span className="text-[10px] text-gray-400 tabular-nums">{capacity.label.split(' (')[0]}</span>
+                              </div>
+                              <div className="h-1 bg-red-100 rounded-full overflow-hidden mt-1">
+                                <div className={`h-full ${capacityBarColor} transition-all`} style={{ width: '100%' }} />
+                              </div>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setShowAddVehicle(true) }}
+                                className="mt-1.5 text-[11px] text-blue-600 hover:text-blue-700 hover:underline"
+                              >
+                                Agregar vehículo →
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full ${capacityBarColor} transition-all`}
+                                  style={{ width: `${Math.min(capacity.percent, 100)}%` }}
+                                />
+                              </div>
+                              <div className="text-[10px] text-gray-400 mt-0.5 tabular-nums">{capacity.label}</div>
+                            </>
+                          )}
                         </div>
                       )}
                     </div>
