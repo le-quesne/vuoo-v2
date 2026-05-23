@@ -1,44 +1,13 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { MapPin, Save, Loader2, Check, Trash2, Zap, Scale, Clock, Package, RotateCcw, ArrowRight } from 'lucide-react'
+import { MapPin, Save, Loader2, Check, Trash2, Zap, RotateCcw, ArrowRight } from 'lucide-react'
 import { supabase } from '@/application/lib/supabase'
 import { useAuth } from '@/application/hooks/useAuth'
 import { refreshMemberships } from '@/application/lib/auth'
 import { MAPBOX_TOKEN } from '@/application/lib/mapbox'
 import type { OptimizationMode } from '@/data/types/database'
+import { OPTIMIZATION_MODES } from '@/data/services/vroom'
 
 type Suggestion = { place_name: string; center: [number, number] }
-
-const OPTIMIZATION_MODES: Array<{
-  id: OptimizationMode
-  icon: typeof Zap
-  title: string
-  desc: string
-}> = [
-  {
-    id: 'efficiency',
-    icon: Zap,
-    title: 'Eficiencia',
-    desc: 'Mínima distancia y tiempo totales. Ideal para flota propia con costos fijos.',
-  },
-  {
-    id: 'balance_stops',
-    icon: Scale,
-    title: 'Balancear paradas',
-    desc: 'Reparte un número similar de paradas entre todos los vehículos. Ideal si se paga por entrega.',
-  },
-  {
-    id: 'balance_time',
-    icon: Clock,
-    title: 'Balancear tiempo',
-    desc: 'Distribuye el tiempo de conducción para que terminen a hora parecida.',
-  },
-  {
-    id: 'consolidate',
-    icon: Package,
-    title: 'Consolidar rutas',
-    desc: 'Usa el menor número posible de vehículos. Ideal si se paga por vuelta/ruta.',
-  },
-]
 
 export function OrganizationSettingsPage() {
   const { currentOrg } = useAuth()
@@ -329,6 +298,7 @@ export function OrganizationSettingsPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium text-gray-900">{m.title}</div>
+                      <div className="text-xs text-gray-700 mt-0.5 font-medium">{m.billingHint}</div>
                       <div className="text-xs text-gray-500 mt-0.5">{m.desc}</div>
                     </div>
                     {selected && <Check size={16} className="text-indigo-600 shrink-0 mt-1" />}
