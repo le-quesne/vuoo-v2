@@ -19,7 +19,12 @@ export type MatchQuality = 'high' | 'medium' | 'low' | 'none'
 export type GeocodingProvider = 'mapbox' | 'google' | 'manual'
 export type ImportTemplateSource = 'csv' | 'xlsx' | 'shopify' | 'vtex' | 'api' | 'whatsapp'
 
-export type OptimizationMode = 'efficiency' | 'balance_stops' | 'balance_time' | 'consolidate'
+export type OptimizationMode =
+  | 'efficiency'
+  | 'balance_stops'
+  | 'balance_time'
+  | 'consolidate'
+  | 'on_time'
 
 export interface Organization {
   id: string

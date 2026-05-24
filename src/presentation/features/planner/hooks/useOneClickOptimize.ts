@@ -40,7 +40,10 @@ interface OneClickOptimizeOptions {
  *  2. Obtiene ids de `orders` pendientes para esa fecha (sin plan_stop_id).
  *  3. Invoca RPC `assign_orders_to_plan` (merge server-side) — Fase C.
  *  4. Auto-selecciona vehículos cuyos `skills` cubren `UNION(required_skills)` de los stops.
- *  5. Llama a Vroom via Railway (`vroomService.optimize`) con `mode='balance_stops'` por default.
+ *  5. Llama a Vroom via Railway (`vroomService.optimize`) usando el `mode`
+ *     recibido en options (fallback a `'efficiency'`) y el flag `returnToDepot`.
+ *     Las páginas que invocan este hook (ej. OrdersPage) pasan el
+ *     `default_optimization_mode` de la organización.
  *  6. Devuelve `{ plan, preview }` para que la UI abra el wizard con preview pre-cargado.
  *
  * NUNCA auto-aplica: el operador confirma desde `VroomWizardModal`.

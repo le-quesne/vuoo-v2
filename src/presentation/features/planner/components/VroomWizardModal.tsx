@@ -2,9 +2,6 @@ import { useState } from 'react'
 import {
   X,
   Zap,
-  Scale,
-  Clock,
-  Package,
   RotateCcw,
   ArrowRight,
   Loader2,
@@ -14,45 +11,13 @@ import {
   Settings2,
 } from 'lucide-react'
 import { supabase } from '@/application/lib/supabase'
-import { optimize as optimizeVroom } from '@/data/services/vroom'
+import { optimize as optimizeVroom, OPTIMIZATION_MODES } from '@/data/services/vroom'
 import type { VroomMode, VroomResponse } from '@/data/services/vroom'
 
 export type { VroomResponse }
 
-const MODES: Array<{
-  id: VroomMode
-  icon: typeof Zap
-  title: string
-  desc: string
-}> = [
-  {
-    id: 'efficiency',
-    icon: Zap,
-    title: 'Eficiencia',
-    desc: 'Mínima distancia y tiempo totales. Puede dejar camiones vacíos.',
-  },
-  {
-    id: 'balance_stops',
-    icon: Scale,
-    title: 'Balancear paradas',
-    desc: 'Reparte un número similar de paradas entre todos los vehículos.',
-  },
-  {
-    id: 'balance_time',
-    icon: Clock,
-    title: 'Balancear tiempo',
-    desc: 'Distribuye el tiempo de conducción para que terminen a hora parecida.',
-  },
-  {
-    id: 'consolidate',
-    icon: Package,
-    title: 'Consolidar rutas',
-    desc: 'Usa el menor número posible de vehículos. Los sobrantes quedan libres.',
-  },
-]
-
 function modeLabel(mode: VroomMode) {
-  return MODES.find((m) => m.id === mode)?.title ?? mode
+  return OPTIMIZATION_MODES.find((m) => m.id === mode)?.title ?? mode
 }
 
 function formatDistance(meters: number | null) {
@@ -208,7 +173,7 @@ export function VroomWizardModal({
                     <div>
                       <div className="text-xs font-semibold text-gray-700 mb-2">Modo de optimización</div>
                       <div className="grid grid-cols-1 gap-2">
-                        {MODES.map((m) => {
+                        {OPTIMIZATION_MODES.map((m) => {
                           const Icon = m.icon
                           const selected = mode === m.id
                           return (
@@ -230,6 +195,7 @@ export function VroomWizardModal({
                               </div>
                               <div className="flex-1 min-w-0">
                                 <div className="text-sm font-medium text-gray-900">{m.title}</div>
+                                <div className="text-xs text-gray-700 mt-0.5 font-medium">{m.billingHint}</div>
                                 <div className="text-xs text-gray-500 mt-0.5">{m.desc}</div>
                               </div>
                               {selected && <Check size={14} className="text-indigo-600 shrink-0 mt-1" />}

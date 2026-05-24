@@ -15,7 +15,13 @@ function parseTimeToSeconds(value: string | null | undefined): number | null {
   return h * 3600 + min * 60 + s;
 }
 
-type VroomMode = 'efficiency' | 'balance_stops' | 'balance_time' | 'consolidate';
+type VroomMode = 'efficiency' | 'balance_stops' | 'balance_time' | 'consolidate' | 'on_time';
+
+interface VroomCosts {
+  fixed?: number;
+  per_hour?: number;
+  per_km?: number;
+}
 
 interface VroomVehicle {
   id: number;
@@ -25,6 +31,7 @@ interface VroomVehicle {
   time_window?: [number, number];
   max_tasks?: number;
   max_travel_time?: number;
+  costs?: VroomCosts;
 }
 
 interface VroomJob {
@@ -174,35 +181,44 @@ vroomRoutes.post('/optimize', async (c) => {
     vroomVehicles.push(vehicle);
   }
 
-  // Aplicar modos de balanceo después de resolver depots.
+  // Servicio total — útil para balance_time (Vroom solo cuenta viaje, no servicio).
+  const totalServiceSec = usableStops.reduce((acc, ps) => {
+    const stop = ps.stop as unknown as Record<string, unknown>;
+    const durationMin = (stop.duration_minutes as number | null) ?? 5;
+    return acc + Math.max(0, Math.round(durationMin * 60));
+  }, 0);
+  const avgServicePerVehicle = Math.ceil(totalServiceSec / Math.max(1, vroomVehicles.length));
+
+  // Aplicar configuración por modo. Cada modo cambia el comportamiento del solver:
+  //   - efficiency: costo fijo bajo permite abrir 2-3 vehículos si reduce
+  //     viaje agregado de forma significativa.
+  //   - consolidate: costo fijo alto + minimize_vehicles fuerza concentración.
+  //   - balance_stops: max_tasks reparte cantidad similar.
+  //   - balance_time: doble pasada (calcular target, luego cap por vehículo).
+  //   - on_time: fixed igual a efficiency + per_hour bajo. Penaliza vehículos
+  //     extras pero hace que el viaje cueste poco relativo al desempate por
+  //     respeto de ventanas horarias.
   if (vroomVehicles.length > 0 && usableStops.length > 0) {
-    if (mode === 'balance_stops') {
-      // Solo limitar max_tasks cuando hay más paradas que vehículos.
-      // Si hay más vehículos que paradas, Vroom asigna naturalmente y el cap
-      // de 1 task por vehículo desperdiciaría flotilla.
+    if (mode === 'efficiency') {
+      // 1200s = 20min de viaje. Abre vehículo extra solo si ahorra >=20min
+      // de viaje agregado. Con 3600 (1h) anterior, colapsaba a consolidate.
+      for (const v of vroomVehicles) v.costs = { fixed: 1200 };
+    } else if (mode === 'consolidate') {
+      for (const v of vroomVehicles) v.costs = { fixed: 18000 };
+    } else if (mode === 'balance_stops') {
       if (usableStops.length > vroomVehicles.length) {
         const maxTasks = Math.ceil(usableStops.length / vroomVehicles.length);
         for (const v of vroomVehicles) v.max_tasks = maxTasks;
       }
-    } else if (mode === 'balance_time') {
-      // Estimamos el tiempo de servicio promedio por vehículo para descontarlo
-      // de max_travel_time. Vroom solo controla tiempo de viaje (no de servicio),
-      // así que el cap debe ser: ventana_propia - servicio_estimado_por_vehículo.
-      const totalServiceSec = usableStops.reduce((acc, ps) => {
-        const stop = ps.stop as unknown as Record<string, unknown>;
-        const durationMin = (stop.duration_minutes as number | null) ?? 5;
-        return acc + Math.max(0, Math.round(durationMin * 60));
-      }, 0);
-      const avgServicePerVehicle = Math.ceil(totalServiceSec / vroomVehicles.length);
-
-      for (const v of vroomVehicles) {
-        // Usar la ventana del propio vehículo, no un promedio global.
-        const windowSec = v.time_window
-          ? v.time_window[1] - v.time_window[0]
-          : 8 * 3600;
-        v.max_travel_time = Math.max(0, windowSec - avgServicePerVehicle);
-      }
+    } else if (mode === 'on_time') {
+      // per_hour default = 3600 (1u/seg). Bajándolo a 360 hacemos que cumplir
+      // ventanas pese más que minimizar viaje. fixed=3600 evita que Vroom
+      // abra todos los vehículos disponibles "gratis". Las TW siguen siendo
+      // hard constraints; esto solo cambia el desempate.
+      for (const v of vroomVehicles) v.costs = { fixed: 3600, per_hour: 360 };
     }
+    // balance_time se maneja después con doble pasada — necesita resultados
+    // de una pasada base para calcular el cap correcto.
   }
 
   if (vroomVehicles.length === 0) {
@@ -238,7 +254,29 @@ vroomRoutes.post('/optimize', async (c) => {
     return job;
   });
 
-  // Llamar a Vroom.
+  // Llamar a Vroom (helper para reuso en doble pasada de balance_time).
+  async function callVroom(
+    payload: Record<string, unknown>,
+  ): Promise<
+    | { ok: true; data: Record<string, unknown> }
+    | { ok: false; status: number; body: string | Record<string, unknown> }
+  > {
+    const res = await fetch(VROOM_URL!.replace(/\/$/, '') + '/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      return { ok: false, status: res.status, body: text.slice(0, 500) };
+    }
+    const data = (await res.json()) as Record<string, unknown>;
+    if (data.code !== 0) {
+      return { ok: false, status: 422, body: data };
+    }
+    return { ok: true, data };
+  }
+
   const vroomPayload: Record<string, unknown> = {
     vehicles: vroomVehicles,
     jobs: vroomJobs,
@@ -247,27 +285,57 @@ vroomRoutes.post('/optimize', async (c) => {
     vroomPayload.options = { minimize_vehicles: true };
   }
 
-  const vroomRes = await fetch(VROOM_URL.replace(/\/$/, '') + '/', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(vroomPayload),
-  });
-
-  if (!vroomRes.ok) {
-    const text = await vroomRes.text();
+  const firstCall = await callVroom(vroomPayload);
+  if (!firstCall.ok) {
+    if (firstCall.status === 422) {
+      const body = firstCall.body as Record<string, unknown>;
+      return c.json(
+        { error: 'vroom_returned_error', code: body.code, details: body.error ?? null },
+        422,
+      );
+    }
     return c.json(
-      { error: 'vroom_request_failed', status: vroomRes.status, details: text.slice(0, 500) },
+      { error: 'vroom_request_failed', status: firstCall.status, details: firstCall.body as string },
       502,
     );
   }
 
-  const vroomData = (await vroomRes.json()) as Record<string, unknown>;
+  let vroomData = firstCall.data;
 
-  if (vroomData.code !== 0) {
-    return c.json(
-      { error: 'vroom_returned_error', code: vroomData.code, details: vroomData.error ?? null },
-      422,
-    );
+  // ── balance_time: doble pasada ──
+  // 1ra pasada (acabamos de hacerla) sin restricción → medimos viaje por ruta.
+  // Vroom devuelve `r.duration` como tiempo de VIAJE solamente (no incluye
+  // servicio). El objetivo del modo es balancear la JORNADA TOTAL del conductor
+  // (viaje + servicio). Por eso el target se calcula sobre tiempo total y
+  // después se descuenta el servicio promedio para que max_travel_time
+  // (que Vroom interpreta como travel-only) deje espacio al servicio.
+  if (mode === 'balance_time') {
+    const routes1 = (vroomData.routes as Array<Record<string, unknown>> | undefined) ?? [];
+    const travelDurations = routes1.map((r) => (r.duration as number) ?? 0);
+    if (travelDurations.length > 1) {
+      const totalTravel = travelDurations.reduce((a, b) => a + b, 0);
+      const avgTravel = totalTravel / travelDurations.length;
+      const maxTravelObs = Math.max(...travelDurations);
+      const skewRatio = avgTravel > 0 ? maxTravelObs / avgTravel : 1;
+
+      // Solo gastar una segunda llamada si vale la pena.
+      if (skewRatio > 1.1) {
+        // Tiempo total estimado por vehículo = (viaje + servicio) / N × 1.10.
+        // Después restamos servicio promedio para obtener el cap de viaje
+        // que entiende Vroom.
+        const totalTime = totalTravel + totalServiceSec;
+        const targetTotal = (totalTime / vroomVehicles.length) * 1.1;
+        const maxTravel = Math.max(60, Math.ceil(targetTotal - avgServicePerVehicle));
+        for (const v of vroomVehicles) v.max_travel_time = maxTravel;
+
+        const secondCall = await callVroom(vroomPayload);
+        if (secondCall.ok) {
+          vroomData = secondCall.data;
+        }
+        // Si la 2da falla (ej. unassigned), nos quedamos con la 1ra — mejor
+        // un plan desbalanceado que ninguno.
+      }
+    }
   }
 
   // Mapear respuesta de Vroom de vuelta a UUIDs.
