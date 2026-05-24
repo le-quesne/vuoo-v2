@@ -20,8 +20,6 @@ function makeRow(i: number): ImportRow {
   return {
     customer_name: `Cliente ${i}`,
     address: `Av. ${i}`,
-    customer_phone: null,
-    customer_email: null,
     lat: null,
     lng: null,
   };

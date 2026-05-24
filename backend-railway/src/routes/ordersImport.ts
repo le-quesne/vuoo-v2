@@ -92,6 +92,7 @@ ordersImportRoutes.post('/', async (c) => {
       let resolvedAddress = row.address ?? null;
       let resolvedLat = row.lat ?? null;
       let resolvedLng = row.lng ?? null;
+      let resolvedCustomerId: string | null = null;
       let pendingAddress = false;
 
       // ─────────────────────────────────────────────────────────────────
@@ -166,6 +167,7 @@ ordersImportRoutes.post('/', async (c) => {
           .maybeSingle();
 
         if (customer?.id) {
+          resolvedCustomerId = customer.id as string;
           // 2) Buscar stops del customer (pickeamos el más usado / más reciente)
           const { data: stops } = await db
             .from('stops')
@@ -211,11 +213,26 @@ ordersImportRoutes.post('/', async (c) => {
             warnings.push(
               `[${row.customer_code}] no se pudo crear cliente: ${cErr.message}; pedido pendiente sin vínculo.`,
             );
-          } else {
-            console.log('[orders/import] customer_created', { code: row.customer_code, id: newCustomer?.id });
+          } else if (newCustomer) {
+            resolvedCustomerId = (newCustomer as { id: string }).id;
+            console.log('[orders/import] customer_created', { code: row.customer_code, id: resolvedCustomerId });
           }
           pendingAddress = true;
           matchStats.none++;
+        }
+      }
+
+      // Para el caso A (matched por address), heredar el customer_id del stop
+      // si todavía no se resolvió. El JOIN del frontend depende de esta FK
+      // para hidratar email/phone desde el master.
+      if (!resolvedCustomerId && stopId) {
+        const { data: stopRow } = await db
+          .from('stops')
+          .select('customer_id')
+          .eq('id', stopId)
+          .maybeSingle();
+        if (stopRow?.customer_id) {
+          resolvedCustomerId = (stopRow as { customer_id: string }).customer_id;
         }
       }
 
@@ -244,9 +261,8 @@ ordersImportRoutes.post('/', async (c) => {
           org_id: orgId,
           order_number: orderNumber,
           customer_name: row.customer_name,
-          customer_phone: row.customer_phone ?? null,
-          customer_email: row.customer_email ?? null,
           customer_code: row.customer_code?.trim() || null,
+          customer_id: resolvedCustomerId,
           address: resolvedAddress,
           lat: resolvedLat,
           lng: resolvedLng,

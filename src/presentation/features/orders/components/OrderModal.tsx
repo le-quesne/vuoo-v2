@@ -138,6 +138,57 @@ async function upsertCustomerStop(args: {
   return { backfilledOrderCount: backfilled?.length ?? 0 }
 }
 
+/**
+ * Persiste email/teléfono al Customer master (single source of truth).
+ *
+ * - Si la orden ya está vinculada a un Customer (customer_id), actualiza el master.
+ * - Si no está vinculada pero el dispatcher proporcionó email o teléfono, crea
+ *   un Customer ad-hoc y devuelve su id para que el caller pueda vincular.
+ * - Si no hay nada que persistir, devuelve `currentId` sin cambios.
+ *
+ * Errores se propagan al caller (soft fail: el guardado de la orden NO depende
+ * de esto, pero el caller puede mostrar el detalle).
+ */
+async function syncCustomerContact(args: {
+  orgId: string
+  currentCustomerId: string | null
+  customerName: string
+  customerCode: string | null
+  email: string | null
+  phone: string | null
+}): Promise<{ customerId: string | null }> {
+  const { orgId, currentCustomerId, customerName, customerCode, email, phone } = args
+  const hasContact = !!email || !!phone
+
+  if (currentCustomerId) {
+    if (!hasContact) return { customerId: currentCustomerId }
+    const { error } = await supabase
+      .from('customers')
+      .update({ email, phone })
+      .eq('id', currentCustomerId)
+    if (error) throw new Error(error.message)
+    return { customerId: currentCustomerId }
+  }
+
+  if (!hasContact) return { customerId: null }
+
+  // Sin customer_id previo y con contacto a guardar → crear Customer ad-hoc.
+  const { data, error } = await supabase
+    .from('customers')
+    .insert({
+      org_id: orgId,
+      customer_code: customerCode,
+      name: customerName,
+      email,
+      phone,
+      is_active: true,
+    })
+    .select('id')
+    .single()
+  if (error || !data) throw new Error(error?.message ?? 'no se pudo crear cliente')
+  return { customerId: (data as { id: string }).id }
+}
+
 export function OrderModal({
   mode,
   order,
@@ -207,11 +258,11 @@ export function OrderModal({
     setSaving(true)
 
     const trimmedAddress = form.address.trim()
+    const trimmedEmail = form.customer_email.trim() || null
+    const trimmedPhone = form.customer_phone.trim() || null
     const payload = {
       org_id: currentOrg.id,
       customer_name: form.customer_name.trim(),
-      customer_phone: form.customer_phone.trim() || null,
-      customer_email: form.customer_email.trim() || null,
       address: trimmedAddress || null,
       lat: coords?.lat ?? order?.lat ?? null,
       lng: coords?.lng ?? order?.lng ?? null,
@@ -229,6 +280,28 @@ export function OrderModal({
       tags: form.tags,
     }
 
+    // Sincronizar contacto al Customer master ANTES del insert/update de orden.
+    // Si crea un Customer ad-hoc, el id queda vinculado al order.customer_id.
+    let resolvedCustomerId: string | null = order?.customer_id ?? null
+    try {
+      const { customerId } = await syncCustomerContact({
+        orgId: currentOrg.id,
+        currentCustomerId: resolvedCustomerId,
+        customerName: form.customer_name.trim(),
+        customerCode: order?.customer_code ?? null,
+        email: trimmedEmail,
+        phone: trimmedPhone,
+      })
+      resolvedCustomerId = customerId
+    } catch (e) {
+      setError(
+        'No se pudo guardar el contacto del cliente: ' +
+          (e instanceof Error ? e.message : 'error desconocido'),
+      )
+      setSaving(false)
+      return
+    }
+
     if (mode === 'create') {
       const { data: numData, error: numErr } = await supabase.rpc('generate_order_number', {
         p_org_id: currentOrg.id,
@@ -244,6 +317,7 @@ export function OrderModal({
         source: 'manual',
         status: 'pending',
         created_by: user?.id ?? null,
+        customer_id: resolvedCustomerId,
       })
       if (insErr) {
         setError(insErr.message)
@@ -251,7 +325,10 @@ export function OrderModal({
         return
       }
     } else if (order) {
-      const { error: updErr } = await supabase.from('orders').update(payload).eq('id', order.id)
+      const { error: updErr } = await supabase
+        .from('orders')
+        .update({ ...payload, customer_id: resolvedCustomerId })
+        .eq('id', order.id)
       if (updErr) {
         setError(updErr.message)
         setSaving(false)
