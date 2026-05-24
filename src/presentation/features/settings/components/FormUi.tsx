@@ -24,32 +24,41 @@ export function Toggle({
   icon,
   checked,
   onChange,
+  disabled = false,
+  badge,
 }: {
   label: string
   description: string
   icon?: React.ReactNode
   checked: boolean
   onChange: (v: boolean) => void
+  disabled?: boolean
+  badge?: React.ReactNode
 }) {
   return (
-    <div className="flex items-center gap-3">
+    <div className={`flex items-center gap-3 ${disabled ? 'opacity-60' : ''}`}>
       {icon && <div className="shrink-0">{icon}</div>}
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium">{label}</p>
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-medium">{label}</p>
+          {badge}
+        </div>
         <p className="text-xs text-gray-400">{description}</p>
       </div>
       <button
         type="button"
         role="switch"
         aria-checked={checked}
-        onClick={() => onChange(!checked)}
-        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ${
-          checked ? 'bg-blue-500' : 'bg-gray-200'
+        aria-disabled={disabled || undefined}
+        onClick={() => { if (!disabled) onChange(!checked) }}
+        disabled={disabled}
+        className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ${
+          disabled ? 'cursor-not-allowed bg-gray-200' : checked ? 'cursor-pointer bg-blue-500' : 'cursor-pointer bg-gray-200'
         }`}
       >
         <span
           className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm ring-0 transition-transform duration-200 ${
-            checked ? 'translate-x-5' : 'translate-x-0'
+            checked && !disabled ? 'translate-x-5' : 'translate-x-0'
           }`}
         />
       </button>
