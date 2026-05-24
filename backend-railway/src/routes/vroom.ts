@@ -193,8 +193,12 @@ vroomRoutes.post('/optimize', async (c) => {
   //   - efficiency: costo fijo bajo permite abrir 2-3 vehículos si reduce
   //     viaje agregado de forma significativa.
   //   - consolidate: costo fijo alto + minimize_vehicles fuerza concentración.
-  //   - balance_stops: max_tasks reparte cantidad similar.
-  //   - balance_time: doble pasada (calcular target, luego cap por vehículo).
+  //   - balance_stops: max_tasks reparte cantidad similar y fuerza uso de toda
+  //     la flota seleccionada cuando hay >= N stops.
+  //   - balance_time: igual que balance_stops para distribuir paradas + doble
+  //     pasada para igualar duración por vehículo. Decisión de producto:
+  //     el modo "viernes corto" implica que TODOS los conductores trabajen,
+  //     no que algunos terminen temprano dejando otros con jornada larga.
   //   - on_time: fixed igual a efficiency + per_hour bajo. Penaliza vehículos
   //     extras pero hace que el viaje cueste poco relativo al desempate por
   //     respeto de ventanas horarias.
@@ -205,7 +209,9 @@ vroomRoutes.post('/optimize', async (c) => {
       for (const v of vroomVehicles) v.costs = { fixed: 1200 };
     } else if (mode === 'consolidate') {
       for (const v of vroomVehicles) v.costs = { fixed: 18000 };
-    } else if (mode === 'balance_stops') {
+    } else if (mode === 'balance_stops' || mode === 'balance_time') {
+      // max_tasks=ceil(N/V) fuerza que Vroom use TODOS los vehículos cuando
+      // hay suficientes paradas (N >= V): con V-1 vehículos no caben.
       if (usableStops.length > vroomVehicles.length) {
         const maxTasks = Math.ceil(usableStops.length / vroomVehicles.length);
         for (const v of vroomVehicles) v.max_tasks = maxTasks;
@@ -217,8 +223,8 @@ vroomRoutes.post('/optimize', async (c) => {
       // hard constraints; esto solo cambia el desempate.
       for (const v of vroomVehicles) v.costs = { fixed: 3600, per_hour: 360 };
     }
-    // balance_time se maneja después con doble pasada — necesita resultados
-    // de una pasada base para calcular el cap correcto.
+    // balance_time además aplica max_travel_time en una 2da pasada — ver
+    // bloque más abajo después del primer callVroom.
   }
 
   if (vroomVehicles.length === 0) {

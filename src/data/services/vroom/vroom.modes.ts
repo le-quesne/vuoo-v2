@@ -42,7 +42,7 @@ export const OPTIMIZATION_MODES: OptimizationModeDef[] = [
     icon: Clock,
     title: 'Balancear tiempo',
     billingHint: 'Útil si quieres que los conductores terminen a una hora similar (ej. viernes corto).',
-    desc: 'Distribuye la jornada para que todos vuelvan al depot más o menos a la misma hora.',
+    desc: 'Usa todos los vehículos seleccionados y distribuye la jornada para que todos vuelvan al depot más o menos a la misma hora.',
   },
   {
     id: 'on_time',
