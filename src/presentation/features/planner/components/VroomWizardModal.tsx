@@ -123,7 +123,7 @@ export function VroomWizardModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-xl">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h2 className="text-base font-semibold text-gray-900">Optimizar con Vuoo</h2>
@@ -295,7 +295,7 @@ export function VroomWizardModal({
               )}
 
               <div className="text-xs text-gray-500">
-                Hasta que no apretés <strong>"Aplicar al plan"</strong>, no se modifica nada.
+                Hasta que no aprietes <strong>"Aplicar al plan"</strong>, no se modifica nada.
               </div>
             </div>
           )}
