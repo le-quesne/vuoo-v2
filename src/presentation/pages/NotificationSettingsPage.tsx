@@ -27,6 +27,7 @@ interface NotificationSettings {
   whatsapp_verified: boolean
 
   // Email
+  email_provider: 'platform' | 'custom'
   resend_api_key: string
   email_from_address: string
   email_from_name: string
@@ -58,6 +59,7 @@ const DEFAULT_SETTINGS: NotificationSettings = {
   whatsapp_phone_number_id: '',
   whatsapp_access_token: '',
   whatsapp_verified: false,
+  email_provider: 'platform',
   resend_api_key: '',
   email_from_address: '',
   email_from_name: '',
@@ -95,10 +97,8 @@ export function NotificationSettingsPage() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [showWhatsappToken, setShowWhatsappToken] = useState(false)
-  const [showResendKey, setShowResendKey] = useState(false)
   const [showTwilioToken, setShowTwilioToken] = useState(false)
   const [testingWhatsapp, setTestingWhatsapp] = useState(false)
-  const [testingEmail, setTestingEmail] = useState(false)
   const [testingSms, setTestingSms] = useState(false)
 
   useEffect(() => {
@@ -140,12 +140,6 @@ export function NotificationSettingsPage() {
     setSettings({ ...settings, whatsapp_verified: true })
   }
 
-  async function testEmail() {
-    setTestingEmail(true)
-    await new Promise((r) => setTimeout(r, 1500))
-    setTestingEmail(false)
-  }
-
   async function testSms() {
     setTestingSms(true)
     await new Promise((r) => setTimeout(r, 1500))
@@ -156,11 +150,12 @@ export function NotificationSettingsPage() {
     setSettings({ ...settings, [key]: value })
   }
 
-  // Determine visible sections based on channel toggles
+  // Determine visible sections based on channel toggles.
+  // WhatsApp y SMS están "Próximamente" — no exponemos su tab aún.
   const visibleSections = SECTIONS.filter((s) => {
-    if (s.id === 'whatsapp') return settings.whatsapp_enabled
+    if (s.id === 'whatsapp') return false
+    if (s.id === 'sms') return false
     if (s.id === 'email') return settings.email_enabled
-    if (s.id === 'sms') return settings.sms_enabled
     return true
   })
 
@@ -227,8 +222,10 @@ export function NotificationSettingsPage() {
                 label="WhatsApp"
                 description="Envía notificaciones por WhatsApp Business API"
                 icon={<MessageSquare size={18} className="text-green-600" />}
-                checked={settings.whatsapp_enabled}
-                onChange={(v) => update('whatsapp_enabled', v)}
+                checked={false}
+                onChange={() => { /* disabled */ }}
+                disabled
+                badge={<ComingSoonBadge />}
               />
               <Toggle
                 label="Email"
@@ -241,8 +238,10 @@ export function NotificationSettingsPage() {
                 label="SMS"
                 description="Envía notificaciones por mensaje de texto"
                 icon={<Phone size={18} className="text-purple-600" />}
-                checked={settings.sms_enabled}
-                onChange={(v) => update('sms_enabled', v)}
+                checked={false}
+                onChange={() => { /* disabled */ }}
+                disabled
+                badge={<ComingSoonBadge />}
               />
             </div>
           </SectionCard>
@@ -294,45 +293,43 @@ export function NotificationSettingsPage() {
 
         {activeSection === 'email' && settings.email_enabled && (
           <SectionCard
-            title="Configuración Email"
-            description="Configura Resend para enviar correos transaccionales a tus clientes."
+            title="Proveedor de email"
+            description="Elige desde dónde se envían los correos a tus clientes."
           >
-            <div className="space-y-3">
-              <PasswordField
-                label="Resend API Key"
-                value={settings.resend_api_key}
-                onChange={(v) => update('resend_api_key', v)}
-                show={showResendKey}
-                onToggle={() => setShowResendKey(!showResendKey)}
-                placeholder="re_..."
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {/* Vuoo (platform) — activo */}
+              <ProviderCard
+                title="Email Vuoo"
+                description="Habilitado con notificaciones@vuoo.cl"
+                active={settings.email_provider === 'platform'}
+                onSelect={() => update('email_provider', 'platform')}
+                icon={<Mail size={20} className="text-blue-600" />}
+                badgeText="Activo"
+                badgeTone="green"
               />
-              <Field
-                label="Email remitente"
-                value={settings.email_from_address}
-                onChange={(v) => update('email_from_address', v)}
-                placeholder="entregas@miempresa.cl"
+
+              {/* Custom — próximamente */}
+              <ProviderCard
+                title="Email propio"
+                description="Conecta tu dominio y API key de Resend."
+                active={false}
+                onSelect={() => { /* deshabilitado */ }}
+                icon={<Mail size={20} className="text-gray-400" />}
+                badgeText="Próximamente"
+                badgeTone="gray"
+                disabled
               />
-              <Field
-                label="Nombre remitente"
-                value={settings.email_from_name}
-                onChange={(v) => update('email_from_name', v)}
-                placeholder="Mi Empresa Entregas"
-              />
-              <div className="pt-2">
-                <button
-                  onClick={testEmail}
-                  disabled={testingEmail || !settings.resend_api_key || !settings.email_from_address}
-                  className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {testingEmail ? (
-                    <Loader2 size={14} className="animate-spin" />
-                  ) : (
-                    <Send size={14} />
-                  )}
-                  Enviar prueba
-                </button>
-              </div>
             </div>
+
+            {settings.email_provider === 'platform' && (
+              <p className="text-xs text-gray-500 mt-4">
+                Tus clientes recibirán el correo desde{' '}
+                <span className="font-medium text-gray-700">notificaciones@vuoo.cl</span>{' '}
+                con el nombre de tu organización como remitente. Cuando habilitemos el
+                modo "Email propio" vas a poder configurar tu dominio y tu API key de
+                Resend para enviar desde tu propia dirección.
+              </p>
+            )}
           </SectionCard>
         )}
 
@@ -506,4 +503,67 @@ export function NotificationSettingsPage() {
 }
 
 /* ── Sub-components ─────────────────────────────── */
+
+function ComingSoonBadge() {
+  return (
+    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wide bg-amber-50 text-amber-700 border border-amber-200">
+      Próximamente
+    </span>
+  )
+}
+
+function ProviderCard({
+  title,
+  description,
+  active,
+  onSelect,
+  icon,
+  badgeText,
+  badgeTone,
+  disabled = false,
+}: {
+  title: string
+  description: string
+  active: boolean
+  onSelect: () => void
+  icon: React.ReactNode
+  badgeText: string
+  badgeTone: 'green' | 'gray'
+  disabled?: boolean
+}) {
+  const badgeClasses =
+    badgeTone === 'green'
+      ? 'bg-green-50 text-green-700 border-green-200'
+      : 'bg-amber-50 text-amber-700 border-amber-200'
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      disabled={disabled}
+      aria-pressed={active}
+      className={[
+        'text-left p-4 rounded-xl border transition-colors',
+        disabled
+          ? 'opacity-60 cursor-not-allowed bg-gray-50 border-gray-200'
+          : active
+            ? 'border-blue-500 bg-blue-50/40 cursor-pointer'
+            : 'border-gray-200 hover:border-gray-300 cursor-pointer',
+      ].join(' ')}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="shrink-0 rounded-lg bg-white border border-gray-200 p-2">{icon}</div>
+        <span
+          className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wide border ${badgeClasses}`}
+        >
+          {badgeText}
+        </span>
+      </div>
+      <div className="mt-3">
+        <p className="text-sm font-semibold text-gray-900">{title}</p>
+        <p className="text-xs text-gray-500 mt-0.5">{description}</p>
+      </div>
+    </button>
+  )
+}
 
