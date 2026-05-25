@@ -1,4 +1,5 @@
 import type { Order, OrderItem, OrderPriority } from '@/data/types/database';
+import { todayLocalISO } from '@/application/utils/dateHelpers';
 
 export interface OrderFormState {
   customer_name: string;
@@ -29,7 +30,7 @@ export function emptyForm(): OrderFormState {
     service_duration_minutes: 15,
     time_window_start: '',
     time_window_end: '',
-    requested_date: new Date().toISOString().slice(0, 10),
+    requested_date: todayLocalISO(),
     priority: 'normal',
     requires_signature: false,
     requires_photo: true,

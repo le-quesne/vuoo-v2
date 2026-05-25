@@ -55,6 +55,7 @@ import type { Plan, Route, Stop, Vehicle, Driver, PlanStopWithStop, Notification
 import { plansService } from '@/data/services/plans'
 import { notifyDriversOnPublish, notifyDriversOnUnpublish } from '@/data/services/notifyDriver.services'
 import { userMessage } from '@/application/utils/errorMessages'
+import { parseLocalDateISO } from '@/application/utils/dateHelpers'
 
 const UNASSIGNED_ID = 'unassigned'
 
@@ -515,7 +516,7 @@ export function PlanDetailPage() {
             Volver
           </button>
           <div className="text-xs text-gray-400">
-            {plan.date ? format(new Date(plan.date), 'dd/MM/yyyy') : ''}
+            {plan.date ? format(parseLocalDateISO(plan.date), 'dd/MM/yyyy') : ''}
           </div>
           {renamingPlan ? (
             <input
@@ -866,20 +867,22 @@ export function PlanDetailPage() {
               Optimizar con Vuoo
             </button>
           )}
-          <button
-            onClick={() => setShowAddVehicle(true)}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors"
-          >
-            <Truck size={14} />
-            Agregar vehículo
-          </button>
-          <button
-            onClick={() => setShowAddStop(true)}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors"
-          >
-            <Plus size={14} />
-            Añadir parada
-          </button>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => setShowAddVehicle(true)}
+              className="flex items-center justify-center gap-2 px-4 py-2 text-sm text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors"
+            >
+              <Truck size={14} />
+              Agregar vehículo
+            </button>
+            <button
+              onClick={() => setShowAddStop(true)}
+              className="flex items-center justify-center gap-2 px-4 py-2 text-sm text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors"
+            >
+              <Plus size={14} />
+              Añadir parada
+            </button>
+          </div>
           {plan.status === 'published' ? (
             <button
               onClick={handleUnpublish}

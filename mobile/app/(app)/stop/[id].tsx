@@ -18,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { enqueueOperation } from '@/lib/offline'
+import { dateToLocalISO } from '@/lib/dateHelpers'
 import {
   loadPodDraft,
   savePodDraft,
@@ -379,7 +380,7 @@ export default function StopExecutionScreen() {
     const existingImages = planStop.report_images ?? []
     const updateFields: Record<string, unknown> = {
       status: 'completed',
-      execution_date: now.toISOString().slice(0, 10),
+      execution_date: dateToLocalISO(now),
       report_time: now.toISOString(),
       report_comments: comments || null,
       report_images: [...existingImages, photoPath],
@@ -463,7 +464,7 @@ export default function StopExecutionScreen() {
     const existingImages = planStop.report_images ?? []
     const updateFields: Record<string, unknown> = {
       status: 'incomplete',
-      execution_date: now.toISOString().slice(0, 10),
+      execution_date: dateToLocalISO(now),
       report_time: now.toISOString(),
       report_comments: comments || null,
       report_images: photoPath

@@ -7,6 +7,7 @@ import type { Order, Plan } from '@/data/types/database';
 import { formatOrderDate as formatDate } from '../utils';
 import { Field } from './FormUi';
 import { assignToPlan, unassignFromPlan } from '@/data/services/orders/orders.services';
+import { todayLocalISO } from '@/application/utils/dateHelpers';
 
 type ConflictInfo = {
   orderId: string;
@@ -30,7 +31,7 @@ export function ScheduleOrdersModal({
   const [mode, setMode] = useState<'existing' | 'new'>('existing')
   const [planId, setPlanId] = useState<string>('')
   const [newPlanName, setNewPlanName] = useState('')
-  const [newPlanDate, setNewPlanDate] = useState(new Date().toISOString().slice(0, 10))
+  const [newPlanDate, setNewPlanDate] = useState(todayLocalISO())
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [conflicts, setConflicts] = useState<ConflictInfo[] | null>(null)
@@ -38,7 +39,7 @@ export function ScheduleOrdersModal({
 
   useEffect(() => {
     if (!currentOrg) return
-    const today = new Date().toISOString().slice(0, 10)
+    const today = todayLocalISO()
     supabase
       .from('plans')
       .select('*')
@@ -285,7 +286,7 @@ export function ScheduleOrdersModal({
           <button
             onClick={handleSchedule}
             disabled={saving || (conflicts !== null && conflicts.length > 0 && !moveFromOtherPlans)}
-            className="flex-1 px-4 py-2 bg-emerald-500 text-white rounded-lg text-sm font-medium hover:bg-emerald-600 disabled:opacity-50"
+            className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 disabled:opacity-50"
           >
             {saving
               ? 'Programando...'

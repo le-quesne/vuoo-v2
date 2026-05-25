@@ -17,6 +17,7 @@ import { SyncStatusBar } from '@/components/SyncStatusBar'
 import { router } from 'expo-router'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { todayLocalISO } from '@/lib/dateHelpers'
 import type { Route, Plan, Vehicle, StopStatus } from '@/types/database'
 import { colors, spacing, radius, shadow } from '@/theme'
 
@@ -26,14 +27,6 @@ interface RouteCard extends Route {
   stops_total: number
   stops_completed: number
   stops_statuses: StopStatus[]
-}
-
-function todayIso(): string {
-  const d = new Date()
-  const yyyy = d.getFullYear()
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  return `${yyyy}-${mm}-${dd}`
 }
 
 const DAYS_ES = [
@@ -79,7 +72,7 @@ export default function HomeScreen() {
 
   const loadRoutes = useCallback(async () => {
     if (!driver) return
-    const today = todayIso()
+    const today = todayLocalISO()
 
     const { data: routesData, error: routesError } = await supabase
       .from('routes')
@@ -191,6 +184,28 @@ export default function HomeScreen() {
     )
   }
 
+  // Usuario logueado pero sin registro en la tabla `drivers` para su user_id.
+  // Sin esto, el chofer ve "Sin rutas" eternamente sin saber por qué — el
+  // dispatcher tiene que invitarlo desde la web (Settings → Choferes).
+  if (!driver) {
+    return (
+      <View style={styles.safe}>
+        <View style={styles.greetingBanner}>
+          <Text style={styles.greetingHello}>Hola</Text>
+          <Text style={styles.greetingDate}>{todayLabel}</Text>
+        </View>
+        <View style={styles.empty}>
+          <Text style={styles.emptyTitle}>Tu cuenta no está vinculada</Text>
+          <Text style={styles.emptyText}>
+            Pídele al dispatcher de tu organización que te invite como chofer
+            desde Ajustes → Choferes en la web. Una vez vinculado, aparecerán
+            aquí tus rutas asignadas.
+          </Text>
+        </View>
+      </View>
+    )
+  }
+
   const routesCountLabel =
     routes.length === 0
       ? 'No tienes rutas asignadas para hoy'
@@ -224,6 +239,17 @@ export default function HomeScreen() {
             <Text style={styles.emptyTitle}>Sin rutas</Text>
             <Text style={styles.emptyText}>
               Si esperabas rutas para hoy, desliza hacia abajo para refrescar.
+            </Text>
+            <Text style={styles.emptyDiagnostic}>
+              Vinculado como{' '}
+              <Text style={styles.emptyDiagnosticStrong}>
+                {driver.first_name} {driver.last_name}
+              </Text>{' '}
+              · buscando rutas publicadas con fecha {todayLocalISO()}.
+            </Text>
+            <Text style={styles.emptyDiagnosticHint}>
+              Si el dispatcher te asignó una ruta y no la ves, verifica que el
+              plan esté publicado y que tu chofer esté asignado a esa ruta.
             </Text>
           </View>
         }
@@ -393,6 +419,24 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   emptyText: { color: colors.textMuted, textAlign: 'center', fontSize: 13 },
+  emptyDiagnostic: {
+    marginTop: spacing.lg,
+    color: colors.textMuted,
+    textAlign: 'center',
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  emptyDiagnosticStrong: {
+    color: colors.text,
+    fontWeight: '600',
+  },
+  emptyDiagnosticHint: {
+    marginTop: spacing.sm,
+    color: colors.textLight,
+    textAlign: 'center',
+    fontSize: 11,
+    fontStyle: 'italic',
+  },
   card: {
     backgroundColor: colors.card,
     borderRadius: radius.lg,

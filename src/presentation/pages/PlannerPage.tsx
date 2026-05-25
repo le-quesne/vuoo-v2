@@ -17,6 +17,7 @@ import { es } from 'date-fns/locale'
 import { ChevronLeft, ChevronRight, Plus, Search, Truck, MapPin } from 'lucide-react'
 import { supabase } from '@/application/lib/supabase'
 import { useAuth } from '@/application/hooks/useAuth'
+import { parseLocalDateISO } from '@/application/utils/dateHelpers'
 import type { Plan } from '@/data/types/database'
 
 interface PlanWithCounts extends Plan {
@@ -73,7 +74,7 @@ export function PlannerPage() {
   }
 
   function getPlansForDate(date: Date) {
-    return plans.filter((p) => isSameDay(new Date(p.date), date))
+    return plans.filter((p) => isSameDay(parseLocalDateISO(p.date), date))
   }
 
   const filteredPlans = searchQuery
