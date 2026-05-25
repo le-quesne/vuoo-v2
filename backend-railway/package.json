@@ -14,7 +14,7 @@
     "demo:reset": "tsx scripts/demo-reset.ts"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "dependencies": {
     "@hono/node-server": "^1.14.0",
