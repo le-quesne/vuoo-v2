@@ -26,6 +26,7 @@ Registro de **agujeros conocidos** en el código: bugs no resueltos, atajos prag
 | ID | Título | Área | Severidad | Estado | Creado |
 |----|--------|------|-----------|--------|--------|
 | [0001](./0001-stops-customer-denorm.md) | `stops.customer_email/phone` duplican datos del Customer master | stops | medium | open | 2026-05-22 |
+| [0002](./0002-import-preview-no-match.md) | Preview del Import Wizard nunca muestra matches contra customers / stops | orders | medium | open | 2026-05-24 |
 
 ## Resueltos
 
