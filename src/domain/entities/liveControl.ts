@@ -29,6 +29,8 @@ export interface LiveRoute {
   route_status: RouteStatus;
   total_distance_km: number | null;
   total_duration_minutes: number | null;
+  /** Polilínea optimizada como array [[lng, lat], ...]. Null en rutas antiguas. */
+  geometry: [number, number][] | null;
   plan_id: string;
   plan_name: string;
   plan_date: string;

@@ -8,6 +8,9 @@ export function calculateRouteWeight(
   let hasAny = false
 
   for (const ps of planStops) {
+    // Paradas completadas/canceladas ya no van en el camión: no consumen capacidad.
+    if (ps.status === 'completed' || ps.status === 'cancelled') continue
+
     const order = ordersByPlanStop.get(ps.id)
     if (order && order.total_weight_kg > 0) {
       total += order.total_weight_kg

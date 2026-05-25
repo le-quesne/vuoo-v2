@@ -98,12 +98,44 @@ export function VroomWizardModal({
     if (!result) return
     setStep('applying')
     try {
+      // Las completadas/canceladas viven fuera del optimizador pero conservan
+      // su order_index actual. Si renumeramos las pendientes desde 0, colisionan
+      // con las completadas y la UI las intercala. Por eso recolectamos los
+      // order_index "ocupados" por completadas en cada ruta destino y los
+      // saltamos al renumerar las pendientes.
+      const routeIds = Array.from(
+        new Set(result.routes.map((r) => r.route_id).filter((id): id is string => !!id)),
+      )
+
+      const occupiedByRoute = new Map<string, Set<number>>()
+      if (routeIds.length > 0) {
+        const { data: locked, error: lockedErr } = await supabase
+          .from('plan_stops')
+          .select('route_id, order_index, status')
+          .in('route_id', routeIds)
+          .in('status', ['completed', 'cancelled'])
+
+        if (lockedErr) throw new Error(lockedErr.message)
+
+        for (const row of locked ?? []) {
+          const rid = row.route_id as string | null
+          const idx = row.order_index as number | null
+          if (!rid || idx == null) continue
+          if (!occupiedByRoute.has(rid)) occupiedByRoute.set(rid, new Set())
+          occupiedByRoute.get(rid)!.add(idx)
+        }
+      }
+
       for (const r of result.routes) {
-        for (let i = 0; i < r.ordered_plan_stop_ids.length; i++) {
+        const occupied = (r.route_id && occupiedByRoute.get(r.route_id)) || new Set<number>()
+        let cursor = 0
+        for (const planStopId of r.ordered_plan_stop_ids) {
+          while (occupied.has(cursor)) cursor++
           await supabase
             .from('plan_stops')
-            .update({ route_id: r.route_id, vehicle_id: r.vehicle_id, order_index: i })
-            .eq('id', r.ordered_plan_stop_ids[i])
+            .update({ route_id: r.route_id, vehicle_id: r.vehicle_id, order_index: cursor })
+            .eq('id', planStopId)
+          cursor++
         }
         await supabase
           .from('routes')
@@ -111,6 +143,7 @@ export function VroomWizardModal({
             total_duration_minutes: Math.round((r.total_duration ?? 0) / 60),
             total_distance_km:
               r.total_distance != null ? Math.round(r.total_distance / 100) / 10 : null,
+            geometry: r.geometry ?? null,
           })
           .eq('id', r.route_id)
       }
@@ -137,7 +170,7 @@ export function VroomWizardModal({
           {step === 'config' && (
             <div className="space-y-4">
               {/* Summary card */}
-              <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-4 space-y-1.5 text-sm text-gray-800">
+              <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 space-y-1.5 text-sm text-gray-800">
                 <p>
                   Asignando <strong>{numStops} paradas</strong> a{' '}
                   <strong>{numVehicles} vehículo{numVehicles === 1 ? '' : 's'}</strong>
@@ -182,13 +215,13 @@ export function VroomWizardModal({
                               onClick={() => setMode(m.id)}
                               className={`flex items-start gap-3 text-left p-3 rounded-lg border transition-colors ${
                                 selected
-                                  ? 'border-indigo-500 bg-white'
+                                  ? 'border-blue-500 bg-white'
                                   : 'border-gray-200 bg-white hover:border-gray-300'
                               }`}
                             >
                               <div
                                 className={`shrink-0 w-7 h-7 rounded-md flex items-center justify-center ${
-                                  selected ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-500'
+                                  selected ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500'
                                 }`}
                               >
                                 <Icon size={14} />
@@ -198,7 +231,7 @@ export function VroomWizardModal({
                                 <div className="text-xs text-gray-700 mt-0.5 font-medium">{m.billingHint}</div>
                                 <div className="text-xs text-gray-500 mt-0.5">{m.desc}</div>
                               </div>
-                              {selected && <Check size={14} className="text-indigo-600 shrink-0 mt-1" />}
+                              {selected && <Check size={14} className="text-blue-600 shrink-0 mt-1" />}
                             </button>
                           )
                         })}
@@ -212,34 +245,34 @@ export function VroomWizardModal({
                         <button
                           onClick={() => setReturnToDepot(true)}
                           className={`flex items-center gap-3 text-left p-3 rounded-lg border bg-white transition-colors ${
-                            returnToDepot ? 'border-indigo-500' : 'border-gray-200 hover:border-gray-300'
+                            returnToDepot ? 'border-blue-500' : 'border-gray-200 hover:border-gray-300'
                           }`}
                         >
                           <RotateCcw
                             size={15}
-                            className={returnToDepot ? 'text-indigo-600' : 'text-gray-400'}
+                            className={returnToDepot ? 'text-blue-600' : 'text-gray-400'}
                           />
                           <div className="flex-1">
                             <div className="text-sm font-medium text-gray-900">Salir y volver al depot</div>
                             <div className="text-xs text-gray-500">Cada vehículo termina donde empezó</div>
                           </div>
-                          {returnToDepot && <Check size={14} className="text-indigo-600" />}
+                          {returnToDepot && <Check size={14} className="text-blue-600" />}
                         </button>
                         <button
                           onClick={() => setReturnToDepot(false)}
                           className={`flex items-center gap-3 text-left p-3 rounded-lg border bg-white transition-colors ${
-                            !returnToDepot ? 'border-indigo-500' : 'border-gray-200 hover:border-gray-300'
+                            !returnToDepot ? 'border-blue-500' : 'border-gray-200 hover:border-gray-300'
                           }`}
                         >
                           <ArrowRight
                             size={15}
-                            className={!returnToDepot ? 'text-indigo-600' : 'text-gray-400'}
+                            className={!returnToDepot ? 'text-blue-600' : 'text-gray-400'}
                           />
                           <div className="flex-1">
                             <div className="text-sm font-medium text-gray-900">Terminar en última parada</div>
                             <div className="text-xs text-gray-500">No suma el tramo de vuelta al depot</div>
                           </div>
-                          {!returnToDepot && <Check size={14} className="text-indigo-600" />}
+                          {!returnToDepot && <Check size={14} className="text-blue-600" />}
                         </button>
                       </div>
                     </div>
@@ -258,7 +291,7 @@ export function VroomWizardModal({
 
           {step === 'running' && (
             <div className="flex flex-col items-center justify-center py-12 gap-3">
-              <Loader2 size={32} className="animate-spin text-indigo-600" />
+              <Loader2 size={32} className="animate-spin text-blue-600" />
               <div className="text-sm text-gray-600">Vuoo está calculando...</div>
             </div>
           )}
@@ -302,7 +335,7 @@ export function VroomWizardModal({
 
           {step === 'applying' && (
             <div className="flex flex-col items-center justify-center py-12 gap-3">
-              <Loader2 size={32} className="animate-spin text-indigo-600" />
+              <Loader2 size={32} className="animate-spin text-blue-600" />
               <div className="text-sm text-gray-600">Aplicando cambios al plan...</div>
             </div>
           )}
@@ -320,7 +353,7 @@ export function VroomWizardModal({
               </button>
               <button
                 onClick={handleOptimize}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-blue-500 text-white rounded-lg hover:bg-blue-600"
               >
                 <Zap size={14} /> Optimizar
               </button>

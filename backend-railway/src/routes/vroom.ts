@@ -15,6 +15,38 @@ function parseTimeToSeconds(value: string | null | undefined): number | null {
   return h * 3600 + min * 60 + s;
 }
 
+// Decodifica un polyline5 (precisión 1e-5, formato Google/Mapbox) a [lng, lat][].
+// Vroom devuelve la geometría en este formato cuando se pasa `options.g = true`.
+// Lo decodificamos en el backend para que el frontend reciba GeoJSON-ready
+// coords y las guarde directo en `routes.geometry` sin más procesamiento.
+function decodePolyline5(str: string): [number, number][] {
+  const coords: [number, number][] = [];
+  let lat = 0;
+  let lng = 0;
+  let i = 0;
+  while (i < str.length) {
+    let result = 0;
+    let shift = 0;
+    let byte: number;
+    do {
+      byte = str.charCodeAt(i++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+    lat += (result & 1) !== 0 ? ~(result >> 1) : result >> 1;
+    result = 0;
+    shift = 0;
+    do {
+      byte = str.charCodeAt(i++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+    lng += (result & 1) !== 0 ? ~(result >> 1) : result >> 1;
+    coords.push([lng / 1e5, lat / 1e5]);
+  }
+  return coords;
+}
+
 type VroomMode = 'efficiency' | 'balance_stops' | 'balance_time' | 'consolidate' | 'on_time';
 
 interface VroomCosts {
@@ -94,6 +126,31 @@ vroomRoutes.post('/optimize', async (c) => {
 
   if (psErr) {
     return c.json({ error: 'failed_to_load_plan_stops', details: psErr.message }, 500);
+  }
+
+  // 1b. Fetch órdenes asociadas a esos plan_stops y agregarlas por plan_stop_id.
+  // El peso REAL de la entrega vive en `orders.total_weight_kg`; `stops.weight_kg`
+  // es solo un default histórico de la dirección. Si no usamos las órdenes, Vroom
+  // ve capacity = 0 en cada job y mete todo en un vehículo (síntoma: planes con
+  // 2+ vehículos quedan cargados en uno solo aunque haya sobrecarga obvia).
+  const planStopIds = (planStops ?? []).map((ps) => ps.id as string);
+  const orderWeightByPlanStop = new Map<string, number>();
+  if (planStopIds.length > 0) {
+    const { data: orders, error: oErr } = await supabase
+      .from('orders')
+      .select('plan_stop_id, total_weight_kg')
+      .in('plan_stop_id', planStopIds);
+
+    if (oErr) {
+      return c.json({ error: 'failed_to_load_orders', details: oErr.message }, 500);
+    }
+
+    for (const row of orders ?? []) {
+      const psid = row.plan_stop_id as string | null;
+      const kg = row.total_weight_kg as number | null;
+      if (!psid || kg == null || kg <= 0) continue;
+      orderWeightByPlanStop.set(psid, (orderWeightByPlanStop.get(psid) ?? 0) + kg);
+    }
   }
 
   // 2. Fetch plan's org default depot (fallback).
@@ -189,42 +246,55 @@ vroomRoutes.post('/optimize', async (c) => {
   }, 0);
   const avgServicePerVehicle = Math.ceil(totalServiceSec / Math.max(1, vroomVehicles.length));
 
-  // Aplicar configuración por modo. Cada modo cambia el comportamiento del solver:
-  //   - efficiency: costo fijo bajo permite abrir 2-3 vehículos si reduce
-  //     viaje agregado de forma significativa.
-  //   - consolidate: costo fijo alto + minimize_vehicles fuerza concentración.
-  //   - balance_stops: max_tasks reparte cantidad similar y fuerza uso de toda
-  //     la flota seleccionada cuando hay >= N stops.
-  //   - balance_time: igual que balance_stops para distribuir paradas + doble
-  //     pasada para igualar duración por vehículo. Decisión de producto:
-  //     el modo "viernes corto" implica que TODOS los conductores trabajen,
-  //     no que algunos terminen temprano dejando otros con jornada larga.
-  //   - on_time: fixed igual a efficiency + per_hour bajo. Penaliza vehículos
-  //     extras pero hace que el viaje cueste poco relativo al desempate por
-  //     respeto de ventanas horarias.
+  // Aplicar configuración por modo. Cada modo cambia el comportamiento del solver
+  // para cumplir con la descripción que ve el usuario en la UI:
+  //
+  //   - efficiency  → "Minimiza el costo total: menos kilómetros y menos horas."
+  //   - consolidate → "Usa la menor cantidad posible de vehículos."
+  //   - balance_stops → "Reparte una cantidad similar de paradas entre todos
+  //                      los vehículos disponibles."
+  //   - balance_time  → "Usa todos los vehículos y distribuye la jornada para
+  //                      que todos vuelvan al depot a una hora similar."
+  //   - on_time     → "Prioriza llegar dentro de la ventana horaria por sobre
+  //                    el costo total."
+  //
+  // Notas sobre Vroom:
+  //   - Defaults: vehicle.costs = { fixed: 0, per_hour: 3600 }  →  costo = duración (s).
+  //   - Time windows son HARD constraints: Vroom no las viola, las jobs no factibles
+  //     se vuelven `unassigned`. Para "on_time" lo que ajustamos es la PROPENSIÓN
+  //     a abrir vehículos extras / aceptar detours para asignar más jobs.
+  //   - `minimize_vehicles: true` cambia el objetivo: primero minimiza V, luego costo.
   if (vroomVehicles.length > 0 && usableStops.length > 0) {
     if (mode === 'efficiency') {
-      // 1200s = 20min de viaje. Abre vehículo extra solo si ahorra >=20min
-      // de viaje agregado. Con 3600 (1h) anterior, colapsaba a consolidate.
+      // fixed=1200 (20min) → solo abre un vehículo extra si ahorra ≥20min de
+      // viaje agregado. Default per_hour ya minimiza tiempo total.
       for (const v of vroomVehicles) v.costs = { fixed: 1200 };
     } else if (mode === 'consolidate') {
+      // fixed alto + minimize_vehicles fuerza concentración real. La flag
+      // se aplica más abajo en `vroomPayload.options`.
       for (const v of vroomVehicles) v.costs = { fixed: 18000 };
     } else if (mode === 'balance_stops' || mode === 'balance_time') {
-      // max_tasks=ceil(N/V) fuerza que Vroom use TODOS los vehículos cuando
-      // hay suficientes paradas (N >= V): con V-1 vehículos no caben.
-      if (usableStops.length > vroomVehicles.length) {
+      // max_tasks=ceil(N/V) hace inviable la solución con V-1 vehículos, así
+      // que Vroom se ve forzado a usar todos.
+      // fixed=0 saca la presión de "menos vehículos = más barato", para que el
+      // solver no consolide cuando podría repartir.
+      for (const v of vroomVehicles) v.costs = { fixed: 0 };
+      if (usableStops.length >= vroomVehicles.length) {
         const maxTasks = Math.ceil(usableStops.length / vroomVehicles.length);
         for (const v of vroomVehicles) v.max_tasks = maxTasks;
       }
+      // balance_time además aplica max_travel_time en una 2da pasada — ver
+      // bloque más abajo después del primer callVroom.
     } else if (mode === 'on_time') {
-      // per_hour default = 3600 (1u/seg). Bajándolo a 360 hacemos que cumplir
-      // ventanas pese más que minimizar viaje. fixed=3600 evita que Vroom
-      // abra todos los vehículos disponibles "gratis". Las TW siguen siendo
-      // hard constraints; esto solo cambia el desempate.
-      for (const v of vroomVehicles) v.costs = { fixed: 3600, per_hour: 360 };
+      // Las TW ya son hard constraints. Para "priorizar" cumplirlas:
+      //   1. fixed bajo (600s = 10min): Vroom abre vehículos extras casi gratis
+      //      para encajar más jobs con TW estrechas (sin esto puede dejar
+      //      paradas como unassigned con tal de no abrir un camión más).
+      //   2. per_hour bajo (360 = 1/10 default): un detour o esperar a una
+      //      ventana cuesta 10× menos → Vroom prefiere rutas más largas o
+      //      con espera si eso respeta más ventanas.
+      for (const v of vroomVehicles) v.costs = { fixed: 600, per_hour: 360 };
     }
-    // balance_time además aplica max_travel_time en una 2da pasada — ver
-    // bloque más abajo después del primer callVroom.
   }
 
   if (vroomVehicles.length === 0) {
@@ -246,7 +316,12 @@ vroomRoutes.post('/optimize', async (c) => {
     const lng = stop.lng as number;
     const lat = stop.lat as number;
     const durationMin = (stop.duration_minutes as number | null) ?? 5;
-    const weightKg = stop.weight_kg as number | null;
+    // Peso real de la entrega = SUM(orders.total_weight_kg) por plan_stop.
+    // Fallback a stops.weight_kg (legacy) si no hay órdenes asociadas.
+    const orderWeight = orderWeightByPlanStop.get(ps.id as string);
+    const weightKg = orderWeight && orderWeight > 0
+      ? orderWeight
+      : (stop.weight_kg as number | null);
     const tws = parseTimeToSeconds(stop.time_window_start as string | null);
     const twe = parseTimeToSeconds(stop.time_window_end as string | null);
 
@@ -283,13 +358,17 @@ vroomRoutes.post('/optimize', async (c) => {
     return { ok: true, data };
   }
 
+  // `g: true` pide a Vroom que devuelva la polilínea real (polyline5) de cada
+  // ruta vía OSRM. Sin esto, el frontend tendría que recalcular la geometría
+  // contra Mapbox Directions y choca con el límite de 25 waypoints por request.
+  const vroomOptions: Record<string, unknown> = { g: true };
+  if (mode === 'consolidate') vroomOptions.minimize_vehicles = true;
+
   const vroomPayload: Record<string, unknown> = {
     vehicles: vroomVehicles,
     jobs: vroomJobs,
+    options: vroomOptions,
   };
-  if (mode === 'consolidate') {
-    vroomPayload.options = { minimize_vehicles: true };
-  }
 
   const firstCall = await callVroom(vroomPayload);
   if (!firstCall.ok) {
@@ -354,12 +433,19 @@ vroomRoutes.post('/optimize', async (c) => {
       .map((step) => jobIdToPlanStop.get(step.job as number))
       .filter((v): v is string => typeof v === 'string');
 
+    const encoded = r.geometry;
+    const geometry =
+      typeof encoded === 'string' && encoded.length > 0
+        ? decodePolyline5(encoded)
+        : null;
+
     return {
       route_id: mapping?.routeId ?? null,
       vehicle_id: mapping?.vehicleId ?? null,
       total_duration: (r.duration as number) ?? 0,
       total_distance: (r.distance as number | undefined) ?? null,
       ordered_plan_stop_ids: steps,
+      geometry,
     };
   });
 

@@ -130,6 +130,7 @@ export function ControlPage() {
         vehicleName: r.vehicle?.name ?? 'Sin vehiculo',
         stops: (planStopsByRoute[r.route_id] ?? []).map((e) => e.stop),
         color: routeColorById[r.route_id] ?? ROUTE_COLORS[0],
+        geometry: r.geometry ?? null,
       })),
     [routes, planStopsByRoute, routeColorById],
   );

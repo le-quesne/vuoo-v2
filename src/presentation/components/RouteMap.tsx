@@ -22,6 +22,12 @@ interface RouteGroup {
   vehicleName: string
   stops: Stop[]
   color: string
+  /**
+   * Polilínea pregenerada por el optimizador. Si viene, el mapa la dibuja
+   * directo y se ahorra el round-trip a Mapbox Directions (que además tiene
+   * límite de 25 waypoints por request). Null/ausente → fallback a Directions.
+   */
+  geometry?: [number, number][] | null
 }
 
 interface RouteMapProps {
@@ -69,6 +75,7 @@ export function RouteMap({
       id: g.routeId,
       color: g.color,
       stops: g.stops.map(s => ({ id: s.id, lat: s.lat, lng: s.lng })),
+      geom: g.geometry?.length ?? 0,
     }))),
     [routeGroups]
   )
@@ -556,24 +563,31 @@ export function RouteMap({
         const stopsWithCoords = group.stops.filter((s) => s.lat && s.lng)
         if (stopsWithCoords.length < 1) continue
 
-        // Include depot as start/end of route line if configured.
-        const coords: [number, number][] = []
-        if (depot?.lat != null && depot?.lng != null) {
-          coords.push([depot.lng, depot.lat])
-        }
-        for (const s of stopsWithCoords) {
-          coords.push([s.lng!, s.lat!])
-        }
-        if (depot?.lat != null && depot?.lng != null) {
-          coords.push([depot.lng, depot.lat])
-        }
-        if (coords.length < 2) continue
+        // Preferir la polilínea que dejó el optimizador (vía Vroom/OSRM). Solo
+        // caer a Mapbox Directions si no hay nada guardado: el endpoint Directions
+        // limita a 25 waypoints/request y rompe en rutas largas.
+        let lineCoords: [number, number][] | null = null
+        if (group.geometry && group.geometry.length >= 2) {
+          lineCoords = group.geometry
+        } else {
+          const coords: [number, number][] = []
+          if (depot?.lat != null && depot?.lng != null) {
+            coords.push([depot.lng, depot.lat])
+          }
+          for (const s of stopsWithCoords) {
+            coords.push([s.lng!, s.lat!])
+          }
+          if (depot?.lat != null && depot?.lng != null) {
+            coords.push([depot.lng, depot.lat])
+          }
+          if (coords.length < 2) continue
 
-        const directions = await fetchDirections(coords)
+          const directions = await fetchDirections(coords)
+          if (cancelled) return
+          lineCoords = directions?.geometry ?? null
+        }
 
-        if (cancelled) return
-
-        if (directions) {
+        if (lineCoords && lineCoords.length >= 2) {
           const sourceId = `route-src-${group.routeId}`
           const borderId = `route-border-${group.routeId}`
           const layerId = `route-line-${group.routeId}`
@@ -585,7 +599,7 @@ export function RouteMap({
               properties: {},
               geometry: {
                 type: 'LineString',
-                coordinates: directions.geometry,
+                coordinates: lineCoords,
               },
             },
           })

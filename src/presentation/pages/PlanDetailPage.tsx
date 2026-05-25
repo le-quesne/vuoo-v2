@@ -415,6 +415,7 @@ export function PlanDetailPage() {
         vehicleName: r.vehicle?.name ?? 'Sin vehículo',
         stops: toStops(r.planStops),
         color: ROUTE_COLORS[i % ROUTE_COLORS.length],
+        geometry: r.geometry ?? null,
       })),
       ...(unassignedStops.length > 0
         ? [{
