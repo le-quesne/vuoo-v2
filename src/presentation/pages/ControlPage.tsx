@@ -196,7 +196,7 @@ export function ControlPage() {
         />
       </div>
 
-      <div className="px-6 py-2 border-b border-gray-100 bg-gray-50/50">
+      <div className="px-6 py-2 border-b border-gray-100 bg-white">
         <KpiBar dashboard={dashboard} loading={loading} />
       </div>
 
@@ -227,7 +227,7 @@ export function ControlPage() {
           </div>
         </div>
 
-        <div className="flex-1 rounded-lg overflow-hidden border border-gray-200 min-h-0">
+        <div className="flex-1 rounded-md overflow-hidden border border-gray-200 min-h-0">
           <MapErrorBoundary>
             <RouteMap
               routeGroups={mapRouteGroups}
