@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/application/lib/supabase'
 import { useAuth } from '@/application/hooks/useAuth'
+import { userMessage } from '@/application/utils/errorMessages'
 
 interface NotificationSettings {
   // Channels
@@ -22,8 +23,8 @@ interface NotificationSettings {
   sms_enabled: boolean
 
   // WhatsApp
-  whatsapp_phone_number_id: string
-  whatsapp_access_token: string
+  whatsapp_phone_id: string
+  whatsapp_token: string
   whatsapp_verified: boolean
 
   // Email
@@ -44,20 +45,20 @@ interface NotificationSettings {
   notify_on_delivered: boolean
   notify_on_failed: boolean
   send_survey: boolean
-  survey_delay_minutes: number
+  survey_delay_min: number
 
   // Customization
   logo_url: string
   primary_color: string
-  arriving_threshold_stops: number
+  arriving_stops_threshold: number
 }
 
 const DEFAULT_SETTINGS: NotificationSettings = {
   whatsapp_enabled: false,
   email_enabled: false,
   sms_enabled: false,
-  whatsapp_phone_number_id: '',
-  whatsapp_access_token: '',
+  whatsapp_phone_id: '',
+  whatsapp_token: '',
   whatsapp_verified: false,
   email_provider: 'platform',
   resend_api_key: '',
@@ -72,10 +73,10 @@ const DEFAULT_SETTINGS: NotificationSettings = {
   notify_on_delivered: true,
   notify_on_failed: true,
   send_survey: false,
-  survey_delay_minutes: 30,
+  survey_delay_min: 30,
   logo_url: '',
   primary_color: '#6366f1',
-  arriving_threshold_stops: 3,
+  arriving_stops_threshold: 3,
 }
 
 const SECTIONS = [
@@ -96,6 +97,7 @@ export function NotificationSettingsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [showWhatsappToken, setShowWhatsappToken] = useState(false)
   const [showTwilioToken, setShowTwilioToken] = useState(false)
   const [testingWhatsapp, setTestingWhatsapp] = useState(false)
@@ -123,11 +125,16 @@ export function NotificationSettingsPage() {
     if (!currentOrg) return
     setSaving(true)
     setSaved(false)
+    setSaveError(null)
     const { whatsapp_verified: _wv, ...rest } = settings
-    await supabase
+    const { error } = await supabase
       .from('org_notification_settings')
       .upsert({ org_id: currentOrg.id, ...rest }, { onConflict: 'org_id' })
     setSaving(false)
+    if (error) {
+      setSaveError(userMessage(error.message))
+      return
+    }
     setSaved(true)
     setTimeout(() => setSaved(false), 3000)
   }
@@ -192,6 +199,12 @@ export function NotificationSettingsPage() {
         </button>
       </div>
 
+      {saveError && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          No se pudo guardar: {saveError}
+        </div>
+      )}
+
       {/* Section tabs */}
       <div className="flex gap-1 mb-6 bg-white border border-gray-200 rounded-lg p-1 overflow-x-auto">
         {visibleSections.map(({ id, label, icon: Icon }) => (
@@ -255,14 +268,14 @@ export function NotificationSettingsPage() {
             <div className="space-y-3">
               <Field
                 label="Phone Number ID"
-                value={settings.whatsapp_phone_number_id}
-                onChange={(v) => update('whatsapp_phone_number_id', v)}
+                value={settings.whatsapp_phone_id}
+                onChange={(v) => update('whatsapp_phone_id', v)}
                 placeholder="Ej: 100234567890123"
               />
               <PasswordField
                 label="Access Token"
-                value={settings.whatsapp_access_token}
-                onChange={(v) => update('whatsapp_access_token', v)}
+                value={settings.whatsapp_token}
+                onChange={(v) => update('whatsapp_token', v)}
                 show={showWhatsappToken}
                 onToggle={() => setShowWhatsappToken(!showWhatsappToken)}
                 placeholder="EAAx..."
@@ -270,7 +283,7 @@ export function NotificationSettingsPage() {
               <div className="flex items-center gap-3 pt-2">
                 <button
                   onClick={testWhatsapp}
-                  disabled={testingWhatsapp || !settings.whatsapp_phone_number_id || !settings.whatsapp_access_token}
+                  disabled={testingWhatsapp || !settings.whatsapp_phone_id || !settings.whatsapp_token}
                   className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {testingWhatsapp ? (
@@ -428,8 +441,8 @@ export function NotificationSettingsPage() {
                     <input
                       type="number"
                       min={0}
-                      value={settings.survey_delay_minutes}
-                      onChange={(e) => update('survey_delay_minutes', Number(e.target.value))}
+                      value={settings.survey_delay_min}
+                      onChange={(e) => update('survey_delay_min', Number(e.target.value))}
                       className="w-24 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
                     />
                     <p className="text-xs text-gray-400 mt-1">
@@ -486,8 +499,8 @@ export function NotificationSettingsPage() {
                   type="number"
                   min={1}
                   max={20}
-                  value={settings.arriving_threshold_stops}
-                  onChange={(e) => update('arriving_threshold_stops', Number(e.target.value))}
+                  value={settings.arriving_stops_threshold}
+                  onChange={(e) => update('arriving_stops_threshold', Number(e.target.value))}
                   className="w-24 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
                 />
                 <p className="text-xs text-gray-400 mt-1">
