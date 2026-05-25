@@ -1,13 +1,13 @@
+import { useEffect, useRef, useState } from 'react';
 import { format, addDays, subDays, isToday } from 'date-fns';
 import { es } from 'date-fns/locale';
 import {
-  Activity,
   AlertTriangle,
   Bell,
   ChevronLeft,
   ChevronRight,
   Megaphone,
-  Radio,
+  MoreHorizontal,
   Volume2,
   VolumeX,
 } from 'lucide-react';
@@ -40,12 +40,30 @@ export function ControlHeader({
   onOpenBroadcast,
   onOpenIncident,
 }: ControlHeaderProps) {
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!moreOpen) return;
+    function onDocClick(e: MouseEvent) {
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) {
+        setMoreOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [moreOpen]);
+
   return (
-    <div className="px-6 py-3 border-b border-gray-200 bg-white flex items-center justify-between">
-      <div className="flex items-center gap-3">
-        <Activity size={20} className="text-blue-500" />
-        <h1 className="text-lg font-semibold">Torre de Control</h1>
-        <span className="text-sm text-gray-500">
+    <div className="px-6 py-3 border-b border-navy-700 bg-navy-950 text-white flex items-center justify-between">
+      <div className="flex items-center gap-2.5">
+        <span
+          className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400"
+          title="Live"
+          aria-label="Live"
+        />
+        <h1 className="text-base font-semibold tracking-tight">Torre de Control</h1>
+        <span className="text-sm text-slate-400">
           {isToday(selectedDate)
             ? `Hoy · ${format(selectedDate, "EEEE d 'de' MMMM", { locale: es })}`
             : format(selectedDate, "EEEE d 'de' MMMM", { locale: es })}
@@ -54,30 +72,26 @@ export function ControlHeader({
       <div className="flex items-center gap-1">
         <button
           onClick={() => onDateChange(subDays(selectedDate, 1))}
-          className="p-2 rounded hover:bg-gray-100 text-gray-500"
-          title="Dia anterior"
+          className="p-2 rounded hover:bg-white/10 text-slate-300"
+          title="Día anterior"
         >
           <ChevronLeft size={16} />
         </button>
         {!isToday(selectedDate) && (
           <button
             onClick={() => onDateChange(new Date())}
-            className="px-3 py-1.5 text-xs rounded border border-gray-200 text-gray-600 hover:bg-gray-50"
+            className="px-3 py-1.5 text-xs rounded border border-white/15 text-slate-200 hover:bg-white/10"
           >
             Hoy
           </button>
         )}
         <button
           onClick={() => onDateChange(addDays(selectedDate, 1))}
-          className="p-2 rounded hover:bg-gray-100 text-gray-500"
-          title="Dia siguiente"
+          className="p-2 rounded hover:bg-white/10 text-slate-300"
+          title="Día siguiente"
         >
           <ChevronRight size={16} />
         </button>
-        <span className="ml-3 inline-flex items-center gap-1 text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-full px-2 py-0.5">
-          <Radio size={11} className="animate-pulse" />
-          live
-        </span>
         {presentUsers.length > 1 && (
           <div
             className="ml-2 flex items-center -space-x-1.5"
@@ -90,8 +104,8 @@ export function ControlHeader({
               return (
                 <div
                   key={u.user_id}
-                  className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold border-2 border-white ${
-                    u.user_id === currentUserId ? 'bg-blue-500' : 'bg-gray-400'
+                  className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold border-2 border-navy-950 ${
+                    u.user_id === currentUserId ? 'bg-blue-500' : 'bg-slate-500'
                   }`}
                 >
                   {initial}
@@ -99,7 +113,7 @@ export function ControlHeader({
               );
             })}
             {presentUsers.length > 4 && (
-              <div className="w-6 h-6 rounded-full flex items-center justify-center text-gray-600 text-[10px] font-bold border-2 border-white bg-gray-100">
+              <div className="w-6 h-6 rounded-full flex items-center justify-center text-slate-200 text-[10px] font-bold border-2 border-navy-950 bg-white/10">
                 +{presentUsers.length - 4}
               </div>
             )}
@@ -107,17 +121,17 @@ export function ControlHeader({
         )}
         <button
           onClick={onToggleMute}
-          className="ml-2 p-2 rounded hover:bg-gray-100 text-gray-500"
+          className="ml-2 p-2 rounded hover:bg-white/10 text-slate-300"
           title={muted ? 'Activar sonido de alertas' : 'Silenciar alertas'}
         >
           {muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
         </button>
         <button
           onClick={onToggleAlerts}
-          className={`relative inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border ml-2 ${
+          className={`relative inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded ml-2 border ${
             showAlerts
-              ? 'border-gray-300 bg-gray-100 text-gray-900'
-              : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+              ? 'border-white/20 bg-white/10 text-white'
+              : 'border-white/15 text-slate-200 hover:bg-white/10'
           }`}
           title="Alertas"
         >
@@ -131,20 +145,41 @@ export function ControlHeader({
         </button>
         <button
           onClick={onOpenBroadcast}
-          className="ml-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50"
+          className="ml-1 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded border border-white/15 text-slate-200 hover:bg-white/10"
           title="Enviar mensaje a todos los conductores en ruta"
         >
           <Megaphone size={14} />
           Mensaje
         </button>
-        <button
-          onClick={onOpenIncident}
-          className="ml-1 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
-          title="Registrar incidente"
-        >
-          <AlertTriangle size={14} />
-          Incidente
-        </button>
+        <div className="ml-1 relative" ref={moreRef}>
+          <button
+            onClick={() => setMoreOpen((v) => !v)}
+            className="p-2 rounded hover:bg-white/10 text-slate-300"
+            title="Más acciones"
+            aria-haspopup="menu"
+            aria-expanded={moreOpen}
+          >
+            <MoreHorizontal size={16} />
+          </button>
+          {moreOpen && (
+            <div
+              role="menu"
+              className="absolute right-0 mt-1 min-w-[180px] rounded-md border border-gray-200 bg-white text-gray-900 shadow-lg py-1 z-30"
+            >
+              <button
+                onClick={() => {
+                  setMoreOpen(false);
+                  onOpenIncident();
+                }}
+                role="menuitem"
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-gray-700 hover:bg-gray-50"
+              >
+                <AlertTriangle size={14} className="text-amber-600" />
+                Registrar incidente
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
