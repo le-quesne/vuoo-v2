@@ -220,6 +220,9 @@ export interface NotificationLog {
   external_id: string | null
   sent_at: string | null
   created_at: string
+  attempts: number
+  next_retry_at: string | null
+  last_attempt_at: string | null
 }
 
 export interface DeliveryFeedback {
@@ -247,6 +250,7 @@ export interface OrgNotificationSettings {
   resend_api_key: string | null
   email_from_address: string | null
   email_from_name: string | null
+  email_provider: 'platform' | 'custom'
   notify_on_scheduled: boolean
   notify_on_transit: boolean
   notify_on_arriving: boolean
@@ -276,9 +280,11 @@ export interface Order {
   external_id: string | null
   source: OrderSource
   customer_name: string
-  customer_phone: string | null
-  customer_email: string | null
   customer_code: string | null
+  // Derivados del JOIN con `customers` (no son columnas de `orders`).
+  // Single source of truth: customers.email / customers.phone.
+  customer_email?: string | null
+  customer_phone?: string | null
   address: string | null
   lat: number | null
   lng: number | null

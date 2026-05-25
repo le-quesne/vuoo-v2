@@ -40,12 +40,6 @@ export function MatchReviewModal({ row, onClose, onReuseStop, onCreateNew }: Mat
                 <span className="text-gray-500">Dirección: </span>
                 <span className="text-gray-900">{row.values.address || '—'}</span>
               </div>
-              {row.values.customer_phone && (
-                <div>
-                  <span className="text-gray-500">Teléfono: </span>
-                  <span className="text-gray-900">{row.values.customer_phone}</span>
-                </div>
-              )}
             </div>
           </div>
 

@@ -6,7 +6,14 @@ import { useAuth } from '@/application/hooks/useAuth';
 import type { Order, Plan } from '@/data/types/database';
 import { formatOrderDate as formatDate } from '../utils';
 import { Field } from './FormUi';
-import { assignToPlan } from '@/data/services/orders/orders.services';
+import { assignToPlan, unassignFromPlan } from '@/data/services/orders/orders.services';
+
+type ConflictInfo = {
+  orderId: string;
+  orderNumber: string;
+  sourcePlanId: string;
+  sourcePlanName: string;
+};
 
 export function ScheduleOrdersModal({
   orders,
@@ -26,6 +33,8 @@ export function ScheduleOrdersModal({
   const [newPlanDate, setNewPlanDate] = useState(new Date().toISOString().slice(0, 10))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [conflicts, setConflicts] = useState<ConflictInfo[] | null>(null)
+  const [moveFromOtherPlans, setMoveFromOtherPlans] = useState(false)
 
   useEffect(() => {
     if (!currentOrg) return
@@ -44,6 +53,28 @@ export function ScheduleOrdersModal({
         }
       })
   }, [currentOrg])
+
+  async function detectConflicts(targetPlanId: string): Promise<ConflictInfo[]> {
+    const ids = orders.map((o) => o.id)
+    const { data, error: convErr } = await supabase
+      .from('orders')
+      .select('id, order_number, plan_stop_id, plan_stops!inner(plan_id, plans!inner(name))')
+      .in('id', ids)
+      .not('plan_stop_id', 'is', null)
+    if (convErr || !data) return []
+    return (data as unknown as Array<{
+      id: string
+      order_number: string
+      plan_stops: { plan_id: string; plans: { name: string } } | null
+    }>)
+      .filter((r) => r.plan_stops && r.plan_stops.plan_id !== targetPlanId)
+      .map((r) => ({
+        orderId: r.id,
+        orderNumber: r.order_number,
+        sourcePlanId: r.plan_stops!.plan_id,
+        sourcePlanName: r.plan_stops!.plans.name,
+      }))
+  }
 
   async function handleSchedule() {
     if (!currentOrg || !user) return
@@ -81,9 +112,35 @@ export function ScheduleOrdersModal({
       return
     }
 
-    // Asignación bulk: una sola transacción server-side via RPC
-    // `assign_orders_to_plan` (mig 023). Reemplaza el loop N×4-round-trips
-    // que hacía que los pedidos saltaran de Pendientes a Programado uno por uno.
+    // Detección previa: si hay órdenes en otros planes, pedir confirmación
+    // antes de moverlas. Sin esto, el RPC las skipea silenciosamente y el
+    // usuario termina en un plan vacío.
+    if (!moveFromOtherPlans) {
+      const found = await detectConflicts(targetPlanId)
+      if (found.length > 0) {
+        setConflicts(found)
+        setSaving(false)
+        return
+      }
+    } else if (conflicts && conflicts.length > 0) {
+      // Mover desde otros planes: desasignar primero del plan origen
+      // (esto limpia los plan_stops huérfanos vía RPC).
+      const byPlan = new Map<string, string[]>()
+      for (const c of conflicts) {
+        const list = byPlan.get(c.sourcePlanId) ?? []
+        list.push(c.orderId)
+        byPlan.set(c.sourcePlanId, list)
+      }
+      for (const [sourcePlanId, ids] of byPlan.entries()) {
+        const unassign = await unassignFromPlan(ids, sourcePlanId)
+        if (!unassign.success) {
+          setError(unassign.error)
+          setSaving(false)
+          return
+        }
+      }
+    }
+
     const orderIds = orders.map((o) => o.id)
     const res = await assignToPlan(orderIds, targetPlanId, false)
     if (!res.success) {
@@ -92,7 +149,19 @@ export function ScheduleOrdersModal({
       return
     }
 
+    const { createdCount, mergedCount, skippedCount } = res.data
     setSaving(false)
+
+    // Si no se asignó ni se mergeó nada, no navegamos al plan vacío.
+    if (createdCount + mergedCount === 0) {
+      setError(
+        skippedCount > 0
+          ? 'Todas las órdenes seleccionadas ya estaban en otro plan. Activa "Mover desde otros planes" para reubicarlas.'
+          : 'No se programó ninguna orden.',
+      )
+      return
+    }
+
     onScheduled()
     navigate(`/planner/${targetPlanId}`)
   }
@@ -171,6 +240,33 @@ export function ScheduleOrdersModal({
             ))}
           </div>
 
+          {conflicts && conflicts.length > 0 && (
+            <div className="flex flex-col gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+              <div className="flex items-start gap-2">
+                <AlertCircle size={16} className="shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-medium">
+                    {conflicts.length} orden{conflicts.length === 1 ? '' : 'es'} ya {conflicts.length === 1 ? 'está' : 'están'} en otro plan
+                  </p>
+                  <ul className="mt-1 space-y-0.5 text-xs text-amber-700 max-h-24 overflow-y-auto">
+                    {Array.from(new Set(conflicts.map((c) => c.sourcePlanName))).map((name) => (
+                      <li key={name}>· {name}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+              <label className="flex items-center gap-2 text-xs cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={moveFromOtherPlans}
+                  onChange={(e) => setMoveFromOtherPlans(e.target.checked)}
+                  className="rounded border-amber-300"
+                />
+                Mover {conflicts.length === 1 ? 'esa orden' : 'esas órdenes'} desde el plan actual a este
+              </label>
+            </div>
+          )}
+
           {error && (
             <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
               <AlertCircle size={16} className="shrink-0 mt-0.5" />
@@ -188,10 +284,14 @@ export function ScheduleOrdersModal({
           </button>
           <button
             onClick={handleSchedule}
-            disabled={saving}
+            disabled={saving || (conflicts !== null && conflicts.length > 0 && !moveFromOtherPlans)}
             className="flex-1 px-4 py-2 bg-emerald-500 text-white rounded-lg text-sm font-medium hover:bg-emerald-600 disabled:opacity-50"
           >
-            {saving ? 'Programando...' : 'Programar'}
+            {saving
+              ? 'Programando...'
+              : moveFromOtherPlans && conflicts && conflicts.length > 0
+                ? 'Mover y programar'
+                : 'Programar'}
           </button>
         </div>
       </div>

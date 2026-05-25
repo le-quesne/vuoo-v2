@@ -23,9 +23,31 @@ async function authHeaders(): Promise<Record<string, string>> {
 
 export type AddressFilter = 'all' | 'pending' | 'resolved';
 
+// Embed PostgREST: hidrata email/phone del Customer master en cada Order
+// para que el frontend siga leyendo `order.customer_email` sin tener que
+// hacer el JOIN manual. Single source of truth: tabla `customers`.
+const ORDER_SELECT_WITH_CUSTOMER = '*, customer:customers!customer_id(email, phone)';
+
+type OrderJoinedRow = Order & {
+  customer?: { email: string | null; phone: string | null } | null;
+};
+
+function flattenOrder(row: OrderJoinedRow): Order {
+  const { customer, ...rest } = row;
+  return {
+    ...rest,
+    customer_email: customer?.email ?? null,
+    customer_phone: customer?.phone ?? null,
+  };
+}
+
+// `in_plan` es virtual: status='pending' AND plan_stop_id IS NOT NULL.
+// Pedido asignado a un plan en borrador (no publicado).
+export type StatusFilter = OrderStatus | 'all' | 'in_plan';
+
 export interface ListOrdersArgs {
   orgId: string;
-  status?: OrderStatus | 'all';
+  status?: StatusFilter;
   addressFilter?: AddressFilter;
   search?: string;
   from: number;
@@ -43,11 +65,18 @@ export async function listOrders({
   try {
     let query = supabase
       .from('orders')
-      .select('*', { count: 'exact' })
+      .select(ORDER_SELECT_WITH_CUSTOMER, { count: 'exact' })
       .eq('org_id', orgId)
       .order('created_at', { ascending: false })
       .range(from, to);
-    if (status && status !== 'all') query = query.eq('status', status);
+    if (status === 'in_plan') {
+      query = query.eq('status', 'pending').not('plan_stop_id', 'is', null);
+    } else if (status && status !== 'all') {
+      query = query.eq('status', status);
+      // "Pendiente" debe ocultar órdenes ya asignadas a un plan en borrador
+      // (su status sigue siendo 'pending' hasta que el plan se publica/ejecuta).
+      if (status === 'pending') query = query.is('plan_stop_id', null);
+    }
     if (addressFilter === 'pending') query = query.is('address', null);
     if (addressFilter === 'resolved') query = query.not('address', 'is', null);
     if (search && search.trim().length > 0) {
@@ -58,7 +87,8 @@ export async function listOrders({
     }
     const { data, error, count } = await query;
     if (error) return fail(error.message);
-    return ok({ items: (data ?? []) as Order[], total: count ?? 0 });
+    const items = ((data ?? []) as unknown as OrderJoinedRow[]).map(flattenOrder);
+    return ok({ items, total: count ?? 0 });
   } catch (e) {
     return fail(toErrorMessage(e));
   }
@@ -66,7 +96,7 @@ export async function listOrders({
 
 export async function getAddressCountsForStatus(
   orgId: string,
-  status: OrderStatus | 'all',
+  status: StatusFilter,
 ): Promise<ServiceResult<{ pendingAddress: number; resolvedAddress: number }>> {
   try {
     const base = () => {
@@ -74,7 +104,12 @@ export async function getAddressCountsForStatus(
         .from('orders')
         .select('id', { count: 'exact', head: true })
         .eq('org_id', orgId);
-      if (status !== 'all') q = q.eq('status', status);
+      if (status === 'in_plan') {
+        q = q.eq('status', 'pending').not('plan_stop_id', 'is', null);
+      } else if (status !== 'all') {
+        q = q.eq('status', status);
+        if (status === 'pending') q = q.is('plan_stop_id', null);
+      }
       return q;
     };
     const [pa, ra] = await Promise.all([
@@ -103,7 +138,7 @@ const ORDER_STATUSES: OrderStatus[] = [
 ];
 
 export interface OrderStatusCounts {
-  byStatus: Record<OrderStatus, number>;
+  byStatus: Record<OrderStatus | 'in_plan', number>;
   pendingAddress: number;
 }
 
@@ -111,20 +146,28 @@ export async function getStatusCounts(
   orgId: string,
 ): Promise<ServiceResult<OrderStatusCounts>> {
   try {
-    const statusQueries = ORDER_STATUSES.map((status) =>
-      supabase
+    const statusQueries = ORDER_STATUSES.map((status) => {
+      let q = supabase
         .from('orders')
         .select('id', { count: 'exact', head: true })
         .eq('org_id', orgId)
-        .eq('status', status),
-    );
+        .eq('status', status);
+      if (status === 'pending') q = q.is('plan_stop_id', null);
+      return q;
+    });
+    const inPlanQuery = supabase
+      .from('orders')
+      .select('id', { count: 'exact', head: true })
+      .eq('org_id', orgId)
+      .eq('status', 'pending')
+      .not('plan_stop_id', 'is', null);
     const pendingAddressQuery = supabase
       .from('orders')
       .select('id', { count: 'exact', head: true })
       .eq('org_id', orgId)
       .is('address', null);
 
-    const results = await Promise.all([...statusQueries, pendingAddressQuery]);
+    const results = await Promise.all([...statusQueries, inPlanQuery, pendingAddressQuery]);
 
     const byStatus = ORDER_STATUSES.reduce(
       (acc, status, idx) => {
@@ -133,8 +176,12 @@ export async function getStatusCounts(
         acc[status] = r.count ?? 0;
         return acc;
       },
-      {} as Record<OrderStatus, number>,
+      {} as Record<OrderStatus | 'in_plan', number>,
     );
+
+    const ipr = results[results.length - 2];
+    if (ipr.error) return fail(ipr.error.message);
+    byStatus.in_plan = ipr.count ?? 0;
 
     const pa = results[results.length - 1];
     if (pa.error) return fail(pa.error.message);
@@ -147,12 +194,17 @@ export async function getStatusCounts(
 
 export async function listAllIds(
   orgId: string,
-  status: OrderStatus | 'all',
+  status: StatusFilter,
   addressFilter: AddressFilter = 'all',
 ): Promise<ServiceResult<string[]>> {
   try {
     let query = supabase.from('orders').select('id').eq('org_id', orgId);
-    if (status !== 'all') query = query.eq('status', status);
+    if (status === 'in_plan') {
+      query = query.eq('status', 'pending').not('plan_stop_id', 'is', null);
+    } else if (status !== 'all') {
+      query = query.eq('status', status);
+      if (status === 'pending') query = query.is('plan_stop_id', null);
+    }
     if (addressFilter === 'pending') query = query.is('address', null);
     if (addressFilter === 'resolved') query = query.not('address', 'is', null);
     const { data, error } = await query;
@@ -200,9 +252,13 @@ export async function bulkCreate(
 export async function getByIds(ids: string[]): Promise<ServiceResult<Order[]>> {
   if (ids.length === 0) return ok([]);
   try {
-    const { data, error } = await supabase.from('orders').select('*').in('id', ids);
+    const { data, error } = await supabase
+      .from('orders')
+      .select(ORDER_SELECT_WITH_CUSTOMER)
+      .in('id', ids);
     if (error) return fail(error.message);
-    return ok((data ?? []) as Order[]);
+    const items = ((data ?? []) as unknown as OrderJoinedRow[]).map(flattenOrder);
+    return ok(items);
   } catch (e) {
     return fail(toErrorMessage(e));
   }
@@ -239,8 +295,6 @@ export interface ImportRow {
   /** Código del cliente en el ERP del usuario. El backend lo usa para resolver
    *  dirección desde el catálogo cuando `address` viene vacía. */
   customer_code?: string | null;
-  customer_phone?: string | null;
-  customer_email?: string | null;
   /** Nullable: si viene vacía pero hay customer_code, el backend resuelve. */
   address?: string | null;
   lat?: number | null;

@@ -19,8 +19,6 @@ export interface OrderInsert {
   external_id?: string | null;
   source: OrderSource;
   customer_name: string;
-  customer_phone?: string | null;
-  customer_email?: string | null;
   address: string;
   lat?: number | null;
   lng?: number | null;

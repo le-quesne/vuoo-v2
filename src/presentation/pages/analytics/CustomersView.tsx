@@ -1,22 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Download, Star, MessageSquare, Users as UsersIcon, TrendingUp } from 'lucide-react'
-import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Cell,
-} from 'recharts'
+import { Download, Star } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { supabase } from '@/application/lib/supabase'
 import { useAuth } from '@/application/hooks/useAuth'
-import { useAnalyticsSummary, useFeedbackSummary } from '@/presentation/features/analytics/hooks/useAnalyticsData'
-import { KPICard } from '@/presentation/features/analytics/components/KPICard'
+import { useAnalyticsSummary } from '@/presentation/features/analytics/hooks/useAnalyticsData'
 import { ChartCard } from '@/presentation/features/analytics/components/ChartCard'
-import { formatNumber, formatPercent } from '@/presentation/features/analytics/utils/analyticsFormat'
+import { NPSDashboard } from '@/presentation/features/analytics/components/NPSDashboard'
 import { exportToCSV } from '@/application/utils/csvExport'
 
 interface Props {
@@ -43,17 +32,8 @@ interface FeedbackRow {
   } | null
 }
 
-const RATING_COLORS: Record<number, string> = {
-  1: '#ef4444',
-  2: '#f97316',
-  3: '#facc15',
-  4: '#84cc16',
-  5: '#22c55e',
-}
-
 export function CustomersView({ from, to }: Props) {
   const { currentOrg } = useAuth()
-  const feedback = useFeedbackSummary(from, to)
   const summary = useAnalyticsSummary(from, to)
 
   const [feedbacks, setFeedbacks] = useState<FeedbackRow[]>([])
@@ -84,31 +64,6 @@ export function CustomersView({ from, to }: Props) {
     }
   }, [currentOrg?.id, from, to])
 
-  const fb = feedback.data
-
-  const npsColor = useMemo(() => {
-    if (!fb || fb.nps == null) return 'text-gray-400'
-    if (fb.nps > 50) return 'text-green-600'
-    if (fb.nps >= 0) return 'text-yellow-500'
-    return 'text-red-500'
-  }, [fb])
-
-  const ratingDistribution = useMemo(() => {
-    if (!fb) return []
-    return [
-      { rating: '1', count: fb.rating_1, color: RATING_COLORS[1] },
-      { rating: '2', count: fb.rating_2, color: RATING_COLORS[2] },
-      { rating: '3', count: fb.rating_3, color: RATING_COLORS[3] },
-      { rating: '4', count: fb.rating_4, color: RATING_COLORS[4] },
-      { rating: '5', count: fb.rating_5, color: RATING_COLORS[5] },
-    ]
-  }, [fb])
-
-  const responseRate = useMemo(() => {
-    if (!fb || !summary.data || summary.data.stops_completed === 0) return null
-    return (fb.total_responses / summary.data.stops_completed) * 100
-  }, [fb, summary.data])
-
   const filteredFeedbacks = useMemo(() => {
     if (filter === 'all') return feedbacks
     if (filter === 'positive') return feedbacks.filter((f) => f.rating >= 4)
@@ -135,6 +90,8 @@ export function CustomersView({ from, to }: Props) {
     )
   }
 
+  const completedStops = summary.data?.stops_completed ?? 0
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -151,62 +108,7 @@ export function CustomersView({ from, to }: Props) {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPICard
-          label="NPS Score"
-          value={fb && fb.nps != null ? Math.round(fb.nps) : '-'}
-          icon={<TrendingUp size={18} />}
-          valueColor={npsColor}
-          hint={fb && fb.nps != null ? (fb.nps > 50 ? 'Excelente' : fb.nps >= 0 ? 'Mejorable' : 'Critico') : undefined}
-        />
-        <KPICard
-          label="Rating promedio"
-          value={
-            fb && fb.avg_rating != null ? (
-              <span className="inline-flex items-center gap-1">
-                <Star size={18} className="fill-yellow-400 text-yellow-400" />
-                {fb.avg_rating}
-              </span>
-            ) : (
-              '-'
-            )
-          }
-          icon={<Star size={18} />}
-        />
-        <KPICard
-          label="Total encuestas"
-          value={formatNumber(fb?.total_responses ?? 0)}
-          icon={<MessageSquare size={18} />}
-        />
-        <KPICard
-          label="Tasa de respuesta"
-          value={responseRate != null ? formatPercent(responseRate) : '-'}
-          icon={<UsersIcon size={18} />}
-          hint="de entregas completadas"
-        />
-      </div>
-
-      <ChartCard title="Distribucion de ratings" subtitle="Respuestas por estrella">
-        {feedback.loading ? (
-          <div className="h-[300px] flex items-center justify-center text-sm text-gray-400">Cargando...</div>
-        ) : !fb || fb.total_responses === 0 ? (
-          <div className="h-[300px] flex items-center justify-center text-sm text-gray-400">Sin encuestas en el periodo</div>
-        ) : (
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={ratingDistribution}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="rating" stroke="#9ca3af" fontSize={11} />
-              <YAxis stroke="#9ca3af" fontSize={11} />
-              <Tooltip />
-              <Bar dataKey="count" name="Respuestas">
-                {ratingDistribution.map((entry) => (
-                  <Cell key={entry.rating} fill={entry.color} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        )}
-      </ChartCard>
+      <NPSDashboard from={from} to={to} completedStops={completedStops} />
 
       <ChartCard
         title="Ultimos feedbacks"

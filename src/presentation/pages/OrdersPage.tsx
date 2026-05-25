@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   Package,
   Plus,
@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Trash2,
+  X,
 } from 'lucide-react'
 import { supabase } from '@/application/lib/supabase'
 import { useAuth } from '@/application/hooks/useAuth'
@@ -17,16 +18,16 @@ import {
   STATUS_META,
   SOURCE_LABEL,
   formatOrderDate as formatDate,
+  orderDisplayStatus,
   type StatusFilter,
 } from '@/presentation/features/orders/utils'
 import {
-  StatusTab,
   OrderModal,
   ScheduleOrdersModal,
 } from '@/presentation/features/orders/components'
 import { ImportWizard } from '@/presentation/features/orders/components/ImportWizard'
-import { useOneClickOptimize } from '@/presentation/features/planner/hooks'
 import { ConfirmDialog } from '@/presentation/components/ConfirmDialog'
+import { Select, type SelectOption } from '@/presentation/components/Select'
 import {
   deleteOrders,
   getAddressCountsForStatus,
@@ -46,6 +47,7 @@ export function OrdersPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('pending')
   const [addressFilter, setAddressFilter] = useState<'all' | 'pending' | 'resolved'>('all')
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const lastSelectedIdRef = useRef<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [editing, setEditing] = useState<Order | null>(null)
   const [showImport, setShowImport] = useState(false)
@@ -60,26 +62,6 @@ export function OrdersPage() {
     pendingAddress: number
     resolvedAddress: number
   }>({ pendingAddress: 0, resolvedAddress: 0 })
-
-  const oneClick = useOneClickOptimize(currentOrg?.id ?? '', {
-    mode: currentOrg?.default_optimization_mode,
-    returnToDepot: currentOrg?.default_return_to_depot,
-  })
-
-  const handleOptimizeDay = useCallback(async () => {
-    if (!currentOrg) return
-    const today = new Date().toISOString().slice(0, 10)
-    const res = await oneClick.execute(today)
-    if (res.success) {
-      const { plan, assignReport } = res.data
-      alert(
-        `Plan del día listo: ${assignReport.created} nuevas + ${assignReport.merged} mergeadas. Abre el plan ${plan.id} para revisar.`,
-      )
-      setReloadTick((t) => t + 1)
-    } else {
-      alert(`No se pudo optimizar: ${res.error}`)
-    }
-  }, [currentOrg, oneClick])
 
   useEffect(() => {
     if (!currentOrg) return
@@ -153,12 +135,6 @@ export function OrdersPage() {
     setSelected(new Set())
   }
 
-  function toggleAddressFilter(next: 'all' | 'pending' | 'resolved') {
-    setAddressFilter((prev) => (prev === next ? 'all' : next))
-    setPage(1)
-    setSelected(new Set())
-  }
-
   useEffect(() => {
     if (!currentOrg) return
     // Realtime con coalescing: un bulk-update server-side dispara N eventos
@@ -213,11 +189,31 @@ export function OrdersPage() {
   const [selectingAll, setSelectingAll] = useState(false)
   const [selectAllError, setSelectAllError] = useState<string | null>(null)
 
-  function toggleSelect(id: string) {
+  function toggleSelect(id: string, shiftKey = false) {
     const next = new Set(selected)
+    const anchor = lastSelectedIdRef.current
+    if (shiftKey && anchor && anchor !== id) {
+      const ids = filtered.map((o) => o.id)
+      const startIdx = ids.indexOf(anchor)
+      const endIdx = ids.indexOf(id)
+      if (startIdx !== -1 && endIdx !== -1) {
+        const [from, to] = startIdx < endIdx ? [startIdx, endIdx] : [endIdx, startIdx]
+        // Estado a aplicar a todo el rango = el opuesto del estado actual del item clickeado
+        // (si estaba sin tildar, marca todo el rango; si estaba tildado, desmarca todo).
+        const shouldSelect = !next.has(id)
+        for (let i = from; i <= to; i++) {
+          if (shouldSelect) next.add(ids[i])
+          else next.delete(ids[i])
+        }
+        setSelected(next)
+        lastSelectedIdRef.current = id
+        return
+      }
+    }
     if (next.has(id)) next.delete(id)
     else next.add(id)
     setSelected(next)
+    lastSelectedIdRef.current = id
   }
 
   function toggleSelectAll() {
@@ -253,14 +249,6 @@ export function OrdersPage() {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={handleOptimizeDay}
-              disabled={oneClick.isRunning}
-              className="px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Crea/usa plan de hoy, asigna pedidos pendientes y optimiza rutas"
-            >
-              {oneClick.isRunning ? 'Optimizando...' : 'Optimizar día'}
-            </button>
-            <button
               onClick={() => setShowCreate(true)}
               className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50"
             >
@@ -277,54 +265,7 @@ export function OrdersPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-1 mb-4 flex-wrap">
-          <StatusTab label="Todos" value="all" filter={statusFilter} onClick={changeStatusFilter} count={null} />
-          {(Object.keys(STATUS_META) as OrderStatus[]).map((s) => (
-            <StatusTab
-              key={s}
-              label={STATUS_META[s].label}
-              value={s}
-              filter={statusFilter}
-              onClick={changeStatusFilter}
-              count={counts?.[s] ?? null}
-              dot={STATUS_META[s].dot}
-            />
-          ))}
-          {pendingAddressCount > 0 && (
-            <button
-              onClick={() => toggleAddressFilter('pending')}
-              className={[
-                'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border transition-colors',
-                addressFilter === 'pending'
-                  ? 'bg-amber-100 text-amber-900 border-amber-300'
-                  : 'bg-white text-amber-800 border-amber-200 hover:bg-amber-50',
-              ].join(' ')}
-              title="Filtrar pedidos sin dirección"
-            >
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-              Sin dirección
-              <span className="text-[10px] opacity-70">({pendingAddressCount})</span>
-            </button>
-          )}
-          {resolvedAddressCount > 0 && (
-            <button
-              onClick={() => toggleAddressFilter('resolved')}
-              className={[
-                'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border transition-colors',
-                addressFilter === 'resolved'
-                  ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
-                  : 'bg-white text-emerald-800 border-emerald-200 hover:bg-emerald-50',
-              ].join(' ')}
-              title="Filtrar pedidos con dirección"
-            >
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              Con dirección
-              <span className="text-[10px] opacity-70">({resolvedAddressCount})</span>
-            </button>
-          )}
-        </div>
-
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
           <div className="relative">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
@@ -336,11 +277,62 @@ export function OrdersPage() {
             />
           </div>
 
-          {selected.size > 0 && (
+          <div className="flex items-center gap-2">
+            <Select<StatusFilter>
+              value={statusFilter}
+              onChange={changeStatusFilter}
+              prefix="Estado:"
+              title="Filtrar por estado"
+              options={[
+                { value: 'all', label: 'Todos' },
+                {
+                  value: 'pending',
+                  label: STATUS_META.pending.label,
+                  count: counts?.pending ?? 0,
+                },
+                {
+                  value: 'in_plan',
+                  label: STATUS_META.in_plan.label,
+                  count: counts?.in_plan ?? 0,
+                },
+                ...(['scheduled', 'in_transit', 'delivered', 'failed', 'cancelled', 'returned'] as OrderStatus[]).map<SelectOption<StatusFilter>>((s) => ({
+                  value: s,
+                  label: STATUS_META[s].label,
+                  count: counts?.[s] ?? 0,
+                })),
+              ]}
+            />
+
+            {(pendingAddressCount > 0 || resolvedAddressCount > 0) && (
+              <Select<'all' | 'pending' | 'resolved'>
+                value={addressFilter}
+                onChange={(v) => {
+                  setAddressFilter(v)
+                  setPage(1)
+                  setSelected(new Set())
+                }}
+                prefix="Dirección:"
+                title="Filtrar por dirección"
+                options={[
+                  { value: 'all', label: 'Todas' },
+                  ...(pendingAddressCount > 0
+                    ? [{ value: 'pending' as const, label: 'Sin dirección', count: pendingAddressCount }]
+                    : []),
+                  ...(resolvedAddressCount > 0
+                    ? [{ value: 'resolved' as const, label: 'Con dirección', count: resolvedAddressCount }]
+                    : []),
+                ]}
+              />
+            )}
+          </div>
+        </div>
+
+        {selected.size > 0 && (
+          <div className="mb-3 flex items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
+            <span className="text-sm text-blue-900">
+              {selected.size} seleccionado{selected.size === 1 ? '' : 's'}
+            </span>
             <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-500">
-                {selected.size} seleccionado{selected.size === 1 ? '' : 's'}
-              </span>
               {selectedOrders.length > 0 && (
                 <button
                   onClick={async () => {
@@ -352,7 +344,7 @@ export function OrdersPage() {
                     }
                     setShowSchedule(true)
                   }}
-                  className="px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50"
+                  className="px-3 py-1.5 bg-blue-500 text-white rounded-md text-sm font-medium hover:bg-blue-600"
                 >
                   Programar ({selectedOrders.length})
                 </button>
@@ -362,13 +354,20 @@ export function OrdersPage() {
                   setDeleteError(null)
                   setDeleteTarget({ ids: Array.from(selected), isBulk: true })
                 }}
-                className="px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50"
+                className="px-3 py-1.5 border border-gray-200 bg-white rounded-md text-sm font-medium hover:bg-gray-50"
               >
-                Eliminar ({selected.size})
+                Eliminar
+              </button>
+              <button
+                onClick={() => setSelected(new Set())}
+                className="p-1.5 text-blue-700 hover:bg-blue-100 rounded-md"
+                title="Limpiar selección"
+              >
+                <X size={16} />
               </button>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {canSelectAcrossPages && (
           <div className="mb-3 flex items-center justify-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
@@ -441,7 +440,7 @@ export function OrdersPage() {
               )}
               {!loading &&
                 filtered.map((o) => {
-                  const meta = STATUS_META[o.status]
+                  const meta = STATUS_META[orderDisplayStatus(o)]
                   const checked = selected.has(o.id)
                   return (
                     <tr
@@ -452,7 +451,9 @@ export function OrdersPage() {
                         <input
                           type="checkbox"
                           checked={checked}
-                          onChange={() => toggleSelect(o.id)}
+                          onChange={(e) =>
+                            toggleSelect(o.id, (e.nativeEvent as MouseEvent).shiftKey)
+                          }
                           className="rounded border-gray-300"
                         />
                       </td>

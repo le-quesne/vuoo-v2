@@ -141,6 +141,20 @@ ordersApiRoutes.post('/', requireScope('orders:write'), async (c) => {
     stopId = newStop.id;
   }
 
+  // Heredar customer_id del stop si está vinculado, para que el JOIN del
+  // frontend hidrate email/phone desde el master.
+  let resolvedCustomerId: string | null = null;
+  if (stopId) {
+    const { data: stopRow } = await db
+      .from('stops')
+      .select('customer_id')
+      .eq('id', stopId)
+      .maybeSingle();
+    if (stopRow?.customer_id) {
+      resolvedCustomerId = (stopRow as { customer_id: string }).customer_id;
+    }
+  }
+
   const { data: order, error: oErr } = await db
     .from('orders')
     .insert({
@@ -148,8 +162,7 @@ ordersApiRoutes.post('/', requireScope('orders:write'), async (c) => {
       order_number: input.order_number ?? null,
       external_id: externalIdKey,
       customer_name: input.customer_name,
-      customer_phone: input.customer_phone ?? null,
-      customer_email: input.customer_email ?? null,
+      customer_id: resolvedCustomerId,
       address: input.address,
       lat: input.lat ?? null,
       lng: input.lng ?? null,

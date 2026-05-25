@@ -9,8 +9,6 @@ export const templatesRoutes = new Hono();
 
 const CANONICAL_COLUMNS = [
   'customer_name',
-  'customer_phone',
-  'customer_email',
   'address',
   'total_weight_kg',
   'volume_m3',
@@ -25,8 +23,6 @@ const CANONICAL_COLUMNS = [
 
 const SAMPLE_ROW = [
   'Juan Pérez',
-  '+56912345678',
-  'juan@example.cl',
   'Av. Providencia 1234, Santiago',
   '3.5',
   '0.05',

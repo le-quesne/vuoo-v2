@@ -14,8 +14,6 @@ export type MatchQuality = 'high' | 'medium' | 'low' | 'none';
 export const CANONICAL_COLUMNS = [
   'customer_name',
   'customer_code',
-  'customer_phone',
-  'customer_email',
   'address',
   'total_weight_kg',
   'volume_m3',
@@ -34,8 +32,6 @@ export type CanonicalColumn = (typeof CANONICAL_COLUMNS)[number];
 export const CANONICAL_LABELS: Record<CanonicalColumn, string> = {
   customer_name: 'Nombre del cliente',
   customer_code: 'Código del cliente',
-  customer_phone: 'Teléfono',
-  customer_email: 'Email',
   address: 'Dirección',
   total_weight_kg: 'Peso (kg)',
   volume_m3: 'Volumen (m³)',

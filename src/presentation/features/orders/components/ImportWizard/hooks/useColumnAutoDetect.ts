@@ -26,8 +26,6 @@ const ALIASES: Record<CanonicalColumn, string[]> = {
     'id_cliente',
     'rut',
   ],
-  customer_phone: ['customer_phone', 'telefono', 'phone', 'celular', 'movil'],
-  customer_email: ['customer_email', 'email', 'correo', 'mail'],
   address: [
     'address',
     'direccion',
