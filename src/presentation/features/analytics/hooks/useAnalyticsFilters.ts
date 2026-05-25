@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   format,
@@ -100,6 +100,21 @@ export function useAnalyticsFilters() {
     },
     [searchParams, setSearchParams],
   )
+
+  // Si el rango persistido en la URL matchea un preset (week/month/today/...)
+  // pero el cómputo de ese preset con `today` actual da otro rango, el usuario
+  // está viendo datos viejos: dejó la pestaña abierta o volvió desde un link
+  // antiguo y la app sigue mostrando "Esta semana" con el rango de la semana
+  // pasada. Re-calculamos para que "Esta semana" siempre signifique la actual.
+  // Custom se respeta — ahí el rango lo eligió el usuario explícitamente.
+  useEffect(() => {
+    if (preset === 'custom') return
+    const fresh = rangeForPreset(preset, today)
+    if (!fresh) return
+    if (fresh.from !== from || fresh.to !== to) {
+      setRange(fresh.from, fresh.to)
+    }
+  }, [preset, from, to, today, setRange])
 
   const setPreset = useCallback(
     (p: DatePreset) => {

@@ -160,6 +160,7 @@ export default function TrackingPage() {
   const [comment, setComment] = useState('')
   const [feedbackSent, setFeedbackSent] = useState(false)
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false)
+  const [feedbackError, setFeedbackError] = useState<string | null>(null)
 
   // Map refs
   const mapContainerRef = useRef<HTMLDivElement>(null)
@@ -405,15 +406,31 @@ export default function TrackingPage() {
   async function handleFeedbackSubmit() {
     if (!token || rating === 0 || feedbackSubmitting) return
     setFeedbackSubmitting(true)
+    setFeedbackError(null)
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/submit-feedback`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...PUBLIC_FN_HEADERS },
         body: JSON.stringify({ token, rating, comment: comment.trim() || null }),
       })
-      if (res.ok) setFeedbackSent(true)
-    } catch {
-      // silently fail — not critical
+      if (res.ok) {
+        setFeedbackSent(true)
+        return
+      }
+      // Levantamos el mensaje del servidor (duplicado, no completado, etc.)
+      // para no dejar al cliente con un botón "Enviar" muerto sin feedback.
+      const body = await res.json().catch(() => null) as { error?: string } | null
+      if (res.status === 409) {
+        setFeedbackError('Ya enviaste una calificación para esta entrega.')
+      } else if (body?.error) {
+        setFeedbackError(body.error)
+      } else {
+        setFeedbackError(`No se pudo enviar (${res.status}).`)
+      }
+    } catch (err) {
+      setFeedbackError(
+        err instanceof Error ? `No se pudo enviar: ${err.message}` : 'No se pudo enviar la calificación.',
+      )
     } finally {
       setFeedbackSubmitting(false)
     }
@@ -873,6 +890,9 @@ export default function TrackingPage() {
                     <Send size={14} />
                     {feedbackSubmitting ? 'Enviando...' : 'Enviar'}
                   </button>
+                  {feedbackError && (
+                    <p className="mt-2 text-xs text-rose-600 text-center">{feedbackError}</p>
+                  )}
                 </>
               )}
             </div>
