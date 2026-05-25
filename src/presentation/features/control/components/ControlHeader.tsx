@@ -55,15 +55,15 @@ export function ControlHeader({
   }, [moreOpen]);
 
   return (
-    <div className="px-6 py-3 border-b border-navy-700 bg-navy-950 text-white flex items-center justify-between">
+    <div className="px-6 py-3 border-b border-gray-200 bg-white flex items-center justify-between">
       <div className="flex items-center gap-2.5">
         <span
-          className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400"
+          className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500"
           title="Live"
           aria-label="Live"
         />
-        <h1 className="text-base font-semibold tracking-tight">Torre de Control</h1>
-        <span className="text-sm text-slate-400">
+        <h1 className="text-base font-semibold tracking-tight text-gray-900">Torre de Control</h1>
+        <span className="text-sm text-gray-500">
           {isToday(selectedDate)
             ? `Hoy · ${format(selectedDate, "EEEE d 'de' MMMM", { locale: es })}`
             : format(selectedDate, "EEEE d 'de' MMMM", { locale: es })}
@@ -72,7 +72,7 @@ export function ControlHeader({
       <div className="flex items-center gap-1">
         <button
           onClick={() => onDateChange(subDays(selectedDate, 1))}
-          className="p-2 rounded hover:bg-white/10 text-slate-300"
+          className="p-2 rounded hover:bg-gray-100 text-gray-500"
           title="Día anterior"
         >
           <ChevronLeft size={16} />
@@ -80,14 +80,14 @@ export function ControlHeader({
         {!isToday(selectedDate) && (
           <button
             onClick={() => onDateChange(new Date())}
-            className="px-3 py-1.5 text-xs rounded border border-white/15 text-slate-200 hover:bg-white/10"
+            className="px-3 py-1.5 text-xs rounded border border-gray-200 text-gray-600 hover:bg-gray-50"
           >
             Hoy
           </button>
         )}
         <button
           onClick={() => onDateChange(addDays(selectedDate, 1))}
-          className="p-2 rounded hover:bg-white/10 text-slate-300"
+          className="p-2 rounded hover:bg-gray-100 text-gray-500"
           title="Día siguiente"
         >
           <ChevronRight size={16} />
@@ -104,8 +104,8 @@ export function ControlHeader({
               return (
                 <div
                   key={u.user_id}
-                  className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold border-2 border-navy-950 ${
-                    u.user_id === currentUserId ? 'bg-blue-500' : 'bg-slate-500'
+                  className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold border-2 border-white ${
+                    u.user_id === currentUserId ? 'bg-blue-500' : 'bg-gray-400'
                   }`}
                 >
                   {initial}
@@ -113,7 +113,7 @@ export function ControlHeader({
               );
             })}
             {presentUsers.length > 4 && (
-              <div className="w-6 h-6 rounded-full flex items-center justify-center text-slate-200 text-[10px] font-bold border-2 border-navy-950 bg-white/10">
+              <div className="w-6 h-6 rounded-full flex items-center justify-center text-gray-600 text-[10px] font-bold border-2 border-white bg-gray-100">
                 +{presentUsers.length - 4}
               </div>
             )}
@@ -121,7 +121,7 @@ export function ControlHeader({
         )}
         <button
           onClick={onToggleMute}
-          className="ml-2 p-2 rounded hover:bg-white/10 text-slate-300"
+          className="ml-2 p-2 rounded hover:bg-gray-100 text-gray-500"
           title={muted ? 'Activar sonido de alertas' : 'Silenciar alertas'}
         >
           {muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
@@ -130,8 +130,8 @@ export function ControlHeader({
           onClick={onToggleAlerts}
           className={`relative inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded ml-2 border ${
             showAlerts
-              ? 'border-white/20 bg-white/10 text-white'
-              : 'border-white/15 text-slate-200 hover:bg-white/10'
+              ? 'border-gray-300 bg-gray-100 text-gray-900'
+              : 'border-gray-200 text-gray-700 hover:bg-gray-50'
           }`}
           title="Alertas"
         >
@@ -145,7 +145,7 @@ export function ControlHeader({
         </button>
         <button
           onClick={onOpenBroadcast}
-          className="ml-1 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded border border-white/15 text-slate-200 hover:bg-white/10"
+          className="ml-1 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded border border-gray-200 text-gray-700 hover:bg-gray-50"
           title="Enviar mensaje a todos los conductores en ruta"
         >
           <Megaphone size={14} />
@@ -154,7 +154,7 @@ export function ControlHeader({
         <div className="ml-1 relative" ref={moreRef}>
           <button
             onClick={() => setMoreOpen((v) => !v)}
-            className="p-2 rounded hover:bg-white/10 text-slate-300"
+            className="p-2 rounded hover:bg-gray-100 text-gray-500"
             title="Más acciones"
             aria-haspopup="menu"
             aria-expanded={moreOpen}
