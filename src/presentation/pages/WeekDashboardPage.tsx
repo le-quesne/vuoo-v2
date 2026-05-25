@@ -14,6 +14,7 @@ import { es } from 'date-fns/locale'
 import { ChevronLeft, ChevronRight, Plus, Truck, MapPin } from 'lucide-react'
 import { supabase } from '@/application/lib/supabase'
 import { useAuth } from '@/application/hooks/useAuth'
+import { parseLocalDateISO } from '@/application/utils/dateHelpers'
 import type { Plan } from '@/data/types/database'
 
 interface PlanWithCounts extends Plan {
@@ -141,7 +142,7 @@ export function WeekDashboardPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
         {days.map((d) => {
-          const dayPlans = plans.filter((p) => isSameDay(new Date(p.date), d))
+          const dayPlans = plans.filter((p) => isSameDay(parseLocalDateISO(p.date), d))
           const highlighted = isToday(d)
           return (
             <div

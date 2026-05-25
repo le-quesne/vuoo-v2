@@ -20,6 +20,7 @@ import { KPICard } from '@/presentation/features/analytics/components/KPICard'
 import { ChartCard } from '@/presentation/features/analytics/components/ChartCard'
 import { formatDistance, formatDuration, formatPercent } from '@/presentation/features/analytics/utils/analyticsFormat'
 import { exportToCSV } from '@/application/utils/csvExport'
+import { parseLocalDateISO } from '@/application/utils/dateHelpers'
 
 interface Props {
   from: string
@@ -126,7 +127,7 @@ export function OperationsView({ from, to }: Props) {
       if (!row.report_time || !row.stop?.time_window_end || !row.plan?.date) return false
       const reportDate = new Date(row.report_time)
       const [hh, mm] = row.stop.time_window_end.split(':').map(Number)
-      const windowEnd = new Date(row.plan.date)
+      const windowEnd = parseLocalDateISO(row.plan.date)
       windowEnd.setHours(hh || 0, mm || 0, 0, 0)
       return reportDate.getTime() <= windowEnd.getTime()
     }

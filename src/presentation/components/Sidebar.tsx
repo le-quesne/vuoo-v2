@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/application/lib/supabase'
 import { useAuth } from '@/application/hooks/useAuth'
+import { todayLocalISO } from '@/application/utils/dateHelpers'
 import { ControlTowerIcon } from './ControlTowerIcon'
 
 const navItems = [
@@ -60,7 +61,7 @@ export function Sidebar({ expanded, onToggle }: { expanded: boolean; onToggle: (
     let cancelled = false
 
     async function load() {
-      const today = new Date().toISOString().slice(0, 10)
+      const today = todayLocalISO()
       const { data } = await supabase.rpc('get_live_dashboard', {
         p_org_id: currentOrg!.id,
         p_date: today,
