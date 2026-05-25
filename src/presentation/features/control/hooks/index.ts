@@ -8,6 +8,8 @@ export type {
   PlanStopEntry,
   PlanStopsByRoute,
 } from './useLiveRoutes';
+export { useLiveRoutesEta } from './useLiveRoutesEta';
+export type { UseLiveRoutesEtaReturn } from './useLiveRoutesEta';
 export { useControlRealtime } from './useControlRealtime';
 export { useAlertFeed } from './useAlertFeed';
 export type { UseAlertFeedReturn } from './useAlertFeed';

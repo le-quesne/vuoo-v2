@@ -2,9 +2,11 @@ import {
   Battery,
   CheckCircle2,
   Clock,
+  Flag,
   Gauge,
   MapPin,
   MessageCircle,
+  Navigation,
   Radio,
   Shuffle,
   WifiOff,
@@ -18,6 +20,7 @@ import {
   type LiveRouteState,
 } from '@/data/services/liveControl.services'
 import type { Stop } from '@/data/types/database'
+import type { RouteEta } from '@/data/services/control'
 
 interface LiveRouteCardProps {
   route: LiveRoute
@@ -26,8 +29,16 @@ interface LiveRouteCardProps {
   selected: boolean
   onSelect: () => void
   pendingStops?: Array<{ planStopId: string; stop: Stop }>
+  eta?: RouteEta | null
   onContact?: () => void
   onReassignStop?: (planStopId: string, planStopName: string) => void
+}
+
+function formatEtaTime(iso: string | null): string | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  return d.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false })
 }
 
 const STATE_LABEL: Record<LiveRouteState, string> = {
@@ -51,6 +62,7 @@ export function LiveRouteCard({
   selected,
   onSelect,
   pendingStops = [],
+  eta,
   onContact,
   onReassignStop,
 }: LiveRouteCardProps) {
@@ -122,6 +134,42 @@ export function LiveRouteCard({
         <div className="text-xs text-gray-500 truncate mb-2">
           {vehicleLabel} &middot; {route.plan_name}
         </div>
+
+        {eta && eta.source !== 'none' && (eta.nextEta || eta.finalEta) && (
+          <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+            {eta.nextEta && (
+              <span
+                title={eta.source === 'live' ? 'ETA en vivo (Mapbox)' : 'ETA estimado del plan'}
+                className={[
+                  'inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full',
+                  eta.source === 'live'
+                    ? 'bg-blue-50 text-blue-700 border border-blue-100'
+                    : 'bg-gray-100 text-gray-600 border border-gray-200',
+                ].join(' ')}
+              >
+                <Navigation className="h-3 w-3" />
+                Prox {formatEtaTime(eta.nextEta)}
+              </span>
+            )}
+            {eta.finalEta && (
+              <span
+                title={eta.source === 'live' ? 'ETA final en vivo (Mapbox)' : 'ETA final estimado del plan'}
+                className={[
+                  'inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full',
+                  eta.source === 'live'
+                    ? 'bg-indigo-50 text-indigo-700 border border-indigo-100'
+                    : 'bg-gray-100 text-gray-600 border border-gray-200',
+                ].join(' ')}
+              >
+                <Flag className="h-3 w-3" />
+                Final {formatEtaTime(eta.finalEta)}
+              </span>
+            )}
+            {eta.source === 'plan' && (
+              <span className="text-[10px] text-gray-400">~ estimado</span>
+            )}
+          </div>
+        )}
 
         <div className="mb-2">
           <div className="relative h-2 bg-gray-200 rounded-full overflow-hidden">

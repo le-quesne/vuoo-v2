@@ -23,6 +23,7 @@ import {
   useDerivedAlerts,
   useLiveDashboard,
   useLiveRoutes,
+  useLiveRoutesEta,
   useNowTick,
   useOrgDepot,
   useRouteFiltering,
@@ -88,6 +89,15 @@ export function ControlPage() {
     routes,
     nowMs,
   );
+
+  const activeRouteIds = useMemo(
+    () =>
+      routes
+        .filter((r) => r.route_status === 'in_transit' || r.route_status === 'not_started')
+        .map((r) => r.route_id),
+    [routes],
+  );
+  const { etaByRouteId } = useLiveRoutesEta(orgId, dateStr, activeRouteIds);
 
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
   const [muted, setMuted] = useState<boolean>(() => isAlertSoundMuted());
@@ -204,6 +214,7 @@ export function ControlPage() {
               routes={routes}
               filteredRoutes={filteredRoutes}
               planStopsByRoute={planStopsByRoute}
+              etaByRouteId={etaByRouteId}
               routeColorById={routeColorById}
               nowMs={nowMs}
               selectedRouteId={selectedRouteId}

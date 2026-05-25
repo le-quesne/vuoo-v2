@@ -3,12 +3,14 @@ import ContactDriverMenu from './ContactDriverMenu';
 import { ROUTE_COLORS } from '@/presentation/components/RouteMap';
 import type { LiveRoute } from '@/domain/entities/liveControl';
 import type { PlanStopsByRoute } from '../hooks/useLiveRoutes';
+import type { RouteEtaMap } from '@/data/services/control';
 
 interface ControlRouteListProps {
   loading: boolean;
   routes: LiveRoute[];
   filteredRoutes: LiveRoute[];
   planStopsByRoute: PlanStopsByRoute;
+  etaByRouteId: RouteEtaMap;
   routeColorById: Record<string, string>;
   nowMs: number;
   selectedRouteId: string | null;
@@ -24,6 +26,7 @@ export function ControlRouteList({
   routes,
   filteredRoutes,
   planStopsByRoute,
+  etaByRouteId,
   routeColorById,
   nowMs,
   selectedRouteId,
@@ -59,6 +62,7 @@ export function ControlRouteList({
               selected={isSelected}
               onSelect={() => onSelectRoute(r.route_id)}
               pendingStops={pending}
+              eta={etaByRouteId[r.route_id] ?? null}
               onContact={r.driver ? () => onOpenContact(r.route_id) : undefined}
               onReassignStop={(planStopId, name) =>
                 onReassignStop({ planStopId, name, routeId: r.route_id })
