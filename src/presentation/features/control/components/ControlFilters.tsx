@@ -28,26 +28,29 @@ export function ControlFilters({
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
         <input
           type="text"
-          placeholder="Buscar conductor, vehiculo o plan..."
+          placeholder="Buscar conductor, vehículo o plan…"
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
-          className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+          className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-300"
         />
       </div>
-      <div className="flex gap-1 overflow-x-auto">
-        {FILTERS.map((f) => (
-          <button
-            key={f.key}
-            onClick={() => onFilterChange(f.key)}
-            className={`px-2.5 py-1 text-xs rounded-full border whitespace-nowrap ${
-              filter === f.key
-                ? 'bg-blue-50 border-blue-300 text-blue-700'
-                : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
+      <div className="flex gap-3 text-xs overflow-x-auto -mx-1 px-1">
+        {FILTERS.map((f) => {
+          const active = filter === f.key;
+          return (
+            <button
+              key={f.key}
+              onClick={() => onFilterChange(f.key)}
+              className={`relative pb-1.5 whitespace-nowrap transition-colors ${
+                active
+                  ? 'text-gray-900 font-medium after:absolute after:left-0 after:right-0 after:bottom-0 after:h-px after:bg-gray-900'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {f.label}
+            </button>
+          );
+        })}
       </div>
     </div>
   );

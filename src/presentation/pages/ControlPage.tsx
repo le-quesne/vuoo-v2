@@ -23,6 +23,7 @@ import {
   useDerivedAlerts,
   useLiveDashboard,
   useLiveRoutes,
+  useLiveRoutesEta,
   useNowTick,
   useOrgDepot,
   useRouteFiltering,
@@ -89,6 +90,15 @@ export function ControlPage() {
     nowMs,
   );
 
+  const activeRouteIds = useMemo(
+    () =>
+      routes
+        .filter((r) => r.route_status === 'in_transit' || r.route_status === 'not_started')
+        .map((r) => r.route_id),
+    [routes],
+  );
+  const { etaByRouteId } = useLiveRoutesEta(orgId, dateStr, activeRouteIds);
+
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
   const [muted, setMuted] = useState<boolean>(() => isAlertSoundMuted());
   const [showAlerts, setShowAlerts] = useState(false);
@@ -120,6 +130,7 @@ export function ControlPage() {
         vehicleName: r.vehicle?.name ?? 'Sin vehiculo',
         stops: (planStopsByRoute[r.route_id] ?? []).map((e) => e.stop),
         color: routeColorById[r.route_id] ?? ROUTE_COLORS[0],
+        geometry: r.geometry ?? null,
       })),
     [routes, planStopsByRoute, routeColorById],
   );
@@ -186,7 +197,7 @@ export function ControlPage() {
         />
       </div>
 
-      <div className="px-6 py-2 border-b border-gray-100 bg-gray-50/50">
+      <div className="px-6 py-2 border-b border-gray-100 bg-white">
         <KpiBar dashboard={dashboard} loading={loading} />
       </div>
 
@@ -204,6 +215,7 @@ export function ControlPage() {
               routes={routes}
               filteredRoutes={filteredRoutes}
               planStopsByRoute={planStopsByRoute}
+              etaByRouteId={etaByRouteId}
               routeColorById={routeColorById}
               nowMs={nowMs}
               selectedRouteId={selectedRouteId}
@@ -216,7 +228,7 @@ export function ControlPage() {
           </div>
         </div>
 
-        <div className="flex-1 rounded-lg overflow-hidden border border-gray-200 min-h-0">
+        <div className="flex-1 rounded-md overflow-hidden border border-gray-200 min-h-0">
           <MapErrorBoundary>
             <RouteMap
               routeGroups={mapRouteGroups}

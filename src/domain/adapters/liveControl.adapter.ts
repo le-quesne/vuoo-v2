@@ -53,17 +53,17 @@ export function getLiveRouteState(route: LiveRoute, nowMs: number): LiveRouteSta
 export function getStateColor(state: string): string {
   switch (state) {
     case 'in_transit':
-      return 'bg-emerald-100 text-emerald-700';
+      return 'text-emerald-700';
     case 'offline':
-      return 'bg-red-100 text-red-700';
+      return 'text-gray-500';
     case 'on_break':
-      return 'bg-amber-100 text-amber-700';
+      return 'text-amber-700';
     case 'completed':
-      return 'bg-blue-100 text-blue-700';
+      return 'text-gray-500';
     case 'not_started':
-      return 'bg-gray-100 text-gray-600';
+      return 'text-gray-500';
     default:
-      return 'bg-gray-100 text-gray-600';
+      return 'text-gray-500';
   }
 }
 

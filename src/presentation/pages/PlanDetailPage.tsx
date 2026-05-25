@@ -48,7 +48,7 @@ import {
 } from '@/presentation/features/plans/components'
 import { VroomWizardModal } from '@/presentation/features/planner/components/VroomWizardModal'
 import { ConfirmDialog } from '@/presentation/components/ConfirmDialog'
-import { calculateRouteWeight, getCapacityStatus } from '@/presentation/features/plans/utils/capacity'
+import { buildOrdersCountByPlanStop, buildWeightByPlanStop, calculateRouteWeight, getCapacityStatus } from '@/presentation/features/plans/utils/capacity'
 import { routePlannedKm, routeTraveledKm } from '@/presentation/features/plans/utils/routeMetrics'
 import { fetchDirections } from '@/application/lib/mapbox'
 import type { Plan, Route, Stop, Vehicle, Driver, PlanStopWithStop, NotificationLog, Order } from '@/data/types/database'
@@ -87,6 +87,10 @@ export function PlanDetailPage() {
   const [podPlanStop, setPodPlanStop] = useState<PlanStopWithStop | null>(null)
   const [notifLogs, setNotifLogs] = useState<NotificationLog[]>([])
   const [ordersByPlanStop, setOrdersByPlanStop] = useState<Map<string, Order>>(new Map())
+  // Peso agregado por plan_stop (suma TODAS las órdenes que cuelgan del mismo destino,
+  // a diferencia de `ordersByPlanStop` que solo guarda una para display).
+  const [weightByPlanStop, setWeightByPlanStop] = useState<Map<string, number>>(new Map())
+  const [ordersCountByPlanStop, setOrdersCountByPlanStop] = useState<Map<string, number>>(new Map())
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [showActivity, setShowActivity] = useState(false)
   const [publishing, setPublishing] = useState(false)
@@ -203,14 +207,19 @@ export function PlanDetailPage() {
         supabase.from('orders').select('*').in('plan_stop_id', planStopIds),
       ])
       setNotifLogs(notifRes.data ?? [])
+      const ordersData = (ordersRes.data ?? []) as Order[]
       const orderMap = new Map<string, Order>()
-      for (const o of (ordersRes.data ?? []) as Order[]) {
+      for (const o of ordersData) {
         if (o.plan_stop_id) orderMap.set(o.plan_stop_id, o)
       }
       setOrdersByPlanStop(orderMap)
+      setWeightByPlanStop(buildWeightByPlanStop(ordersData))
+      setOrdersCountByPlanStop(buildOrdersCountByPlanStop(ordersData))
     } else {
       setNotifLogs([])
       setOrdersByPlanStop(new Map())
+      setWeightByPlanStop(new Map())
+      setOrdersCountByPlanStop(new Map())
     }
 
     const routesWithStops = routeData.map((r) => ({
@@ -415,6 +424,7 @@ export function PlanDetailPage() {
         vehicleName: r.vehicle?.name ?? 'Sin vehículo',
         stops: toStops(r.planStops),
         color: ROUTE_COLORS[i % ROUTE_COLORS.length],
+        geometry: r.geometry ?? null,
       })),
       ...(unassignedStops.length > 0
         ? [{
@@ -613,7 +623,7 @@ export function PlanDetailPage() {
               const tw = route.vehicle?.time_window_start && route.vehicle?.time_window_end
                 ? `${route.vehicle.time_window_start.slice(0, 5)}-${route.vehicle.time_window_end.slice(0, 5)}`
                 : null
-              const usedKg = calculateRouteWeight(route.planStops, ordersByPlanStop)
+              const usedKg = calculateRouteWeight(route.planStops, weightByPlanStop)
               const capacity = getCapacityStatus(usedKg, route.vehicle?.capacity_weight_kg ?? null)
               const capacityBarColor =
                 capacity?.color === 'green' ? 'bg-emerald-500'
@@ -779,6 +789,8 @@ export function PlanDetailPage() {
                           color={color}
                           selected={selectedStopId === ps.stop.id}
                           order_obj={ordersByPlanStop.get(ps.id) ?? null}
+                          stopWeightKg={weightByPlanStop.get(ps.id) ?? 0}
+                          ordersCount={ordersCountByPlanStop.get(ps.id) ?? 0}
                           notifLogs={notifLogsByPlanStop.get(ps.id) ?? []}
                           copied={copiedId === ps.id}
                           onSelect={() => handleStopClick(ps.stop)}
@@ -817,6 +829,8 @@ export function PlanDetailPage() {
                         color="#9ca3af"
                         selected={selectedStopId === ps.stop.id}
                         order_obj={ordersByPlanStop.get(ps.id) ?? null}
+                        stopWeightKg={weightByPlanStop.get(ps.id) ?? 0}
+                        ordersCount={ordersCountByPlanStop.get(ps.id) ?? 0}
                         notifLogs={notifLogsByPlanStop.get(ps.id) ?? []}
                         copied={copiedId === ps.id}
                         onSelect={() => handleStopClick(ps.stop)}

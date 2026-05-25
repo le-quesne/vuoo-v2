@@ -120,21 +120,25 @@ export function Sidebar({ expanded, onToggle }: { expanded: boolean; onToggle: (
               }
               title={expanded ? undefined : label}
             >
-              <div className="relative shrink-0">
-                <Icon size={20} />
-                {!expanded && badgeCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-amber-400 text-navy-950 text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
-                    {badgeCount > 9 ? '9+' : badgeCount}
-                  </span>
-                )}
-              </div>
-              {expanded && (
+              {({ isActive }) => (
                 <>
-                  <span className="text-sm truncate">{label}</span>
-                  {badgeCount > 0 && (
-                    <span className="ml-auto bg-amber-400 text-navy-950 text-[10px] font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
-                      {badgeCount > 99 ? '99+' : badgeCount}
-                    </span>
+                  <div className="relative shrink-0">
+                    <Icon size={20} />
+                    {!expanded && !isActive && badgeCount > 0 && (
+                      <span className="absolute -top-1 -right-1 bg-amber-400 text-navy-950 text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                        {badgeCount > 9 ? '9+' : badgeCount}
+                      </span>
+                    )}
+                  </div>
+                  {expanded && (
+                    <>
+                      <span className="text-sm truncate">{label}</span>
+                      {!isActive && badgeCount > 0 && (
+                        <span className="ml-auto bg-amber-400 text-navy-950 text-[10px] font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
+                          {badgeCount > 99 ? '99+' : badgeCount}
+                        </span>
+                      )}
+                    </>
                   )}
                 </>
               )}

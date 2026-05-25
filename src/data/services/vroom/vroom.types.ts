@@ -21,6 +21,8 @@ export interface VroomRoute {
   total_duration: number;
   total_distance: number | null;
   ordered_plan_stop_ids: string[];
+  /** Polilínea optimizada como array [[lng,lat], ...]. Null si Vroom no devolvió geometría. */
+  geometry: [number, number][] | null;
 }
 
 export interface VroomUnassigned {

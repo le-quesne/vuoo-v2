@@ -32,4 +32,4 @@ Registro de **agujeros conocidos** en el código: bugs no resueltos, atajos prag
 
 | ID | Título | Cerrado por | Fecha |
 |----|--------|-------------|-------|
-| — | _(vacío por ahora)_ | — | — |
+| [0003](./0003-optimizer-includes-completed-stops.md) | Re-optimización con completadas — capacidad inflada y orden mezclado | feat/control-minimalista | 2026-05-24 |

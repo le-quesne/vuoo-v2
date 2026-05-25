@@ -17,6 +17,14 @@ export interface OrgDepot {
   address: string | null;
 }
 
+export interface RouteEta {
+  nextEta: string | null;
+  finalEta: string | null;
+  source: 'live' | 'plan' | 'none';
+}
+
+export type RouteEtaMap = Record<string, RouteEta>;
+
 export async function fetchLiveDashboard(
   orgId: string,
   date: string,
@@ -96,6 +104,22 @@ export async function acknowledgeAlert(
       .eq('id', alertId);
     if (error) return fail(error.message);
     return ok(undefined);
+  } catch (e) {
+    return fail(toErrorMessage(e));
+  }
+}
+
+export async function fetchLiveRoutesEta(
+  orgId: string,
+  date: string,
+): Promise<ServiceResult<RouteEtaMap>> {
+  try {
+    const { data, error } = await supabase.functions.invoke<{ etas: RouteEtaMap }>(
+      'get-live-routes-eta',
+      { body: { orgId, date } },
+    );
+    if (error) return fail(error.message);
+    return ok((data?.etas ?? {}) as RouteEtaMap);
   } catch (e) {
     return fail(toErrorMessage(e));
   }

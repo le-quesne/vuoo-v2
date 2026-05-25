@@ -173,6 +173,12 @@ export interface Route {
   status: RouteStatus
   total_distance_km: number | null
   total_duration_minutes: number | null
+  /**
+   * Polilínea optimizada como array [[lng, lat], ...]. La pobla el optimizador
+   * (Vroom + OSRM). El RouteMap la consume directamente; sólo cae a Mapbox
+   * Directions si esto viene null (rutas antiguas previas al refactor).
+   */
+  geometry: [number, number][] | null
   name: string | null
   created_at: string
   user_id: string
