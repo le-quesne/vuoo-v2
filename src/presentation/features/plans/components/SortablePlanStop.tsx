@@ -19,6 +19,15 @@ interface SortablePlanStopProps {
   color: string;
   selected: boolean;
   order_obj: OrderLite;
+  /**
+   * Peso TOTAL del destino, ya agregado por plan_stop_id. Suma todas las
+   * órdenes consolidadas en la misma parada — `order_obj.total_weight_kg`
+   * solo refleja una. El camión carga la suma, así que esto es lo que la
+   * barra de capacidad y el optimizador ven.
+   */
+  stopWeightKg: number;
+  /** Cantidad de órdenes consolidadas en este destino. */
+  ordersCount: number;
   notifLogs: NotificationLog[];
   copied: boolean;
   onSelect: () => void;
@@ -32,6 +41,8 @@ export function SortablePlanStop({
   color,
   selected,
   order_obj,
+  stopWeightKg,
+  ordersCount,
   notifLogs,
   copied,
   onSelect,
@@ -83,12 +94,15 @@ export function SortablePlanStop({
         {order_obj && (
           <div className="text-[10px] text-gray-400 truncate tabular-nums">
             {(() => {
-              const itemCount = order_obj.items?.length ?? 0;
               const parts: string[] = [];
-              if (itemCount > 0) parts.push(`${itemCount} item${itemCount === 1 ? '' : 's'}`);
-              if (order_obj.total_weight_kg > 0) {
-                const kg = order_obj.total_weight_kg;
-                const formatted = kg < 10 ? kg.toFixed(1) : Math.round(kg).toString();
+              if (ordersCount > 1) {
+                parts.push(`${ordersCount} órdenes`);
+              } else {
+                const itemCount = order_obj.items?.length ?? 0;
+                if (itemCount > 0) parts.push(`${itemCount} item${itemCount === 1 ? '' : 's'}`);
+              }
+              if (stopWeightKg > 0) {
+                const formatted = stopWeightKg < 10 ? stopWeightKg.toFixed(1) : Math.round(stopWeightKg).toString();
                 parts.push(`${formatted} kg`);
               }
               return parts.join(' · ');

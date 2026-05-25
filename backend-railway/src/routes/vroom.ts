@@ -272,7 +272,13 @@ vroomRoutes.post('/optimize', async (c) => {
     } else if (mode === 'consolidate') {
       // fixed alto + minimize_vehicles fuerza concentración real. La flag
       // se aplica más abajo en `vroomPayload.options`.
-      for (const v of vroomVehicles) v.costs = { fixed: 18000 };
+      //
+      // 86400 = 24h equivalentes en el modelo de costo de Vroom (per_hour
+      // default = 3600 u/h). Tiene que ser mayor que cualquier ahorro de
+      // viaje creíble por usar un camión extra; con 18000 (5h) no alcanzaba:
+      // en planes de 30+ paradas el ahorro de driving por partir en 2 rutas
+      // superaba esas 5h y Vroom seguía abriendo el 2do vehículo.
+      for (const v of vroomVehicles) v.costs = { fixed: 86400 };
     } else if (mode === 'balance_stops' || mode === 'balance_time') {
       // max_tasks=ceil(N/V) hace inviable la solución con V-1 vehículos, así
       // que Vroom se ve forzado a usar todos.
@@ -370,8 +376,26 @@ vroomRoutes.post('/optimize', async (c) => {
     options: vroomOptions,
   };
 
+  console.log(`[vroom][${mode}] sending`, JSON.stringify({
+    plan_id: planId,
+    mode,
+    vehicles: vroomVehicles.map((v) => ({
+      id: v.id,
+      capacity: v.capacity,
+      time_window: v.time_window,
+      max_tasks: v.max_tasks,
+      max_travel_time: v.max_travel_time,
+      costs: v.costs,
+    })),
+    jobs_count: vroomJobs.length,
+    jobs_total_weight: vroomJobs.reduce((s, j) => s + (j.delivery?.[0] ?? 0), 0),
+    jobs_with_tw: vroomJobs.filter((j) => j.time_windows && j.time_windows.length > 0).length,
+    options: vroomOptions,
+  }));
+
   const firstCall = await callVroom(vroomPayload);
   if (!firstCall.ok) {
+    console.log(`[vroom][${mode}] FAIL`, firstCall.status, JSON.stringify(firstCall.body).slice(0, 500));
     if (firstCall.status === 422) {
       const body = firstCall.body as Record<string, unknown>;
       return c.json(
@@ -386,6 +410,21 @@ vroomRoutes.post('/optimize', async (c) => {
   }
 
   let vroomData = firstCall.data;
+  const sum1 = vroomData.summary as Record<string, unknown> | undefined;
+  const routes1Arr = (vroomData.routes as Array<Record<string, unknown>> | undefined) ?? [];
+  console.log(`[vroom][${mode}] solved`, JSON.stringify({
+    cost: sum1?.cost,
+    routes_used: routes1Arr.length,
+    unassigned: sum1?.unassigned,
+    routes: routes1Arr.map((r) => ({
+      vehicle: r.vehicle,
+      duration_sec: r.duration,
+      service_sec: r.service,
+      waiting_sec: r.waiting_time,
+      delivery: r.delivery,
+      jobs: (r.steps as Array<Record<string, unknown>> | undefined)?.filter((s) => s.type === 'job').length,
+    })),
+  }));
 
   // ── balance_time: doble pasada ──
   // 1ra pasada (acabamos de hacerla) sin restricción → medimos viaje por ruta.
