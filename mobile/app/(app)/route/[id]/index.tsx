@@ -14,6 +14,7 @@ import {
 import { router, useLocalSearchParams, Stack } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
+import * as Notifications from 'expo-notifications'
 import { supabase } from '@/lib/supabase'
 import { isTrackingActive, startTracking, stopTracking } from '@/lib/location'
 import { useAuth } from '@/contexts/AuthContext'
@@ -193,6 +194,27 @@ export default function RouteDetailScreen() {
       supabase.removeChannel(channel)
     }
   }, [id, driver?.id, load])
+
+  // Popup explícito cuando el dispatcher reordena la ruta estando publicada.
+  // El handler global de expo-notifications ya muestra banner+sonido, pero el
+  // chofer puede ignorarlo si está mirando el detalle. Un Alert modal asegura
+  // que vea exactamente qué cambió.
+  useEffect(() => {
+    if (!id) return
+    const sub = Notifications.addNotificationReceivedListener((notification) => {
+      const data = notification.request.content.data as
+        | { type?: string; routeId?: string }
+        | undefined
+      if (!data) return
+      if (data.type !== 'route_reordered') return
+      if (data.routeId !== id) return
+      const body =
+        notification.request.content.body ??
+        'La ruta ya está actualizada en la app.'
+      Alert.alert('Tu ruta fue actualizada', body)
+    })
+    return () => sub.remove()
+  }, [id])
 
   // Realtime: driver location updates while the route is in transit.
   useEffect(() => {

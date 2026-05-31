@@ -53,7 +53,12 @@ import { routePlannedKm, routeTraveledKm } from '@/presentation/features/plans/u
 import { fetchDirections } from '@/application/lib/mapbox'
 import type { Plan, Route, Stop, Vehicle, Driver, PlanStopWithStop, NotificationLog, Order } from '@/data/types/database'
 import { plansService } from '@/data/services/plans'
-import { notifyDriversOnPublish, notifyDriversOnUnpublish } from '@/data/services/notifyDriver.services'
+import {
+  notifyDriversOnPublish,
+  notifyDriversOnUnpublish,
+  notifyDriverRouteReordered,
+  notifyDriverStopReassigned,
+} from '@/data/services/notifyDriver.services'
 import { userMessage } from '@/application/utils/errorMessages'
 import { parseLocalDateISO } from '@/application/utils/dateHelpers'
 
@@ -96,6 +101,7 @@ export function PlanDetailPage() {
   const [publishing, setPublishing] = useState(false)
   const [publishError, setPublishError] = useState<string | null>(null)
   const [showPublishConfirm, setShowPublishConfirm] = useState(false)
+  const [pendingReorder, setPendingReorder] = useState<DragEndEvent | null>(null)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
   const planRouteIds = useMemo(() => routes.map((r) => r.id), [routes])
@@ -240,9 +246,24 @@ export function PlanDetailPage() {
     setActiveDragId(String(event.active.id))
   }
 
-  async function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event
+  function handleDragEnd(event: DragEndEvent) {
     setActiveDragId(null)
+    const { active, over } = event
+    if (!over) return
+    if (String(active.id) === String(over.id)) return
+
+    // Plan publicado: pedir confirmación antes de tocar nada para no romper la
+    // ruta del chofer sin que el dispatcher lo decida explícitamente.
+    if (plan?.status === 'published') {
+      setPendingReorder(event)
+      return
+    }
+
+    void applyDragEnd(event, false)
+  }
+
+  async function applyDragEnd(event: DragEndEvent, notifyDrivers: boolean) {
+    const { active, over } = event
     if (!over) return
 
     const activeId = String(active.id)
@@ -275,6 +296,22 @@ export function PlanDetailPage() {
           supabase.from('plan_stops').update({ order_index: i }).eq('id', ps.id),
         ),
       )
+
+      if (notifyDrivers && fromContainer !== UNASSIGNED_ID) {
+        const route = routes.find((r) => r.id === fromContainer)
+        const driverId = route?.driver?.id ?? null
+        const movedStop = list[oldIndex]
+        const stopName = movedStop?.stop?.name ?? 'Parada'
+        if (driverId) {
+          void notifyDriverRouteReordered({
+            driverId,
+            routeId: fromContainer,
+            stopName,
+            fromPosition: oldIndex + 1,
+            toPosition: newIndex + 1,
+          })
+        }
+      }
       return
     }
 
@@ -343,6 +380,30 @@ export function PlanDetailPage() {
         ),
       )
     }
+
+    if (notifyDrivers) {
+      const stopName = movingStop.stop?.name ?? 'Parada'
+      const fromDriverId =
+        fromContainer === UNASSIGNED_ID
+          ? null
+          : (routes.find((r) => r.id === fromContainer)?.driver?.id ?? null)
+      const toDriverId =
+        toContainer === UNASSIGNED_ID
+          ? null
+          : (routes.find((r) => r.id === toContainer)?.driver?.id ?? null)
+      void notifyDriverStopReassigned({ fromDriverId, toDriverId, stopName })
+    }
+  }
+
+  async function confirmPendingReorder() {
+    if (!pendingReorder) return
+    const event = pendingReorder
+    setPendingReorder(null)
+    await applyDragEnd(event, true)
+  }
+
+  function cancelPendingReorder() {
+    setPendingReorder(null)
   }
 
   async function confirmDeletePlanStop() {
@@ -1084,6 +1145,15 @@ export function PlanDetailPage() {
         variant="danger"
         onConfirm={confirmDeleteRoute}
         onCancel={() => setDeleteRouteId(null)}
+      />
+      <ConfirmDialog
+        open={pendingReorder !== null}
+        title="La ruta ya está publicada"
+        message="¿Seguro que quieres hacer un cambio de orden en la ruta? El conductor recibirá un aviso con el cambio."
+        confirmLabel="Sí, cambiar orden"
+        variant="default"
+        onConfirm={confirmPendingReorder}
+        onCancel={cancelPendingReorder}
       />
 
       {editRouteId &&

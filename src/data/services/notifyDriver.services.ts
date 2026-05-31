@@ -127,6 +127,34 @@ export async function notifyDriverStopReassigned(args: {
   await Promise.all(tasks)
 }
 
+export async function notifyDriverRouteReordered(args: {
+  driverId: string
+  routeId: string
+  stopName: string
+  fromPosition: number
+  toPosition: number
+}): Promise<void> {
+  const { driverId, routeId, stopName, fromPosition, toPosition } = args
+  try {
+    const userId = await resolveDriverUserId(driverId)
+    if (!userId) return
+    await sendPushToUser({
+      userId,
+      title: 'Tu ruta fue actualizada',
+      body: `La parada "${stopName}" pasó de la posición ${fromPosition} a la ${toPosition}. La ruta ya está actualizada en la app.`,
+      data: {
+        type: 'route_reordered',
+        routeId,
+        stopName,
+        fromPosition,
+        toPosition,
+      },
+    })
+  } catch (err) {
+    console.warn('[notifyDriver] route-reordered unexpected error', err)
+  }
+}
+
 export async function notifyDriversOnPublish(planId: string, orgId: string): Promise<void> {
   try {
     const { data: plan } = await supabase
