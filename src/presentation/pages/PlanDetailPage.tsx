@@ -1188,7 +1188,7 @@ export function PlanDetailPage() {
           <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-1">
-                ¿Estás seguro que querés publicar el plan?
+                ¿Estás seguro que quieres publicar el plan?
               </h2>
               <p className="text-sm text-gray-500 mb-5">
                 Los choferes asignados recibirán una notificación con sus rutas.

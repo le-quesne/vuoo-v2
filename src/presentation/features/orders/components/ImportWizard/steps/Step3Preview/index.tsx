@@ -368,7 +368,7 @@ export function Step3Preview({
             Política para matches "a revisar"
           </div>
           <div className="text-[11px] text-blue-700">
-            Aplica al global; podés cambiar fila por fila después.
+            Aplica al global; puedes cambiar fila por fila después.
           </div>
         </div>
         <select
