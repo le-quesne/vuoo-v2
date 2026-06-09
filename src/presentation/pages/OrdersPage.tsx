@@ -468,7 +468,7 @@ export function OrdersPage() {
                       </td>
                       <td className="p-3 text-gray-500 max-w-[220px] truncate">{o.address}</td>
                       <td className="p-3 text-gray-500 whitespace-nowrap">
-                        {o.total_weight_kg ? `${o.total_weight_kg} kg` : '-'}
+                        {o.total_weight_kg ? `${parseFloat(o.total_weight_kg.toFixed(3))} kg` : '-'}
                       </td>
                       <td className="p-3 text-gray-500 whitespace-nowrap">
                         {o.time_window_start && o.time_window_end
