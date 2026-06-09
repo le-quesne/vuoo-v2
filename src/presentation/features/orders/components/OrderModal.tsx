@@ -252,7 +252,7 @@ export function OrderModal({
     // Address solo es obligatoria si la orden NO viene del flujo "pending"
     // (importada con customer_code). Si está pending, dejamos guardar sin address.
     if (!form.address.trim() && !isPendingAddress) {
-      setError('Dirección es obligatoria. Si todavía no la sabés, dejá la orden como pendiente.')
+      setError('Dirección es obligatoria. Si todavía no la sabes, deja la orden como pendiente.')
       return
     }
     setSaving(true)
