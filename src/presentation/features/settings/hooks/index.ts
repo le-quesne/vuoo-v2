@@ -3,3 +3,6 @@
 
 export { useApiTokens } from './useApiTokens';
 export type { UseApiTokensReturn } from './useApiTokens';
+
+export { useShopifyIntegration } from './useShopifyIntegration';
+export type { UseShopifyIntegrationReturn } from './useShopifyIntegration';
