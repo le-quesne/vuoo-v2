@@ -1,0 +1,36 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+#
+# App de Vuoo para Shopify (conector orders/create).
+# Sin UI embebida: solo recibe webhooks. El handler vive en el backend
+# `vuoo-api` (Railway), no en esta carpeta.
+
+client_id = "31ca72dae2c26b1fa232103fc29df605"
+name = "vuoo-app-shpfy"
+application_url = "https://vuoo-api-production.up.railway.app"
+embedded = false
+
+[build]
+
+[access_scopes]
+# read_orders        → recibir órdenes (webhook orders/create)
+# write_orders       → crear orden de prueba vía Admin API (test E2E autónomo)
+# write_fulfillments → (fase 1.5) marcar entrega de vuelta en Shopify
+scopes = "read_orders,write_orders,write_fulfillments"
+
+[auth]
+redirect_urls = [
+  "https://vuoo-api-production.up.railway.app/shopify/callback",
+  "https://vuoo-api-production.up.railway.app/",
+  "https://vuoo-api-production.up.railway.app/webhooks/shopify/callback",
+]
+
+[webhooks]
+api_version = "2026-07"
+
+  [[webhooks.subscriptions]]
+  topics = [ "orders/create" ]
+  uri = "https://vuoo-api-production.up.railway.app/webhooks/shopify/orders-create"
+
+  [[webhooks.subscriptions]]
+  compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
+  uri = "https://vuoo-api-production.up.railway.app/webhooks/shopify/compliance"

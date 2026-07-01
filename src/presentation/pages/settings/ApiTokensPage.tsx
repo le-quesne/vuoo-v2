@@ -1,4 +1,4 @@
-import { ApiTokensTab } from '@/presentation/features/settings';
+import { ApiTokensTab, ShopifyIntegration } from '@/presentation/features/settings';
 
 export function ApiTokensPage() {
   return (
@@ -7,10 +7,14 @@ export function ApiTokensPage() {
         <div className="mb-6">
           <h1 className="text-xl font-semibold text-gray-900">API & Integraciones</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Tokens para integraciones externas (Shopify, VTEX, scripts).
+            Conectá tu tienda Shopify con un clic, o generá tokens para integraciones
+            personalizadas (VTEX, scripts).
           </p>
         </div>
-        <ApiTokensTab />
+        <div className="space-y-4">
+          <ShopifyIntegration />
+          <ApiTokensTab />
+        </div>
       </div>
     </div>
   );
