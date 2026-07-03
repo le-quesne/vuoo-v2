@@ -14,6 +14,7 @@ import type { Driver } from '../types/database'
 interface AuthContextValue {
   user: User | null
   driver: Driver | null
+  driverError: boolean
   loading: boolean
   signIn: (email: string, password: string) => Promise<{ error: string | null }>
   signOut: () => Promise<void>
@@ -23,24 +24,53 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue>({
   user: null,
   driver: null,
+  driverError: false,
   loading: true,
   signIn: async () => ({ error: 'not ready' }),
   signOut: async () => {},
   refreshDriver: async () => {},
 })
 
-async function fetchDriver(userId: string): Promise<Driver | null> {
-  const { data } = await supabase
-    .from('drivers')
-    .select('*')
-    .eq('user_id', userId)
-    .maybeSingle()
-  return (data as Driver | null) ?? null
+const DRIVER_FETCH_TIMEOUT_MS = 12000
+
+// Devuelve el driver del usuario. Usa limit(1) en vez de maybeSingle() porque
+// un usuario puede tener más de una fila de driver (p. ej. en varias orgs) y
+// maybeSingle() lanza error con múltiples filas, dejando la app colgada en el
+// spinner de carga. Incluye timeout para no esperar indefinidamente si la red
+// cuelga, y reporta si hubo error para que la UI pueda ofrecer reintentar.
+async function fetchDriver(
+  userId: string,
+): Promise<{ driver: Driver | null; error: boolean }> {
+  try {
+    const query = supabase
+      .from('drivers')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error('driver fetch timeout')),
+        DRIVER_FETCH_TIMEOUT_MS,
+      ),
+    )
+
+    const res = (await Promise.race([query, timeout])) as {
+      data: Driver[] | null
+      error: unknown
+    }
+    if (res.error) return { driver: null, error: true }
+    return { driver: res.data?.[0] ?? null, error: false }
+  } catch {
+    return { driver: null, error: true }
+  }
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [driver, setDriver] = useState<Driver | null>(null)
+  const [driverError, setDriverError] = useState(false)
   const [loading, setLoading] = useState(true)
   const userRef = useRef<User | null>(null)
 
@@ -76,9 +106,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!user) return
     let cancelled = false
-    fetchDriver(user.id).then((d) => {
+    setDriverError(false)
+    fetchDriver(user.id).then(({ driver: d, error }) => {
       if (cancelled) return
       setDriver(d)
+      setDriverError(error)
       setLoading(false)
       // Registro de push token no bloqueante: cualquier error se loguea silencioso
       registerForPushNotifications(user.id).catch((err) => {
@@ -102,13 +134,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refreshDriver = useCallback(async () => {
     const u = userRef.current
     if (!u) return
-    const d = await fetchDriver(u.id)
+    setDriverError(false)
+    const { driver: d, error } = await fetchDriver(u.id)
     setDriver(d)
+    setDriverError(error)
   }, [])
 
   return (
     <AuthContext.Provider
-      value={{ user, driver, loading, signIn, signOut, refreshDriver }}
+      value={{ user, driver, driverError, loading, signIn, signOut, refreshDriver }}
     >
       {children}
     </AuthContext.Provider>
