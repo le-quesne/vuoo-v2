@@ -36,15 +36,18 @@ export function PlannerPage() {
 
   useEffect(() => {
     loadPlans()
-  }, [currentMonth])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentMonth, currentOrg?.id])
 
   async function loadPlans() {
+    if (!currentOrg) return setPlans([])
     const start = format(startOfMonth(currentMonth), 'yyyy-MM-dd')
     const end = format(endOfMonth(currentMonth), 'yyyy-MM-dd')
 
     const { data: planData } = await supabase
       .from('plans')
       .select('*')
+      .eq('org_id', currentOrg.id)
       .gte('date', start)
       .lte('date', end)
       .order('date')

@@ -36,10 +36,12 @@ export function AddStopToPlanModal({
   const { user, currentOrg } = useAuth()
 
   useEffect(() => {
+    if (!currentOrg) return
     // Get unique stops by name+address (deduplicate recurrent stops)
     supabase
       .from('stops')
       .select('*')
+      .eq('org_id', currentOrg.id)
       .order('created_at', { ascending: false })
       .then(({ data }) => {
         if (data) {
@@ -53,7 +55,8 @@ export function AddStopToPlanModal({
         }
         setLoadingExisting(false)
       })
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentOrg?.id])
 
   const filtered = existingStops.filter((s) =>
     s.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -63,7 +66,8 @@ export function AddStopToPlanModal({
   function toggleStop(id: string) {
     setSelectedIds((prev) => {
       const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
       return next
     })
   }
@@ -94,7 +98,9 @@ export function AddStopToPlanModal({
         const [lng, lat] = data.features[0].center
         return { lat, lng }
       }
-    } catch {}
+    } catch {
+      /* geocoding best-effort */
+    }
     return null
   }
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Plus, Search, MapPin, Map as MapIcon, List, Download, ChevronLeft, ChevronRight, Pencil, Phone } from 'lucide-react'
 import { supabase } from '@/application/lib/supabase'
+import { useAuth } from '@/application/hooks/useAuth'
 import { SimpleMap } from '@/presentation/components/RouteMap'
 import { MapErrorBoundary } from '@/presentation/components/MapErrorBoundary'
 import type { Stop } from '@/data/types/database'
@@ -17,18 +18,26 @@ export function StopsPage() {
   const [viewMode, setViewMode] = useState<'list' | 'split'>('split')
   const [selectedStopId, setSelectedStopId] = useState<string | null>(null)
   const [editingStop, setEditingStop] = useState<Stop | null>(null)
+  const { currentOrg } = useAuth()
 
   useEffect(() => {
     loadStops()
-  }, [page])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, currentOrg?.id])
 
   async function loadStops() {
+    if (!currentOrg) {
+      setStops([])
+      setTotalCount(0)
+      return
+    }
     const from = (page - 1) * PAGE_SIZE
     const to = from + PAGE_SIZE - 1
 
     const { data, count } = await supabase
       .from('stops')
       .select('*', { count: 'exact' })
+      .eq('org_id', currentOrg.id)
       .order('created_at', { ascending: false })
       .range(from, to)
     if (data) setStops(data)

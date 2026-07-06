@@ -44,6 +44,11 @@ export function WeekDashboardPage() {
   )
 
   const loadPlans = useCallback(async () => {
+    if (!currentOrg) {
+      setPlans([])
+      setLoading(false)
+      return
+    }
     setLoading(true)
     const startStr = format(weekStart, 'yyyy-MM-dd')
     const endStr = format(weekEnd, 'yyyy-MM-dd')
@@ -51,6 +56,7 @@ export function WeekDashboardPage() {
     const { data: planData } = await supabase
       .from('plans')
       .select('*')
+      .eq('org_id', currentOrg.id)
       .gte('date', startStr)
       .lte('date', endStr)
       .order('date')
@@ -84,7 +90,8 @@ export function WeekDashboardPage() {
       }))
     )
     setLoading(false)
-  }, [weekStart, weekEnd])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekStart, weekEnd, currentOrg?.id])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect

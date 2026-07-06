@@ -26,12 +26,19 @@ export function DayDashboardPage() {
   const { user, currentOrg } = useAuth()
 
   const loadPlans = useCallback(async () => {
+    if (!currentOrg) {
+      setPlans([])
+      setUnassignedCount(0)
+      setLoading(false)
+      return
+    }
     setLoading(true)
     const dateStr = format(selectedDate, 'yyyy-MM-dd')
 
     const { data: planData } = await supabase
       .from('plans')
       .select('*')
+      .eq('org_id', currentOrg.id)
       .eq('date', dateStr)
       .order('created_at')
 
@@ -68,7 +75,8 @@ export function DayDashboardPage() {
 
     setUnassignedCount(stops.filter((s) => s.route_id === null).length)
     setLoading(false)
-  }, [selectedDate])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate, currentOrg?.id])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect

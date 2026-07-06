@@ -22,10 +22,18 @@ export function AddVehicleToPlanModal({
   const [selections, setSelections] = useState<Record<string, string | null>>({})
   const [saving, setSaving] = useState(false)
 
+  const { user, currentOrg } = useAuth()
+
   useEffect(() => {
+    if (!currentOrg) return
     Promise.all([
-      supabase.from('vehicles').select('*').order('name'),
-      supabase.from('drivers').select('*').eq('status', 'active').order('first_name'),
+      supabase.from('vehicles').select('*').eq('org_id', currentOrg.id).order('name'),
+      supabase
+        .from('drivers')
+        .select('*')
+        .eq('org_id', currentOrg.id)
+        .eq('status', 'active')
+        .order('first_name'),
     ]).then(([vehiclesRes, driversRes]) => {
       if (vehiclesRes.data) {
         setVehicles(vehiclesRes.data.filter((v) => !existingVehicleIds.includes(v.id)))
@@ -33,9 +41,8 @@ export function AddVehicleToPlanModal({
       if (driversRes.data) setDrivers(driversRes.data)
       setLoading(false)
     })
-  }, [])
-
-  const { user, currentOrg } = useAuth()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentOrg?.id])
 
   function toggleVehicle(vehicleId: string) {
     setSelections((prev) => {

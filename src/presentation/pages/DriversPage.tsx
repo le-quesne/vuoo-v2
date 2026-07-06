@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Plus, Search, Pencil, Trash2 } from 'lucide-react'
 import { supabase } from '@/application/lib/supabase'
+import { useAuth } from '@/application/hooks/useAuth'
 import type { Driver, Vehicle } from '@/data/types/database'
 import {
   AvailabilityBadge,
@@ -16,39 +17,50 @@ export function DriversPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [editing, setEditing] = useState<Driver | null>(null)
   const [search, setSearch] = useState('')
+  const { currentOrg } = useAuth()
 
   useEffect(() => {
     loadDrivers()
     loadVehicles()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentOrg?.id])
 
   // Realtime: cuando un chofer cambia su availability desde la app móvil
   // (o cuando un admin edita cualquier campo), refrescar la tabla sin
   // esperar a un refresh manual.
   useEffect(() => {
+    if (!currentOrg) return
     const channel = supabase
-      .channel('drivers-page')
+      .channel(`drivers-page-${currentOrg.id}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'drivers' },
+        { event: '*', schema: 'public', table: 'drivers', filter: `org_id=eq.${currentOrg.id}` },
         () => loadDrivers(),
       )
       .subscribe()
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentOrg?.id])
 
   async function loadDrivers() {
+    if (!currentOrg) return setDrivers([])
     const { data } = await supabase
       .from('drivers')
       .select('*, default_vehicle:vehicles(*)')
+      .eq('org_id', currentOrg.id)
       .order('created_at', { ascending: false })
     if (data) setDrivers(data as Driver[])
   }
 
   async function loadVehicles() {
-    const { data } = await supabase.from('vehicles').select('*').order('name')
+    if (!currentOrg) return setVehicles([])
+    const { data } = await supabase
+      .from('vehicles')
+      .select('*')
+      .eq('org_id', currentOrg.id)
+      .order('name')
     if (data) setVehicles(data)
   }
 
