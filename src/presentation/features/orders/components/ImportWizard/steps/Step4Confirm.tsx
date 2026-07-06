@@ -10,6 +10,7 @@ import {
   Eye,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { useAuth } from '@/application/hooks/useAuth';
 import type { PreviewRow, WizardState, ImportReport } from '../types/import.types';
 import { useImportSubmit } from '../hooks';
 import { previewRowToImportRow, findIntraFileDuplicates } from '../utils/mapping';
@@ -30,7 +31,8 @@ export function Step4Confirm({
   onGoToOrders,
   onAssignToPlan,
 }: Step4ConfirmProps) {
-  const { submit, cancel, progress, isSubmitting, error, report } = useImportSubmit();
+  const { currentOrg } = useAuth();
+  const { submit, cancel, progress, isSubmitting, error, report } = useImportSubmit(currentOrg?.id);
   const [rawWarningRow, setRawWarningRow] = useState<PreviewRow | null>(null);
 
   const intraDupes = useMemo(() => new Set(findIntraFileDuplicates(state.previewRows)), [state.previewRows]);

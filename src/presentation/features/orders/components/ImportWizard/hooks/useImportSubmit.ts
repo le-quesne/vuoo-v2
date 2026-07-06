@@ -78,6 +78,7 @@ function isRetryableStatus(status: number): boolean {
 async function postChunk(args: {
   rows: ImportRow[];
   templateId: string | null;
+  orgId?: string;
   signal: AbortSignal;
   idempotencyKey: string;
 }): Promise<{ ok: true; data: ChunkResponse } | { ok: false; status: number; error: string }> {
@@ -87,6 +88,9 @@ async function postChunk(args: {
     headers: {
       'Content-Type': 'application/json',
       'Idempotency-Key': args.idempotencyKey,
+      // Org destino (el switcher del super admin puede apuntar a cualquier org).
+      // El backend valida membresía / super admin.
+      ...(args.orgId ? { 'x-org-id': args.orgId } : {}),
       ...headers,
     },
     body: JSON.stringify({ templateId: args.templateId, rows: args.rows }),
@@ -108,6 +112,7 @@ async function postChunk(args: {
 async function postChunkWithRetry(args: {
   rows: ImportRow[];
   templateId: string | null;
+  orgId?: string;
   signal: AbortSignal;
   idempotencyKey: string;
 }): Promise<{ ok: true; data: ChunkResponse } | { ok: false; error: string }> {
@@ -138,7 +143,7 @@ async function postChunkWithRetry(args: {
   return { ok: false, error: `Falló tras ${RETRY_ATTEMPTS} intentos: ${lastErr}` };
 }
 
-export function useImportSubmit(): UseImportSubmitReturn {
+export function useImportSubmit(orgId?: string): UseImportSubmitReturn {
   const [progress, setProgress] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -195,6 +200,7 @@ export function useImportSubmit(): UseImportSubmitReturn {
           const r = await postChunkWithRetry({
             rows: chunks[i],
             templateId,
+            orgId,
             signal: ctrl.signal,
             idempotencyKey: uuidv4(),
           });
@@ -239,7 +245,7 @@ export function useImportSubmit(): UseImportSubmitReturn {
         abortRef.current = null;
       }
     },
-    [],
+    [orgId],
   );
 
   return { submit, cancel, progress, isSubmitting, error, report, reset };
