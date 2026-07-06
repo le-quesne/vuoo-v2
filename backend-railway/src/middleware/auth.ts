@@ -47,23 +47,38 @@ export const authMiddleware: MiddlewareHandler = async (c, next) => {
     }
 
     const userId = data.user.id;
+    const isSuperAdmin = data.user.app_metadata?.is_super_admin === true;
+    const requestedOrg = c.req.header('x-org-id');
 
     // Memberships con JWT-scoped client → RLS garantiza que solo ve las propias.
     const userClient = supabaseFromJWT(raw);
-    const requestedOrg = c.req.header('x-org-id');
     const { data: memberships, error: mErr } = await userClient
       .from('organization_members')
       .select('org_id')
       .eq('user_id', userId);
 
-    if (mErr || !memberships || memberships.length === 0) {
-      return c.json({ error: 'no_org_membership', detail: mErr?.message }, 403);
+    if (mErr) {
+      return c.json({ error: 'membership_lookup_failed', detail: mErr.message }, 500);
     }
 
-    const orgId =
-      requestedOrg && memberships.some((m) => m.org_id === requestedOrg)
-        ? requestedOrg
-        : memberships[0].org_id;
+    const memberOrgIds = (memberships ?? []).map((m) => m.org_id);
+
+    // Super admin: opera sobre la org que pide explícitamente aunque no sea
+    // miembro (el switcher del frontend le deja seleccionar cualquier org).
+    // Sin fallback a otra org: evita filtrar datos de una org distinta a la
+    // seleccionada.
+    let orgId: string | null;
+    if (isSuperAdmin) {
+      orgId = requestedOrg ?? memberOrgIds[0] ?? null;
+    } else if (requestedOrg && memberOrgIds.includes(requestedOrg)) {
+      orgId = requestedOrg;
+    } else {
+      orgId = memberOrgIds[0] ?? null;
+    }
+
+    if (!orgId) {
+      return c.json({ error: 'no_org', detail: 'No hay organización activa' }, 403);
+    }
 
     c.set('auth', {
       authKind: 'user_jwt',
