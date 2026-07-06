@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Building2, Users, MapPin, Calendar, Truck } from 'lucide-react'
+import { Building2, Users, MapPin, Calendar, Truck, Plus } from 'lucide-react'
 import { supabase } from '@/application/lib/supabase'
+import { CreateOrgModal } from './CreateOrgModal'
 
 interface OrgStat {
   org_id: string
@@ -18,6 +19,7 @@ interface OrgStat {
 export function AdminDashboard() {
   const [orgs, setOrgs] = useState<OrgStat[]>([])
   const [loading, setLoading] = useState(true)
+  const [showCreate, setShowCreate] = useState(false)
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -56,7 +58,26 @@ export function AdminDashboard() {
 
   return (
     <div className="p-6">
-      <h1 className="text-xl font-semibold mb-6">Dashboard</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-xl font-semibold">Dashboard</h1>
+        <button
+          onClick={() => setShowCreate(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-medium hover:bg-red-600"
+        >
+          <Plus size={16} />
+          Nueva organización
+        </button>
+      </div>
+
+      {showCreate && (
+        <CreateOrgModal
+          onClose={() => setShowCreate(false)}
+          onCreated={(org) => {
+            setShowCreate(false)
+            navigate(`/admin/orgs/${org.id}`)
+          }}
+        />
+      )}
 
       <div className="grid grid-cols-5 gap-4 mb-8">
         {summaryCards.map((card) => (
