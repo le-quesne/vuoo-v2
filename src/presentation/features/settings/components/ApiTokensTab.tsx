@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react';
 import {
   AlertTriangle,
+  BookOpen,
   Check,
   Copy,
   KeyRound,
   Loader2,
   Plus,
+  Settings2,
   Trash2,
   X,
 } from 'lucide-react';
@@ -16,7 +18,6 @@ import type {
   ApiTokenRow,
   ApiTokenScope,
 } from '@/data/services/apiTokens';
-import { SectionCard } from './FormUi';
 
 const ALL_SCOPES: Array<{ id: ApiTokenScope; label: string; description: string }> = [
   {
@@ -36,67 +37,134 @@ const ALL_SCOPES: Array<{ id: ApiTokenScope; label: string; description: string 
   },
 ];
 
-export function ApiTokensTab() {
+/**
+ * Tarjeta de la sección E-commerce para integraciones por API (endpoint público
+ * `POST /api/v1/orders`). Calca la estética de la tarjeta de Shopify; el botón
+ * "Gestionar" abre el gestor de tokens en un modal.
+ */
+export function ApiTokensCard() {
   const { currentOrg } = useAuth();
-  const {
-    tokens,
-    isLoading,
-    error,
-    lastCreated,
-    create,
-    revoke,
-    clearLastCreated,
-  } = useApiTokens(currentOrg?.id);
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  const api = useApiTokens(currentOrg?.id);
+  const [open, setOpen] = useState(false);
+
+  const activeCount = api.tokens.filter((t) => !t.revoked_at).length;
 
   return (
-    <div className="space-y-4">
-      <SectionCard
-        title="API & Integraciones"
-        description="Tokens de acceso para el endpoint público POST /api/v1/orders y webhooks (Shopify, VTEX). Los tokens se muestran en claro una única vez al crearlos."
-      >
-        <div className="flex items-center justify-between mb-4">
-          <p className="text-xs text-gray-500">
-            {tokens.length === 0
-              ? 'Aún no creaste ningún token.'
-              : `${tokens.filter((t) => !t.revoked_at).length} token(s) activo(s) · ${tokens.filter((t) => t.revoked_at).length} revocado(s)`}
-          </p>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            <Plus size={14} /> Crear token
+    <div>
+      <div className="relative flex flex-col rounded-2xl border border-gray-200 bg-white p-5 hover:border-gray-300 transition-colors">
+        {activeCount > 0 && (
+          <span
+            className="absolute top-4 right-4 w-2.5 h-2.5 rounded-full bg-green-500"
+            title={`${activeCount} token(s) activo(s)`}
+          />
+        )}
+        <div className="w-12 h-12 rounded-xl bg-blue-500/15 flex items-center justify-center mb-4">
+          <KeyRound className="w-6 h-6 text-blue-600" />
+        </div>
+        <h3 className="text-base font-semibold text-gray-900">API personalizada</h3>
+        <p className="text-sm text-gray-500 mt-1 flex-1">
+          {activeCount > 0
+            ? `${activeCount} token${activeCount > 1 ? 's' : ''} activo${activeCount > 1 ? 's' : ''}. Conectá VTEX, tu ERP o scripts vía POST /api/v1/orders.`
+            : 'Generá tokens para que VTEX, tu ERP o cualquier sistema creen pedidos vía POST /api/v1/orders.'}
+        </p>
+        <button
+          onClick={() => setOpen(true)}
+          className="mt-4 self-start inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50"
+        >
+          <Settings2 size={15} /> Gestionar
+        </button>
+      </div>
+
+      {open && <TokenManagerModal api={api} onClose={() => setOpen(false)} />}
+    </div>
+  );
+}
+
+function TokenManagerModal({
+  api,
+  onClose,
+}: {
+  api: ReturnType<typeof useApiTokens>;
+  onClose: () => void;
+}) {
+  const { tokens, isLoading, error, lastCreated, create, revoke, clearLastCreated } = api;
+  const [showCreate, setShowCreate] = useState(false);
+
+  const activeCount = tokens.filter((t) => !t.revoked_at).length;
+  const revokedCount = tokens.filter((t) => t.revoked_at).length;
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col">
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100">
+          <div className="w-8 h-8 rounded-lg bg-blue-500/15 flex items-center justify-center">
+            <KeyRound size={16} className="text-blue-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-base font-semibold text-gray-900">API &amp; Integraciones</h2>
+            <p className="text-[11px] text-gray-500">
+              Tokens para <code className="font-mono">POST /api/v1/orders</code> y webhooks. Se muestran en claro una única vez.
+            </p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X size={18} />
           </button>
         </div>
 
-        {error && (
-          <div className="flex items-start gap-2 p-3 mb-3 bg-red-50 rounded-lg text-xs text-red-700">
-            <AlertTriangle size={14} className="shrink-0 mt-0.5" />
-            <span>{error}</span>
+        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 bg-gray-50">
+          <p className="text-xs text-gray-500">
+            {tokens.length === 0
+              ? 'Aún no creaste ningún token.'
+              : `${activeCount} activo(s) · ${revokedCount} revocado(s)`}
+          </p>
+          <div className="flex items-center gap-2">
+            <a
+              href="/docs/api"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 bg-white rounded-lg hover:bg-gray-50"
+            >
+              <BookOpen size={14} /> Ver documentación
+            </a>
+            <button
+              onClick={() => setShowCreate(true)}
+              className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              <Plus size={14} /> Crear token
+            </button>
           </div>
-        )}
+        </div>
 
-        {isLoading ? (
-          <div className="flex items-center justify-center py-10">
-            <Loader2 size={20} className="animate-spin text-gray-400" />
-          </div>
-        ) : tokens.length === 0 ? (
-          <EmptyTokens />
-        ) : (
-          <div className="divide-y divide-gray-100 border border-gray-100 rounded-lg">
-            {tokens.map((t) => (
-              <TokenRow key={t.id} token={t} onRevoke={() => revoke(t.id)} />
-            ))}
-          </div>
-        )}
-      </SectionCard>
+        <div className="p-5 overflow-y-auto">
+          {error && (
+            <div className="flex items-start gap-2 p-3 mb-3 bg-red-50 rounded-lg text-xs text-red-700">
+              <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+              <span>{error}</span>
+            </div>
+          )}
 
-      {showCreateModal && (
+          {isLoading ? (
+            <div className="flex items-center justify-center py-10">
+              <Loader2 size={20} className="animate-spin text-gray-400" />
+            </div>
+          ) : tokens.length === 0 ? (
+            <EmptyTokens />
+          ) : (
+            <div className="divide-y divide-gray-100 border border-gray-100 rounded-lg">
+              {tokens.map((t) => (
+                <TokenRow key={t.id} token={t} onRevoke={() => revoke(t.id)} />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {showCreate && (
         <CreateTokenModal
-          onClose={() => setShowCreateModal(false)}
+          onClose={() => setShowCreate(false)}
           onCreate={async (name, scopes) => {
             const res = await create({ name, scopes });
-            if (res) setShowCreateModal(false);
+            if (res) setShowCreate(false);
             return res;
           }}
         />

@@ -31,6 +31,7 @@ import TrackingPage from '@/presentation/pages/TrackingPage';
 import { DriverWelcomePage } from '@/presentation/pages/DriverWelcomePage';
 import { WelcomePage } from '@/presentation/pages/WelcomePage';
 import { DatasulDownloadPage } from '@/presentation/pages/DatasulDownloadPage';
+import { DocsApiPage } from '@/presentation/pages/DocsApiPage';
 
 export function AppRouter() {
   return (
@@ -44,6 +45,7 @@ export function AppRouter() {
         <Route path="/driver-welcome" element={<DriverWelcomePage />} />
         <Route path="/welcome" element={<WelcomePage />} />
         <Route path="/datasul" element={<DatasulDownloadPage />} />
+        <Route path="/docs/api" element={<DocsApiPage />} />
 
         {/* Onboarding */}
         <Route element={<RequireAuth />}>

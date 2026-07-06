@@ -34,6 +34,9 @@ export const OrderInputSchema = z.object({
     .optional(),
   total_weight_kg: z.number().nonnegative().optional(),
   total_volume_m3: z.number().nonnegative().nullable().optional(),
+  total_price: z.number().nonnegative().nullable().optional(),
+  currency: z.string().length(3).optional(),
+  service_duration_minutes: z.number().int().positive().nullable().optional(),
   time_window_start: z.string().nullable().optional(),
   time_window_end: z.string().nullable().optional(),
   priority: z.enum(['urgent', 'high', 'normal', 'low']).optional(),
@@ -41,6 +44,7 @@ export const OrderInputSchema = z.object({
   requires_photo: z.boolean().optional(),
   requested_date: z.string().nullable().optional(),
   delivery_instructions: z.string().nullable().optional(),
+  internal_notes: z.string().nullable().optional(),
   tags: z.array(z.string()).optional(),
 });
 
@@ -161,11 +165,30 @@ export async function createOrderForOrg(opts: {
     }
   }
 
+  // `orders.order_number` es NOT NULL con unique (org_id, order_number). Si el
+  // conector no lo provee (la API pública puede omitirlo), lo autogeneramos con
+  // la misma RPC que usa el import CSV para mantener el formato `ORD-00001`.
+  let orderNumber = input.order_number?.trim() || null;
+  if (!orderNumber) {
+    const { data: gen, error: gErr } = await db.rpc('generate_order_number', {
+      p_org_id: orgId,
+    });
+    if (gErr || !gen) {
+      return {
+        ok: false,
+        status: 500,
+        code: 'order_number_generation_failed',
+        detail: gErr?.message,
+      };
+    }
+    orderNumber = gen as string;
+  }
+
   const { data: order, error: oErr } = await db
     .from('orders')
     .insert({
       org_id: orgId,
-      order_number: input.order_number ?? null,
+      order_number: orderNumber,
       external_id: externalIdKey,
       customer_name: input.customer_name,
       customer_id: resolvedCustomerId,
@@ -175,6 +198,11 @@ export async function createOrderForOrg(opts: {
       items: input.items ?? [],
       total_weight_kg: input.total_weight_kg ?? 0,
       total_volume_m3: input.total_volume_m3 ?? null,
+      total_price: input.total_price ?? null,
+      ...(input.currency ? { currency: input.currency.toUpperCase() } : {}),
+      ...(input.service_duration_minutes
+        ? { service_duration_minutes: input.service_duration_minutes }
+        : {}),
       time_window_start: input.time_window_start ?? null,
       time_window_end: input.time_window_end ?? null,
       priority: input.priority ?? 'normal',
@@ -182,6 +210,7 @@ export async function createOrderForOrg(opts: {
       requires_photo: input.requires_photo ?? false,
       requested_date: input.requested_date ?? null,
       delivery_instructions: input.delivery_instructions ?? null,
+      internal_notes: input.internal_notes ?? null,
       source,
       status: 'pending',
       stop_id: stopId,

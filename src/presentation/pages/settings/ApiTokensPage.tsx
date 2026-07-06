@@ -1,4 +1,4 @@
-import { ApiTokensTab, ShopifyIntegration } from '@/presentation/features/settings';
+import { ApiTokensCard, ShopifyIntegration } from '@/presentation/features/settings';
 
 export function ApiTokensPage() {
   return (
@@ -11,10 +11,9 @@ export function ApiTokensPage() {
             personalizadas (VTEX, scripts).
           </p>
         </div>
-        <div className="space-y-4">
-          <ShopifyIntegration />
-          <ApiTokensTab />
-        </div>
+        <ShopifyIntegration>
+          <ApiTokensCard />
+        </ShopifyIntegration>
       </div>
     </div>
   );

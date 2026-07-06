@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -35,7 +35,7 @@ function ShopifyLogo({ className = '' }: { className?: string }) {
   );
 }
 
-export function ShopifyIntegration() {
+export function ShopifyIntegration({ children }: { children?: ReactNode }) {
   const { currentOrg } = useAuth();
   const shopify = useShopifyIntegration(currentOrg?.id);
   const [modalOpen, setModalOpen] = useState(false);
@@ -104,6 +104,8 @@ export function ShopifyIntegration() {
             )}
           </button>
         </div>
+
+        {children}
       </div>
 
       {modalOpen && <ShopifyModal shopify={shopify} onClose={() => setModalOpen(false)} />}
