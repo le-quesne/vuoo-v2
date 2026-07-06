@@ -50,7 +50,11 @@ export async function create(
   try {
     const res = await fetch(`${ROUTING_BASE}/settings/api-tokens`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-org-id': input.orgId,
+        ...(await authHeaders()),
+      },
       body: JSON.stringify({
         org_id: input.orgId,
         name: input.name,

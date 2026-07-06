@@ -40,8 +40,10 @@ apiTokensRoutes.post('/', async (c) => {
   }
   const { org_id, name, scopes } = parsed.data;
 
-  // Verificar que el user pertenece a la org.
-  if (auth.orgId !== org_id) {
+  // Verificar que el user pertenece a la org. Los super admins operan sobre
+  // cualquier org (vía el switcher) sin ser miembros — igual que el RLS de
+  // org_api_tokens, que permite is_super_admin() en el INSERT.
+  if (!auth.isSuperAdmin && auth.orgId !== org_id) {
     const { data: membership } = await db
       .from('organization_members')
       .select('id')

@@ -9,6 +9,8 @@ export interface AuthContext {
   scopes: string[];
   source: 'manual' | 'shopify' | 'vtex' | 'api';
   apiTokenId?: string;
+  /** Super admin de la plataforma — opera sobre cualquier org vía x-org-id. */
+  isSuperAdmin: boolean;
   /** Authorization header crudo — para construir clientes JWT-scoped en las rutas. */
   authHeader: string;
 }
@@ -86,6 +88,7 @@ export const authMiddleware: MiddlewareHandler = async (c, next) => {
       orgId,
       scopes: [],
       source: 'manual',
+      isSuperAdmin,
       authHeader: raw,
     });
     await next();
@@ -136,6 +139,7 @@ export const authMiddleware: MiddlewareHandler = async (c, next) => {
         ? 'vtex'
         : 'api',
     apiTokenId: tokenRow.id,
+    isSuperAdmin: false,
     authHeader: raw,
   });
 
