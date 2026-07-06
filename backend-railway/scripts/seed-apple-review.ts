@@ -478,16 +478,22 @@ async function main() {
   let planId: string;
   if (planExisting) {
     planId = planExisting.id;
-    console.log(`[apple-review] plan existe: ${planId}`);
+    // La driver app solo lista rutas cuyo plan.status = 'published'
+    // (ver mobile app/(app)/(tabs)/index.tsx). Forzamos published aunque
+    // el plan ya exista, por si quedó en draft de una corrida anterior.
+    await db.from('plans').update({ status: 'published' }).eq('id', planId);
+    console.log(`[apple-review] plan existe: ${planId} (status→published)`);
   } else {
     const { data: planNew, error: planErr } = await db
       .from('plans')
-      .insert({ org_id: orgId, user_id: userId, name: PLAN_NAME, date: today })
+      // status='published' es OBLIGATORIO: la driver app filtra por
+      // plan.status='published' + plan.date=hoy. Sin esto la ruta NO aparece.
+      .insert({ org_id: orgId, user_id: userId, name: PLAN_NAME, date: today, status: 'published' })
       .select('id')
       .single();
     if (planErr || !planNew) throw new Error(`plan insert: ${planErr?.message}`);
     planId = planNew.id;
-    console.log(`[apple-review] plan creado: ${planId}`);
+    console.log(`[apple-review] plan creado: ${planId} (published)`);
   }
 
   // 7) Stops (find or create por name+org)
