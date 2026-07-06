@@ -26,12 +26,35 @@ async function fetchMemberships(userId: string): Promise<MembershipRow[]> {
   return (data ?? []) as unknown as MembershipRow[];
 }
 
-function pickOrg(memberships: MembershipRow[]): Organization | null {
-  if (memberships.length === 0) return null;
+async function fetchOrgById(orgId: string): Promise<Organization | null> {
+  const { data, error } = await supabase
+    .from('organizations')
+    .select('*')
+    .eq('id', orgId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return data as Organization;
+}
+
+async function pickOrg(
+  memberships: MembershipRow[],
+  isSuperAdmin: boolean,
+): Promise<Organization | null> {
   const ls = safeLocalStorage();
   const savedOrgId = ls?.getItem(ORG_STORAGE_KEY);
+
+  // Org guardada dentro de las membresías del usuario.
   const saved = memberships.find((m) => m.org_id === savedOrgId);
   if (saved) return saved.organization;
+
+  // Super admin: la org guardada puede estar fuera de sus membresías
+  // (puede cambiarse a cualquier org). Cargarla directo de la tabla.
+  if (isSuperAdmin && savedOrgId) {
+    const org = await fetchOrgById(savedOrgId);
+    if (org) return org;
+  }
+
+  if (memberships.length === 0) return null;
 
   const first = memberships[0].organization;
   ls?.setItem(ORG_STORAGE_KEY, memberships[0].org_id);
@@ -40,8 +63,8 @@ function pickOrg(memberships: MembershipRow[]): Organization | null {
 
 async function loadMembershipsAndOrg(userId: string) {
   const memberships = await fetchMemberships(userId);
-  const org = pickOrg(memberships);
   const store = useSessionStore.getState();
+  const org = await pickOrg(memberships, store.isSuperAdmin);
   store.setMemberships(memberships, org);
   store.setLoading(false);
 }

@@ -14,6 +14,7 @@ import { supabase } from '@/application/lib/supabase'
 import { useAuth } from '@/application/hooks/useAuth'
 import { todayLocalISO } from '@/application/utils/dateHelpers'
 import { ControlTowerIcon } from './ControlTowerIcon'
+import { OrgSwitcher } from './OrgSwitcher'
 
 const navItems = [
   { to: '/planner', icon: Calendar, label: 'Planner' },
@@ -93,14 +94,8 @@ export function Sidebar({ expanded, onToggle }: { expanded: boolean; onToggle: (
       <div className={`flex flex-col items-center mb-1 ${expanded ? 'py-2' : ''}`}>
         <img src="/logo_vuoo_white.svg" alt="Vuoo" className={`shrink-0 ${expanded ? 'h-20' : 'w-9 h-9'}`} />
       </div>
-      {currentOrg && (
-        <span
-          className={`text-slate-400 mb-4 truncate text-center ${expanded ? 'text-sm font-medium' : 'text-[9px] max-w-[56px]'}`}
-          title={currentOrg.name}
-        >
-          {currentOrg.name}
-        </span>
-      )}
+      <OrgSwitcher expanded={expanded} />
+
 
       <nav className="flex-1 flex flex-col gap-1">
         {navItems.map(({ to, icon: Icon, label, badgeKey }) => {
