@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Plus, Search, Pencil, Trash2 } from 'lucide-react'
 import { supabase } from '@/application/lib/supabase'
+import { useAuth } from '@/application/hooks/useAuth'
 import type { Vehicle } from '@/data/types/database'
 import { VehicleAvatar, VehicleFormModal } from '@/presentation/features/vehicles/components'
 
@@ -9,15 +10,19 @@ export function VehiclesPage() {
   const [showModal, setShowModal] = useState(false)
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null)
   const [search, setSearch] = useState('')
+  const { currentOrg } = useAuth()
 
   useEffect(() => {
     loadVehicles()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentOrg?.id])
 
   async function loadVehicles() {
+    if (!currentOrg) return setVehicles([])
     const { data } = await supabase
       .from('vehicles')
       .select('*')
+      .eq('org_id', currentOrg.id)
       .order('created_at', { ascending: false })
     if (data) setVehicles(data)
   }
