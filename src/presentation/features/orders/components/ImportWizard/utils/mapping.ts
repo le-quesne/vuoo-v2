@@ -108,6 +108,7 @@ export function previewRowToImportRow(r: PreviewRow): PreviewRowToImportRowResul
   const row: ImportRow = {
     customer_name: (r.values.customer_name ?? '').trim(),
     customer_code: trimmedCode || null,
+    place_name: r.values.place_name?.trim() || null,
     // address puede ser null cuando solo viene customer_code y el backend
     // lo resuelve via catálogo (o lo deja pendiente).
     address: trimmedAddress || null,

@@ -11,6 +11,9 @@ const RowSchema = z
     customer_phone: z.string().nullable().optional(),
     customer_email: z.string().nullable().optional(),
     customer_code: z.string().nullable().optional(),
+    /** Nombre del punto de entrega (sucursal, local). Si falta, el stop
+     *  creado hereda `customer_name`. */
+    place_name: z.string().nullable().optional(),
     address: z.string().nullable().optional(),
     lat: z.number().nullable().optional(),
     lng: z.number().nullable().optional(),
@@ -120,7 +123,9 @@ ordersImportRoutes.post('/', async (c) => {
             .insert({
               org_id: orgId,
               user_id: auth.userId,
-              name: row.customer_name,
+              // El nombre del stop es el LUGAR, no el cliente. Sin place_name
+              // explícito cae a customer_name (caso B2C donde coinciden).
+              name: row.place_name?.trim() || row.customer_name,
               address: row.address!,
               lat: row.lat ?? null,
               lng: row.lng ?? null,

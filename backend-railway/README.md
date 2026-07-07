@@ -63,11 +63,14 @@ curl -X POST https://routing.vuoo.cl/api/v1/orders \
   -H "Content-Type: application/json" \
   -d '{
     "customer_name": "Ana Soto",
+    "place_name": "Bodega Las Condes",
     "address": "Apoquindo 4501, Las Condes",
     "items": [{ "name": "Caja chica", "quantity": 2 }],
     "requested_date": "2026-04-21"
   }'
 ```
+> `place_name` (opcional) nombra el punto de entrega (sucursal/local); si falta,
+> el stop creado hereda `customer_name`.
 ```json
 // 201 Response (o 200 + idempotent: true si el Idempotency-Key ya se usó)
 { "id": "uuid", "match_quality": "medium", "stop_id": "uuid" }

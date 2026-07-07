@@ -295,6 +295,9 @@ export interface ImportRow {
   /** Código del cliente en el ERP del usuario. El backend lo usa para resolver
    *  dirección desde el catálogo cuando `address` viene vacía. */
   customer_code?: string | null;
+  /** Nombre del punto de entrega (sucursal, local). Si falta, el stop creado
+   *  hereda `customer_name`. */
+  place_name?: string | null;
   /** Nullable: si viene vacía pero hay customer_code, el backend resuelve. */
   address?: string | null;
   lat?: number | null;

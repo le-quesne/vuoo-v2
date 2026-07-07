@@ -28,6 +28,9 @@ export const OrderInputSchema = z
     customer_name: z.string().min(1),
     customer_phone: z.string().nullable().optional(),
     customer_email: z.string().email().nullable().optional(),
+    /** Nombre del punto de entrega (sucursal, local). Si falta, el stop
+     *  creado hereda `customer_name`. */
+    place_name: z.string().nullable().optional(),
     address: z.string().min(1).nullish(),
     lat: z.number().min(-90).max(90).nullable().optional(),
     lng: z.number().min(-180).max(180).nullable().optional(),
@@ -157,7 +160,9 @@ export async function createOrderForOrg(opts: {
         .insert({
           org_id: orgId,
           user_id: ownerId,
-          name: input.customer_name,
+          // El nombre del stop es el LUGAR, no el cliente. Sin place_name
+          // explícito cae a customer_name (caso B2C donde coinciden).
+          name: input.place_name?.trim() || input.customer_name,
           address: input.address!,
           // Sin address_hash el stop queda invisible para match_stop_for_order
           // (no hay trigger que lo calcule).
