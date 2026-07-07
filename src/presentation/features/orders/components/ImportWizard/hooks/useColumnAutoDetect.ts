@@ -26,6 +26,17 @@ const ALIASES: Record<CanonicalColumn, string[]> = {
     'id_cliente',
     'rut',
   ],
+  place_name: [
+    'place_name',
+    'lugar',
+    'nombre_lugar',
+    'sucursal',
+    'local',
+    'tienda',
+    'sede',
+    'punto_entrega',
+    'nombre_parada',
+  ],
   address: [
     'address',
     'direccion',

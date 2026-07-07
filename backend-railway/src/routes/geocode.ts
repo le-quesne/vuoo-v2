@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { supabaseFromJWT } from '../lib/supabase.js';
 import { getGeocodingProvider } from '../lib/geocoding/provider.js';
+import { normalizeAddressHash } from '../lib/addressHash.js';
 import type { GeocodeResult } from '../lib/geocoding/provider.js';
 
 const BatchSchema = z.object({
@@ -47,7 +48,7 @@ geocodeRoutes.post('/batch', async (c) => {
   const orgId = auth.orgId;
 
   // 1. hash + cache lookup
-  const hashes = addresses.map((a) => ({ ...a, hash: normalizeAddress(a.address) }));
+  const hashes = addresses.map((a) => ({ ...a, hash: normalizeAddressHash(a.address) }));
   const { data: cached, error: cacheErr } = await db
     .from('geocoding_cache')
     .select('address_hash, lat, lng, confidence, provider')
@@ -126,13 +127,3 @@ geocodeRoutes.post('/batch', async (c) => {
   return c.json({ results });
 });
 
-/** Mantiene paridad con `vuoo_normalize_address` en Postgres. */
-function normalizeAddress(addr: string): string {
-  return addr
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // strip diacritics
-    .replace(/[^a-z0-9 ]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}

@@ -108,6 +108,16 @@ shopifyWebhookRoutes.post('/orders-create', async (c) => {
   });
 
   if (!result.ok) {
+    // order_number repetido (ej. dos tiendas mapeadas a la misma org generan
+    // "#1001" ambas): error determinístico — un no-2xx haría que Shopify
+    // reintente ~19 veces sin poder resolverse jamás. 200 para cortar el
+    // retry y log para revisión manual.
+    if (result.code === 'duplicate_order_number') {
+      console.error(
+        `[shopify] order_number duplicado en org ${orgId} (shop ${shopDomain}): ${result.detail ?? ''}`,
+      );
+      return c.json({ skipped: 'duplicate_order_number' }, 200);
+    }
     // 500 → Shopify reintenta; la idempotencia evita duplicados.
     console.error(`[shopify] Falló crear orden (${result.code}): ${result.detail ?? ''}`);
     return c.json({ error: result.code }, result.status as 500);

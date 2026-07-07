@@ -92,7 +92,18 @@ describe('previewRowToImportRow', () => {
     expect(out.row.address).toBe('Av 123');
     expect(out.row.total_weight_kg).toBe(0);
     expect(out.row.priority).toBeUndefined();
+    expect(out.row.place_name).toBeNull();
     expect(out.warnings).toEqual([]);
+  });
+
+  it('propaga place_name trimmed cuando viene mapeado', () => {
+    const r = makeRow({
+      customer_name: 'Pedidos Ya',
+      place_name: '  Sucursal La Reina ',
+      address: 'Av 123',
+    });
+    const out = previewRowToImportRow(r);
+    expect(out.row.place_name).toBe('Sucursal La Reina');
   });
 
   it('strip unidades + escala warnings', () => {
