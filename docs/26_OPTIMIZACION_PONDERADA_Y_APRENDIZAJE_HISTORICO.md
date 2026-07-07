@@ -3,14 +3,46 @@
 **Pri**: P1
 **Extiende**: PRD 06 (Optimización Inteligente), PRD 19 (Optimización Vroom Avanzada)
 **Estado**: Fase 0 diferida (decisión: quedarse en VROOM v1.13.0 por ahora,
-ver §Riesgos). **Fases 1–4 implementadas y validadas funcionalmente**
-(typecheck limpio, build de producción limpio, migraciones corridas contra
-Postgres 16 local con datos sintéticos — ver §Validación realizada).
+ver §Riesgos). **Fases 1–4 implementadas, y las migraciones de Fase 3/4 ya
+están aplicadas al proyecto Supabase real (`vuoo-v2`, ref
+`iywjnoojchdcjswmikxg`)** vía MCP autenticado — ver §Aplicado a producción.
 `weights` expuesto en `VroomWizardModal` detrás de un toggle "beta"
-explícito. **Sin desplegar a Railway ni probado contra datos reales de
-producción** — ver §Pendiente antes de producción.
+explícito, sin desplegar a Railway todavía (`OSRM_URL` pendiente — ver
+§Pendiente).
 
-## Validación realizada
+## Aplicado a producción (2026-07-07)
+
+Con acceso vía Supabase MCP (autenticado por el usuario) se aplicaron las 4
+migraciones de PRD 26 directo al proyecto real:
+
+- `stop_visits_and_service_stats` y `stop_visits_batch_functions` (Fase 3/4).
+- `harden_stop_visits_functions` + `harden_stop_visits_functions_fix_public_grant`:
+  **hallazgo real de seguridad**, ver abajo.
+
+Se corrió `run_stop_visits_batch` contra las 32 rutas `completed` reales del
+proyecto (no sintéticas). Resultado: **0 `stop_visits` generadas** — no es
+un bug, es que no hay datos reales de operación todavía. Se investigó cada
+caso con pings: parte es data de seed/demo (trayecto recto simulado,
+sin relación geográfica con los stops) y parte es GPS real de testing del
+dev (el teléfono físicamente en otro lugar que la dirección de prueba). Es
+exactamente lo esperable en fase pre-clientes. En cambio,
+`refresh_customer_pair_affinity` **sí encontró señal real hoy**: 49 pares
+de clientes que ya comparten ruta en el historial — esa parte de Fase 4 no
+depende de GPS y funciona con los datos que ya existen.
+
+**Hallazgo de seguridad (encontrado y corregido)**: `get_advisors` detectó
+que las 4 funciones nuevas (`security definer`) quedaron ejecutables por
+`anon`/`authenticated` vía la API REST de Supabase — cualquiera sin login
+podía invocar `run_stop_visits_batch()` gratis, y `compute_stop_visits_for_route(route_id)`
+acepta cualquier UUID sin verificar org, así que en teoría se podía escribir
+`stop_visits` falsos de una organización ajena. Primer intento de fix
+(`revoke ... from anon, authenticated`) **no alcanzó** — el grant real
+estaba en `PUBLIC` (default de Postgres para funciones nuevas), confirmado
+con `has_function_privilege(...)` devolviendo `true` después del primer
+intento. Corregido revocando de `PUBLIC` explícitamente y reverificado
+(`anon`/`authenticated` → `false`, `postgres`/cron → sigue en `true`).
+
+## Validación funcional previa (Postgres local)
 
 Sin Docker/Supabase CLI vinculado disponibles en este entorno, se instaló
 Postgres 16 local (`brew install postgresql@16`) y se armó un fixture
@@ -42,24 +74,20 @@ igual — eso sigue pendiente.
 
 ## Pendiente antes de producción (requiere al usuario)
 
-1. **Aplicar las migraciones a la base real.** No hay credenciales/acceso
-   a Supabase configurado en este entorno para correr `supabase db push`
-   (o `supabase link` + migración) contra el proyecto real. Alguien con
-   acceso tiene que correrlo.
+1. ~~Aplicar las migraciones a la base real~~ — **hecho** (ver §Aplicado a
+   producción).
 2. **Confirmar reachability de red**: `backend-railway` → OSRM privado
    (`OSRM_URL=http://vuoo-routing.railway.internal:5000`, mismo proyecto
-   Railway `vuoo-rutas`). No se puede probar sin acceso a Railway — pedirle
-   a alguien con acceso al dashboard que agregue la env var y confirme que
-   el healthcheck/log no tira error de conexión.
-3. **Decisión de producto pendiente: `max_distance`.** Sigue sin
-   implementarse — necesita decidir si es por vehículo o por org, y si
-   amerita UI en Settings antes de agregar la columna. Ver pregunta al
-   usuario en la conversación.
-4. **Calibrar constantes con datos reales** una vez que el cron lleve unas
-   semanas corriendo (geofence 100m/90s, confianza `MIN_SAMPLES=5`/
-   `MAX_CV=0.5`/`k=5`) — no es un blocker, es trabajo de seguimiento.
-5. **Decidir si pushear la rama y abrir PR** — el trabajo vive local en
-   `feat/vroom-optimizer-foundations`, sin pushear.
+   Railway `vuoo-rutas`). Pendiente de acceso a Railway.
+3. **Decisión de producto: `max_distance`** — resuelta con el usuario: no
+   se implementa por ahora (nadie lo pidió explícitamente, era "fruta al
+   alcance" del análisis original, no una necesidad real hoy).
+4. **Calibrar constantes con datos reales** una vez que haya operación real
+   (geofence 100m/90s, confianza `MIN_SAMPLES=5`/`MAX_CV=0.5`/`k=5`) — no
+   es un blocker, es trabajo de seguimiento. Hoy no hay ninguna visita real
+   detectada porque no hay datos de producción todavía (ver §Aplicado a
+   producción).
+5. Pushear la rama y abrir PR — resuelto con el usuario: sí, hacerlo.
 
 ---
 
