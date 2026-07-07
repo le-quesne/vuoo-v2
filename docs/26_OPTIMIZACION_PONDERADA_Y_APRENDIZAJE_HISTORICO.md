@@ -3,12 +3,12 @@
 **Pri**: P1
 **Extiende**: PRD 06 (Optimización Inteligente), PRD 19 (Optimización Vroom Avanzada)
 **Estado**: Fase 0 diferida (decisión: quedarse en VROOM v1.13.0 por ahora,
-ver §Riesgos). **Fases 1–4 implementadas, y las migraciones de Fase 3/4 ya
-están aplicadas al proyecto Supabase real (`vuoo-v2`, ref
-`iywjnoojchdcjswmikxg`)** vía MCP autenticado — ver §Aplicado a producción.
-`weights` expuesto en `VroomWizardModal` detrás de un toggle "beta"
-explícito, sin desplegar a Railway todavía (`OSRM_URL` pendiente — ver
-§Pendiente).
+ver §Riesgos). **Fases 1–4 implementadas, migraciones de Fase 3/4 aplicadas
+al proyecto Supabase real** (`vuoo-v2`, ref `iywjnoojchdcjswmikxg`) vía MCP
+autenticado, y **`OSRM_URL` configurada y verificada en vivo contra el
+servicio real de Railway** — ver §Aplicado a producción. `weights` expuesto
+en `VroomWizardModal` detrás de un toggle "beta" explícito. PR abierto:
+https://github.com/le-quesne/vuoo-v2/pull/40.
 
 ## Aplicado a producción (2026-07-07)
 
@@ -76,9 +76,16 @@ igual — eso sigue pendiente.
 
 1. ~~Aplicar las migraciones a la base real~~ — **hecho** (ver §Aplicado a
    producción).
-2. **Confirmar reachability de red**: `backend-railway` → OSRM privado
-   (`OSRM_URL=http://vuoo-routing.railway.internal:5000`, mismo proyecto
-   Railway `vuoo-rutas`). Pendiente de acceso a Railway.
+2. ~~Confirmar reachability de red~~ — **hecho y confirmado en vivo
+   (2026-07-07)**. `OSRM_URL=http://vuoo-routing.railway.internal:5000`
+   seteada en el servicio `vuoo-api` (proyecto Railway `vuoo-rutas`) vía
+   `railway variables --set`. Probado con `railway ssh --service vuoo-api`
+   + `fetch()` desde **adentro del contenedor real** contra
+   `/table/v1/driving/...`: respuesta `{"code":"Ok", ...}` completa con
+   nombres de calles reales de Santiago (Plaza de Armas, Coventry). La red
+   privada de Railway funciona de punta a punta — `fetchOsrmTable` en
+   `backend-railway/src/lib/osrm.ts` va a andar contra el OSRM real sin
+   cambios adicionales.
 3. **Decisión de producto: `max_distance`** — resuelta con el usuario: no
    se implementa por ahora (nadie lo pidió explícitamente, era "fruta al
    alcance" del análisis original, no una necesidad real hoy).
