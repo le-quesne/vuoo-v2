@@ -72,6 +72,20 @@ export function AddStopToPlanModal({
     })
   }
 
+  const allFilteredSelected = filtered.length > 0 && filtered.every((s) => selectedIds.has(s.id))
+
+  function toggleSelectAll() {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (allFilteredSelected) {
+        for (const s of filtered) next.delete(s.id)
+      } else {
+        for (const s of filtered) next.add(s.id)
+      }
+      return next
+    })
+  }
+
   async function handleAssignExisting() {
     if (selectedIds.size === 0 || !currentOrg) return
     setAssigning(true)
@@ -180,7 +194,16 @@ export function AddStopToPlanModal({
                 className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
               />
             </div>
-            <div className="flex-1 overflow-y-auto space-y-1 min-h-0 max-h-64">
+            {!loadingExisting && filtered.length > 0 && (
+              <button
+                type="button"
+                onClick={toggleSelectAll}
+                className="text-xs font-medium text-blue-600 hover:text-blue-700 mb-2 self-start"
+              >
+                {allFilteredSelected ? 'Deseleccionar todas' : `Seleccionar todas (${filtered.length})`}
+              </button>
+            )}
+            <div className="flex-1 overflow-y-auto space-y-1 min-h-0 max-h-64 p-0.5 -m-0.5">
               {loadingExisting ? (
                 <div className="flex items-center justify-center py-8">
                   <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
