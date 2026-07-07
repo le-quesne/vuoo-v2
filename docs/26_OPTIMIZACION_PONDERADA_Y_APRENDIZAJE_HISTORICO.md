@@ -2,7 +2,9 @@
 
 **Pri**: P1
 **Extiende**: PRD 06 (Optimización Inteligente), PRD 19 (Optimización Vroom Avanzada)
-**Estado**: Diseño cerrado. Fase 0 bloqueada por un gap de infra (ver §Riesgos). Fase 1 en implementación.
+**Estado**: Diseño cerrado. Fase 0 diferida (decisión: quedarse en VROOM
+v1.13.0 por ahora, ver §Riesgos). Fase 1 implementada en
+`backend-railway/src/routes/vroom.ts` (typecheck limpio).
 
 ---
 
@@ -56,13 +58,21 @@ datos e infraestructura que faltaba para sacarlo de ese scope.
 
 ## Scope IN — por fase
 
-### Fase 0 — Upgrade de VROOM (bloqueada, ver Riesgos)
+### Fase 0 — Upgrade de VROOM (diferida)
 
-`vuoo routing/vroom/Dockerfile` pasa de `vroomvrp/vroom-docker:v1.13.0` a la
-versión más nueva **disponible como imagen publicada**. Necesario para
-`per_km` y `max_distance` a nivel de vehículo (ninguno de los dos existe en
+**Decisión (2026-07-07): quedarse en `vroomvrp/vroom-docker:v1.13.0` por
+ahora.** No existe imagen publicada más nueva que sea estable (v1.14.0 solo
+tiene release candidates, v1.15.0 no existe como imagen — ver §Riesgos).
+Consecuencia directa: `per_km` y `max_distance` a nivel de vehículo no
+tienen efecto real hasta que se resuelva esto (ninguno de los dos existe en
 la API de VROOM v1.13.0 — se agregaron en v1.14.0 río arriba en el proyecto,
-confirmado contra `gh api repos/VROOM-Project/vroom/releases`).
+confirmado contra `gh api repos/VROOM-Project/vroom/releases`). El código de
+Fase 1 ya envía `per_km`; VROOM v1.13.0 lo ignora sin romper la request
+(confirmado contra el parser fuente `input_parser.cpp` de esa versión), así
+que no hace falta ningún cambio de código cuando se decida upgradear —
+alcanza con subir el tag del Dockerfile. Revisar esta decisión si en algún
+momento se justifica compilar una imagen propia desde
+`VROOM-Project/vroom` en vez de depender de `vroomvrp/vroom-docker`.
 
 ### Fase 1 — Quick wins sin tocar el solver (no depende de Fase 0)
 
