@@ -12,6 +12,13 @@ export type OrderSource = 'manual' | 'csv' | 'shopify' | 'vtex' | 'api' | 'whats
 const HHMM_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
 const YMD_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
+/** "2026-13-45" pasa el regex pero revienta en Postgres como 500; esto lo corta en 400. */
+function isRealYmdDate(value: string): boolean {
+  const [y, m, d] = value.split('-').map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
+}
+
 /**
  * Input normalizado de una orden entrante. Es la forma canónica a la que
  * cualquier conector (API pública, Shopify, VTEX…) debe mapear antes de
@@ -23,25 +30,26 @@ const YMD_REGEX = /^\d{4}-\d{2}-\d{2}$/;
  */
 export const OrderInputSchema = z
   .object({
-    order_number: z.string().optional(),
-    customer_code: z.string().optional(),
-    customer_name: z.string().min(1),
-    customer_phone: z.string().nullable().optional(),
-    customer_email: z.string().email().nullable().optional(),
+    order_number: z.string().max(64).optional(),
+    customer_code: z.string().max(64).optional(),
+    customer_name: z.string().min(1).max(200),
+    customer_phone: z.string().max(50).nullable().optional(),
+    customer_email: z.string().email().max(254).nullable().optional(),
     /** Nombre del punto de entrega (sucursal, local). Si falta, el stop
      *  creado hereda `customer_name`. */
-    place_name: z.string().nullable().optional(),
-    address: z.string().min(1).nullish(),
+    place_name: z.string().max(200).nullable().optional(),
+    address: z.string().min(1).max(500).nullish(),
     lat: z.number().min(-90).max(90).nullable().optional(),
     lng: z.number().min(-180).max(180).nullable().optional(),
     items: z
       .array(
         z.object({
-          name: z.string(),
+          name: z.string().max(200),
           quantity: z.number().int().positive(),
-          sku: z.string().optional(),
+          sku: z.string().max(64).optional(),
         }),
       )
+      .max(500)
       .optional(),
     total_weight_kg: z.number().nonnegative().nullable().optional(),
     total_volume_m3: z.number().nonnegative().nullable().optional(),
@@ -53,10 +61,15 @@ export const OrderInputSchema = z
     priority: z.enum(['urgent', 'high', 'normal', 'low']).optional(),
     requires_signature: z.boolean().optional(),
     requires_photo: z.boolean().optional(),
-    requested_date: z.string().regex(YMD_REGEX, 'formato esperado "YYYY-MM-DD"').nullable().optional(),
-    delivery_instructions: z.string().nullable().optional(),
-    internal_notes: z.string().nullable().optional(),
-    tags: z.array(z.string()).optional(),
+    requested_date: z
+      .string()
+      .regex(YMD_REGEX, 'formato esperado "YYYY-MM-DD"')
+      .refine(isRealYmdDate, 'fecha inexistente')
+      .nullable()
+      .optional(),
+    delivery_instructions: z.string().max(2000).nullable().optional(),
+    internal_notes: z.string().max(5000).nullable().optional(),
+    tags: z.array(z.string().max(100)).max(50).optional(),
   })
   .refine((o) => Boolean(o.address?.trim()) || Boolean(o.customer_code?.trim()), {
     message: 'Se requiere address o customer_code',
@@ -217,6 +230,7 @@ export async function createOrderForOrg(opts: {
       .from('stops')
       .select('customer_id')
       .eq('id', stopId)
+      .eq('org_id', orgId)
       .maybeSingle();
     if (stopRow?.customer_id) {
       customerId = (stopRow as { customer_id: string }).customer_id;

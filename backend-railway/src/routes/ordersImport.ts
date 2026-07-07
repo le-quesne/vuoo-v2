@@ -225,6 +225,7 @@ ordersImportRoutes.post('/', async (c) => {
           .from('stops')
           .select('customer_id')
           .eq('id', stopId)
+          .eq('org_id', orgId)
           .maybeSingle();
         if (stopRow?.customer_id) {
           resolvedCustomerId = (stopRow as { customer_id: string }).customer_id;

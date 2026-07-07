@@ -31,7 +31,7 @@ const OPTIONAL_FIELDS: Field[] = [
   { name: 'customer_code', type: 'string', desc: 'Código del cliente en tu sistema (ERP). Vincula el pedido a tu catálogo de clientes y da el match de mayor confianza; si el código no existe, el cliente se crea automáticamente. Con customer_code podés omitir address: se usa la dirección registrada del cliente.' },
   { name: 'place_name', type: 'string', desc: 'Nombre del punto de entrega (sucursal, local, tienda). Se usa como nombre del lugar guardado que se crea; si lo omitís, se usa customer_name.' },
   { name: 'order_number', type: 'string', desc: 'Tu número de pedido / guía de despacho. Si lo omitís, Vuoo genera uno (ORD-00001). Único por organización — repetirlo devuelve 409.' },
-  { name: 'items', type: 'array', desc: 'Líneas del pedido. Cada ítem: { name, quantity, sku? }. Ver detalle abajo.' },
+  { name: 'items', type: 'array', desc: 'Líneas del pedido (máx. 500). Cada ítem: { name, quantity, sku? }. Ver detalle abajo.' },
   { name: 'total_weight_kg', type: 'number', desc: 'Peso total del pedido en kilos. Se usa para capacidad de vehículos en el ruteo.' },
   { name: 'total_volume_m3', type: 'number', desc: 'Volumen total en m³ (opcional, para capacidad volumétrica).' },
   { name: 'total_price', type: 'number', desc: 'Monto total del pedido.' },
@@ -66,6 +66,7 @@ const ERRORS: Array<{ status: string; code: string; desc: string }> = [
   { status: '401', code: 'token_revoked', desc: 'El token fue revocado desde el panel.' },
   { status: '403', code: 'insufficient_scope', desc: 'El token no tiene el scope orders:write.' },
   { status: '409', code: 'duplicate_order_number', desc: 'Ya existe un pedido con ese order_number en tu organización. No se reintenta: corregí el número.' },
+  { status: '413', code: 'payload_too_large', desc: 'El body supera 1 MB. Un pedido acepta hasta 500 líneas en items.' },
   { status: '500', code: 'match_failed', desc: 'Error interno al resolver el destino. Reintentá con la misma Idempotency-Key.' },
   { status: '500', code: 'otros códigos', desc: 'Cualquier otro 500 (stop_create_failed, order_insert_failed…) también es seguro de reintentar con la misma Idempotency-Key.' },
 ];
