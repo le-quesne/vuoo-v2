@@ -1,7 +1,27 @@
 import { Hono } from 'hono';
 import { createClient } from '@supabase/supabase-js';
+import { fetchOsrmTable } from '../lib/osrm.js';
 
 export const vroomRoutes = new Hono();
+
+// Velocidad de referencia para convertir metros → "segundos-equivalentes" al
+// ponderar distancia en la matriz de costo (PRD 26 Fase 2). 40 km/h es un
+// promedio urbano razonable para reparto de última milla; no necesita ser
+// exacto porque solo escala el peso relativo de wDistancia, no una métrica
+// que se le muestre al usuario.
+const REFERENCE_SPEED_MPS = 40 / 3.6;
+
+// Penalización (en segundos-equivalentes) aplicada cuando un par de stops
+// nunca compartió ruta históricamente, escalada por wHistoria. Un valor de
+// 1 en wHistoria agrega esto al costo del par menos familiar del plan.
+const MAX_HISTORY_PENALTY_SECONDS = 900; // 15 min equivalentes
+
+// Umbral de confianza para reemplazar duration_minutes por el dwell time
+// real aprendido (PRD 26 Fase 3). Constantes iniciales — tunear con datos
+// reales una vez que haya volumen suficiente en customer_service_stats.
+const SERVICE_TIME_MIN_SAMPLES = 5;
+const SERVICE_TIME_MAX_CV = 0.5; // coeficiente de variación (stddev/mean)
+const SERVICE_TIME_SHRINKAGE_K = 5;
 
 // "HH:MM" or "HH:MM:SS" → segundos desde medianoche, null si inválido.
 function parseTimeToSeconds(value: string | null | undefined): number | null {
@@ -59,6 +79,9 @@ interface VroomVehicle {
   id: number;
   start: [number, number];
   end?: [number, number];
+  // *_index solo se usan cuando se manda una matriz propia (weights, Fase 2).
+  start_index?: number;
+  end_index?: number;
   capacity?: number[];
   skills?: number[];
   time_window?: [number, number];
@@ -70,11 +93,22 @@ interface VroomVehicle {
 interface VroomJob {
   id: number;
   location: [number, number];
+  location_index?: number;
   service?: number;
   delivery?: number[];
   skills?: number[];
   priority?: number;
   time_windows?: [number, number][];
+}
+
+// Pesos 0–1 para la matriz de costo ponderada (PRD 26 Fase 2). Si vienen en
+// el body, reemplazan los 5 presets de `mode` por una matriz de costo propia
+// calculada desde OSRM /table. Si no vienen, comportamiento 100% igual al
+// de siempre (los 5 modos).
+interface VroomWeights {
+  time?: number;
+  distance?: number;
+  history?: number;
 }
 
 // Vroom exige skills como enteros; la DB los guarda como strings
@@ -110,6 +144,27 @@ interface VroomBody {
   mode?: VroomMode;
   return_to_depot?: boolean;
   vehicle_ids?: string[];
+  weights?: VroomWeights;
+}
+
+// Shrinkage hacia el valor manual + gate por coeficiente de variación (PRD 26
+// Fase 3). No reemplaza 1:1: con pocas muestras o alta variabilidad, confía
+// más en el valor manual. `median` en segundos, `manualMinutes` en minutos.
+function effectiveServiceMinutes(
+  stat: { n_samples: number; median_dwell_seconds: number | null; mean_dwell_seconds: number | null; stddev_dwell_seconds: number | null } | undefined,
+  manualMinutes: number,
+): number {
+  if (!stat || stat.n_samples < SERVICE_TIME_MIN_SAMPLES) return manualMinutes;
+  const mean = stat.mean_dwell_seconds ?? 0;
+  const stddev = stat.stddev_dwell_seconds ?? 0;
+  if (mean <= 0) return manualMinutes;
+  const cv = stddev / mean;
+  if (cv > SERVICE_TIME_MAX_CV) return manualMinutes;
+
+  const median = stat.median_dwell_seconds ?? mean;
+  const w = stat.n_samples / (stat.n_samples + SERVICE_TIME_SHRINKAGE_K);
+  const blendedSeconds = w * median + (1 - w) * manualMinutes * 60;
+  return blendedSeconds / 60;
 }
 
 /**
@@ -136,8 +191,18 @@ vroomRoutes.post('/optimize', async (c) => {
   const mode: VroomMode = body?.mode ?? 'efficiency';
   const returnToDepot = body?.return_to_depot !== false;
   const filterVehicleIds = body?.vehicle_ids;
+  const weights = body?.weights ?? null;
+  const useWeightedMatrix = weights !== null;
 
   if (!planId) return c.json({ error: 'Body must be { plan_id: UUID }' }, 400);
+
+  const OSRM_URL = process.env.OSRM_URL;
+  if (useWeightedMatrix && !OSRM_URL) {
+    return c.json(
+      { error: 'missing_server_configuration', message: 'OSRM_URL no configurado (requerido para weights).' },
+      500,
+    );
+  }
 
   // Cliente con JWT del caller → RLS aplica.
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -150,7 +215,7 @@ vroomRoutes.post('/optimize', async (c) => {
     .from('plan_stops')
     .select(
       `id, route_id, priority, required_skills, volume_m3,
-       stop:stops (lat, lng, duration_minutes, weight_kg, time_window_start, time_window_end, priority, required_skills)`,
+       stop:stops (lat, lng, duration_minutes, weight_kg, time_window_start, time_window_end, priority, required_skills, customer_id)`,
     )
     .eq('plan_id', planId)
     .neq('status', 'completed')
@@ -196,7 +261,7 @@ vroomRoutes.post('/optimize', async (c) => {
   // 2. Fetch plan's org default depot (fallback).
   const { data: planRow, error: planErr } = await supabase
     .from('plans')
-    .select(`org:organizations (default_depot_lat, default_depot_lng)`)
+    .select(`org_id, org:organizations (default_depot_lat, default_depot_lng)`)
     .eq('id', planId)
     .maybeSingle();
 
@@ -204,6 +269,7 @@ vroomRoutes.post('/optimize', async (c) => {
     return c.json({ error: 'failed_to_load_plan', details: planErr.message }, 500);
   }
 
+  const planOrgId = (planRow?.org_id as string | null) ?? null;
   const planOrg = (planRow?.org as unknown as Record<string, unknown> | null) ?? null;
   const orgDefaultDepotLng = (planOrg?.default_depot_lng as number | null) ?? null;
   const orgDefaultDepotLat = (planOrg?.default_depot_lat as number | null) ?? null;
@@ -239,6 +305,59 @@ vroomRoutes.post('/optimize', async (c) => {
     return c.json({ error: 'Plan has no routes/vehicles assigned' }, 400);
   }
 
+  // 4. Dwell time aprendido por cliente (PRD 26 Fase 3) — aplica siempre,
+  // independiente de `weights`. Gateado por confianza en `effectiveServiceMinutes`.
+  const customerIds = Array.from(
+    new Set(
+      usableStops
+        .map((ps) => (ps.stop as unknown as Record<string, unknown>).customer_id as string | null)
+        .filter((id): id is string => id != null),
+    ),
+  );
+
+  const serviceStatsByCustomer = new Map<
+    string,
+    { n_samples: number; median_dwell_seconds: number | null; mean_dwell_seconds: number | null; stddev_dwell_seconds: number | null }
+  >();
+  if (customerIds.length > 0) {
+    const { data: stats, error: statsErr } = await supabase
+      .from('customer_service_stats')
+      .select('customer_id, n_samples, median_dwell_seconds, mean_dwell_seconds, stddev_dwell_seconds')
+      .in('customer_id', customerIds);
+    if (statsErr) {
+      // No bloqueante: si falla, seguimos con los tiempos manuales.
+      console.warn('[vroom] failed_to_load_customer_service_stats', statsErr.message);
+    } else {
+      for (const row of stats ?? []) {
+        serviceStatsByCustomer.set(row.customer_id as string, {
+          n_samples: row.n_samples as number,
+          median_dwell_seconds: row.median_dwell_seconds as number | null,
+          mean_dwell_seconds: row.mean_dwell_seconds as number | null,
+          stddev_dwell_seconds: row.stddev_dwell_seconds as number | null,
+        });
+      }
+    }
+  }
+
+  // 5. Afinidad histórica de pares de clientes (PRD 26 Fase 4) — solo se
+  // necesita si se va a construir la matriz de costo ponderada.
+  const pairAffinity = new Map<string, number>(); // key: `${a}|${b}` con a<b
+  if (useWeightedMatrix && planOrgId && customerIds.length > 1) {
+    const { data: pairs, error: pairsErr } = await supabase
+      .from('customer_pair_affinity')
+      .select('customer_id_a, customer_id_b, co_occurrence_count')
+      .eq('org_id', planOrgId)
+      .in('customer_id_a', customerIds)
+      .in('customer_id_b', customerIds);
+    if (pairsErr) {
+      console.warn('[vroom] failed_to_load_customer_pair_affinity', pairsErr.message);
+    } else {
+      for (const row of pairs ?? []) {
+        pairAffinity.set(`${row.customer_id_a}|${row.customer_id_b}`, row.co_occurrence_count as number);
+      }
+    }
+  }
+
   // Índice de skills (string → int) compartido por vehicles y jobs de esta
   // request. Solo hace falta que sea consistente dentro de esta llamada.
   const skillIndex = buildSkillIndex([
@@ -263,6 +382,11 @@ vroomRoutes.post('/optimize', async (c) => {
   const vehicleIdToRoute = new Map<number, { routeId: string; vehicleId: string }>();
   const jobIdToPlanStop = new Map<number, string>();
   const vehiclesMissingDepot: string[] = [];
+  // Coordenadas de depot por vehículo — se necesitan de nuevo más abajo para
+  // construir los puntos de la matriz OSRM cuando `weights` está activo.
+  const vehicleDepotByVroomId = new Map<number, { lng: number; lat: number }>();
+  // customer_id por job — insumo del sesgo histórico (Fase 4).
+  const jobCustomerByVroomId = new Map<number, string>();
   // `vehicles.max_stops` es un techo duro operativo (ej. la camioneta no
   // entra más de N paquetes por vuelta). Se aplica DESPUÉS del bloque de
   // modos, como `min()` contra lo que calculen balance_stops/balance_time,
@@ -315,6 +439,7 @@ vroomRoutes.post('/optimize', async (c) => {
     // si el binario desplegado lo ignora, no debería romper la request.
     if (pricePerKm !== null) vehicle.costs = { per_km: Math.round(pricePerKm) };
     if (maxStopsConfigured !== null) configuredMaxStopsByVroomId.set(vroomId, maxStopsConfigured);
+    vehicleDepotByVroomId.set(vroomId, { lng: depotLng, lat: depotLat });
     vroomVehicles.push(vehicle);
   }
 
@@ -347,7 +472,13 @@ vroomRoutes.post('/optimize', async (c) => {
   // Los bloques de modo hacen MERGE sobre `v.costs` (no reemplazo) para no
   // pisar el `per_km` ya seteado desde `vehicles.price_per_km` en el loop
   // de construcción de vehículos.
-  if (vroomVehicles.length > 0 && usableStops.length > 0) {
+  //
+  // Si `weights` está activo (PRD 26 Fase 2), los 5 presets de modo se
+  // ignoran por completo: el objetivo lo define la matriz de costo propia,
+  // no `costs.fixed`/`per_hour`. Evita además el conflicto documentado de
+  // Vroom: un `per_hour` no-default es incompatible con una matriz `costs`
+  // custom (ver modo `on_time` abajo).
+  if (!useWeightedMatrix && vroomVehicles.length > 0 && usableStops.length > 0) {
     if (mode === 'efficiency') {
       // fixed=1200 (20min) → solo abre un vehículo extra si ahorra ≥20min de
       // viaje agregado. Default per_hour ya minimiza tiempo total.
@@ -445,10 +576,20 @@ vroomRoutes.post('/optimize', async (c) => {
       ? psSkills
       : (stop.required_skills as string[] | null);
 
+    const customerId = stop.customer_id as string | null;
+    if (customerId) jobCustomerByVroomId.set(vroomId, customerId);
+    // Dwell time real aprendido (PRD 26 Fase 3), con gate de confianza —
+    // reemplaza el estimado manual solo si hay suficiente muestra y poca
+    // variabilidad. Aplica siempre, independiente de `weights`.
+    const effectiveMinutes = effectiveServiceMinutes(
+      customerId ? serviceStatsByCustomer.get(customerId) : undefined,
+      durationMin,
+    );
+
     const job: VroomJob = {
       id: vroomId,
       location: [lng, lat],
-      service: Math.max(0, Math.round(durationMin * 60)),
+      service: Math.max(0, Math.round(effectiveMinutes * 60)),
     };
     if (anyVehicleHasVolume) {
       const w = weightKg !== null && weightKg > 0 ? Math.round(weightKg) : 0;
@@ -486,6 +627,70 @@ vroomRoutes.post('/optimize', async (c) => {
     return { ok: true, data };
   }
 
+  // PRD 26 Fase 2: matriz de costo ponderada. Solo se activa si `weights`
+  // vino en el body — si no, Vroom sigue armando su propia matriz
+  // internamente vía el OSRM_HOST configurado en
+  // `vuoo-routing/vroom/config.yml` (comportamiento de siempre).
+  let matrices: Record<string, unknown> | undefined;
+  if (useWeightedMatrix) {
+    // Un punto por vehículo (start; mismo índice para end si vuelve al
+    // depot) + un punto por job, en ese orden. Vroom exige *_index cuando
+    // se manda una matriz propia — location queda solo para que la
+    // respuesta traiga coordenadas legibles.
+    const points: Array<{ lng: number; lat: number }> = [];
+    for (const v of vroomVehicles) {
+      const depot = vehicleDepotByVroomId.get(v.id)!;
+      const pointIdx = points.push(depot) - 1;
+      v.start_index = pointIdx;
+      if (returnToDepot) v.end_index = pointIdx;
+    }
+    for (const j of vroomJobs) {
+      const pointIdx = points.push({ lng: j.location[0], lat: j.location[1] }) - 1;
+      j.location_index = pointIdx;
+    }
+
+    const table = await fetchOsrmTable(points);
+
+    const wTime = weights?.time ?? 1;
+    const wDist = weights?.distance ?? 0;
+    const wHist = weights?.history ?? 0;
+
+    // Sin historial todavía (org nueva / recién instrumentada), no hay
+    // señal que aplicar — se omite el término en vez de penalizar todo por
+    // igual (que además rompería la simetría entre pares con/sin
+    // customer_id sin aportar ningún sesgo real).
+    const hasHistoricalData = pairAffinity.size > 0;
+    const maxCoOccurrence = hasHistoricalData ? Math.max(...Array.from(pairAffinity.values())) : 1;
+    const pointToJobId = new Map<number, number>();
+    for (const j of vroomJobs) pointToJobId.set(j.location_index!, j.id);
+
+    function historyPenaltySeconds(pointA: number, pointB: number): number {
+      if (wHist <= 0 || !hasHistoricalData) return 0;
+      const jobIdA = pointToJobId.get(pointA);
+      const jobIdB = pointToJobId.get(pointB);
+      if (jobIdA === undefined || jobIdB === undefined) return 0; // punto de depot, no de job
+      const custA = jobCustomerByVroomId.get(jobIdA);
+      const custB = jobCustomerByVroomId.get(jobIdB);
+      if (!custA || !custB || custA === custB) return 0;
+      const [a, b] = custA < custB ? [custA, custB] : [custB, custA];
+      const familiarity = (pairAffinity.get(`${a}|${b}`) ?? 0) / maxCoOccurrence;
+      return (1 - familiarity) * MAX_HISTORY_PENALTY_SECONDS * wHist;
+    }
+
+    const n = points.length;
+    const costs: number[][] = Array.from({ length: n }, () => new Array<number>(n).fill(0));
+    for (let i = 0; i < n; i++) {
+      for (let j2 = 0; j2 < n; j2++) {
+        if (i === j2) continue;
+        const base =
+          wTime * table.durations[i][j2] + (wDist * table.distances[i][j2]) / REFERENCE_SPEED_MPS;
+        costs[i][j2] = Math.max(0, Math.round(base + historyPenaltySeconds(i, j2)));
+      }
+    }
+
+    matrices = { car: { durations: table.durations, distances: table.distances, costs } };
+  }
+
   // `g: true` pide a Vroom que devuelva la polilínea real (polyline5) de cada
   // ruta vía OSRM. Sin esto, el frontend tendría que recalcular la geometría
   // contra Mapbox Directions y choca con el límite de 25 waypoints por request.
@@ -497,10 +702,12 @@ vroomRoutes.post('/optimize', async (c) => {
     jobs: vroomJobs,
     options: vroomOptions,
   };
+  if (matrices) vroomPayload.matrices = matrices;
 
   console.log(`[vroom][${mode}] sending`, JSON.stringify({
     plan_id: planId,
     mode,
+    weights_active: useWeightedMatrix,
     vehicles: vroomVehicles.map((v) => ({
       id: v.id,
       capacity: v.capacity,

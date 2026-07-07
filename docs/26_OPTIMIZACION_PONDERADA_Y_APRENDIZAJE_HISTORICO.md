@@ -2,9 +2,31 @@
 
 **Pri**: P1
 **Extiende**: PRD 06 (Optimización Inteligente), PRD 19 (Optimización Vroom Avanzada)
-**Estado**: Diseño cerrado. Fase 0 diferida (decisión: quedarse en VROOM
-v1.13.0 por ahora, ver §Riesgos). Fase 1 implementada en
-`backend-railway/src/routes/vroom.ts` (typecheck limpio).
+**Estado**: Fase 0 diferida (decisión: quedarse en VROOM v1.13.0 por ahora,
+ver §Riesgos). **Fases 1–4 implementadas** en código (typecheck limpio),
+**sin desplegar ni probar contra datos reales** — ver §Pendiente antes de
+producción.
+
+## Pendiente antes de producción
+
+Lo implementado es el mecanismo completo, no una validación de que funciona
+bien con datos reales. Antes de activarlo para un usuario real:
+
+1. **Confirmar reachability de red**: `backend-railway` → OSRM privado
+   (`OSRM_URL`, mismo proyecto Railway `vuoo-rutas`). No se pudo probar
+   desde este entorno (sin Docker/acceso a Railway).
+2. **Correr `run_stop_visits_batch(10)` manualmente** contra rutas
+   completadas reales antes de confiar en el cron nocturno — las constantes
+   de geofence (100m radio, 90s mínimo) y de confianza (`MIN_SAMPLES=5`,
+   `MAX_CV=0.5`, `k=5`) son valores iniciales sin calibrar.
+3. **`weights` no está expuesto en ninguna UI todavía** — `VroomWizardModal`
+   sigue mostrando los 5 modos de siempre. Exponer sliders es una decisión
+   de diseño/UX que merece su propio mockup, no algo para reemplazar en
+   silencio.
+4. Ninguna migración se corrió contra una base real — no había Docker/psql
+   disponibles en este entorno para probarlas. Revisar con
+   `supabase db push` (o equivalente) en un entorno de verdad antes de
+   confiar en que aplican limpio.
 
 ---
 
@@ -74,7 +96,7 @@ alcanza con subir el tag del Dockerfile. Revisar esta decisión si en algún
 momento se justifica compilar una imagen propia desde
 `VROOM-Project/vroom` en vez de depender de `vroomvrp/vroom-docker`.
 
-### Fase 1 — Quick wins sin tocar el solver (no depende de Fase 0)
+### Fase 1 — Quick wins sin tocar el solver (no depende de Fase 0) [implementada]
 
 En `backend-railway/src/routes/vroom.ts`:
 
@@ -109,7 +131,7 @@ En `backend-railway/src/routes/vroom.ts`:
   decisión de UI (¿por vehículo? ¿por org?) — se deja fuera de "quick wins"
   a propósito, no es solo cablear algo que ya existe.
 
-### Fase 2 — Matriz de costo ponderada
+### Fase 2 — Matriz de costo ponderada [implementada, sin exponer en UI]
 
 - Nuevo `backend-railway/src/lib/osrm.ts`: cliente para `/table` de la
   instancia OSRM (mismo host que usa Vroom internamente via
@@ -129,7 +151,7 @@ En `backend-railway/src/routes/vroom.ts`:
   rediseñar `on_time` para lograr "prioriza ventanas" solo con `fixed` bajo
   + el propio sesgo de la matriz, sin tocar `per_hour`.
 
-### Fase 3 — Captura de dwell time real
+### Fase 3 — Captura de dwell time real [implementada, sin correr contra datos reales]
 
 - Tabla `stop_visits` (`stop_id, customer_id, driver_id, route_id, org_id,
   arrived_at, departed_at, dwell_seconds, radius_m, source`).
@@ -153,7 +175,7 @@ En `backend-railway/src/routes/vroom.ts`:
 
   `MIN_SAMPLES`, `MAX_CV`, `k` son constantes a tunear con datos reales.
 
-### Fase 4 — Sesgo histórico de agrupación
+### Fase 4 — Sesgo histórico de agrupación [implementada]
 
 - Co-ocurrencia de pares de stops en rutas `completed` (sin importar
   conductor) → término `wHist·histPenalty[i][j]` en la misma matriz de la
