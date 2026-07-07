@@ -74,6 +74,7 @@ export function CreateStopModal({
               onChange={(val) => setForm({ ...form, address: val })}
               onSelect={(address, c) => { setForm({ ...form, address }); setSelectedCoords(c) }}
               placeholder="Av. Apoquindo 7709, Las Condes, Santiago"
+              countries={currentOrg?.operating_countries}
             />
           </div>
           <div className="grid grid-cols-2 gap-3">

@@ -480,6 +480,7 @@ export function OrderModal({
                   onChange={(v) => setForm({ ...form, address: v })}
                   onSelect={(address, c) => { setForm({ ...form, address }); setCoords(c) }}
                   placeholder="Av. Providencia 1234, Santiago"
+                  countries={currentOrg?.operating_countries}
                 />
               </Field>
               <Field label="Instrucciones de entrega">

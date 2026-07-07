@@ -11,7 +11,10 @@ const BatchSchema = z.object({
       z.object({
         id: z.string(),
         address: z.string().min(1),
-        country: z.string().length(2).optional(),
+        country: z
+          .string()
+          .regex(/^[a-z]{2}(,[a-z]{2})*$/i, 'country debe ser ISO-3166 alpha-2, opcionalmente separado por comas')
+          .optional(),
       }),
     )
     .min(1)

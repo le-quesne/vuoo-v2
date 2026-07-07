@@ -14,6 +14,7 @@ import type { MatchQuality } from '../../types/import.types';
 export interface GeocodeInput {
   id: string;
   address: string;
+  country?: string;
 }
 
 export interface GeocodeOutput {
