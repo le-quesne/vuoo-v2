@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { normalizeAddressHash } from './addressHash.js';
 
 /**
  * Origen de la orden. Coincide con el enum `OrderSource` del frontend
@@ -177,9 +176,8 @@ export async function createOrderForOrg(opts: {
           // explícito cae a customer_name (caso B2C donde coinciden).
           name: input.place_name?.trim() || input.customer_name,
           address: input.address!,
-          // Sin address_hash el stop queda invisible para match_stop_for_order
-          // (no hay trigger que lo calcule).
-          address_hash: normalizeAddressHash(input.address!),
+          // address_hash lo calcula el trigger trg_stops_address_hash en
+          // Postgres (única fuente de verdad del hash de matching).
           lat: input.lat ?? null,
           lng: input.lng ?? null,
           customer_id: customerId,

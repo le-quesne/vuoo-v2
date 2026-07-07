@@ -1,7 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { supabaseFromJWT } from '../lib/supabase.js';
-import { normalizeAddressHash } from '../lib/addressHash.js';
 
 export const ordersImportRoutes = new Hono();
 
@@ -132,7 +131,6 @@ ordersImportRoutes.post('/', async (c) => {
               customer_name: row.customer_name,
               customer_phone: row.customer_phone ?? null,
               customer_email: row.customer_email ?? null,
-              address_hash: normalizeAddressHash(row.address!),
               geocoding_confidence: row.lat != null && row.lng != null ? 0.8 : null,
               geocoding_provider: 'mapbox',
             })
