@@ -3,30 +3,63 @@
 **Pri**: P1
 **Extiende**: PRD 06 (Optimización Inteligente), PRD 19 (Optimización Vroom Avanzada)
 **Estado**: Fase 0 diferida (decisión: quedarse en VROOM v1.13.0 por ahora,
-ver §Riesgos). **Fases 1–4 implementadas** en código (typecheck limpio),
-**sin desplegar ni probar contra datos reales** — ver §Pendiente antes de
-producción.
+ver §Riesgos). **Fases 1–4 implementadas y validadas funcionalmente**
+(typecheck limpio, build de producción limpio, migraciones corridas contra
+Postgres 16 local con datos sintéticos — ver §Validación realizada).
+`weights` expuesto en `VroomWizardModal` detrás de un toggle "beta"
+explícito. **Sin desplegar a Railway ni probado contra datos reales de
+producción** — ver §Pendiente antes de producción.
 
-## Pendiente antes de producción
+## Validación realizada
 
-Lo implementado es el mecanismo completo, no una validación de que funciona
-bien con datos reales. Antes de activarlo para un usuario real:
+Sin Docker/Supabase CLI vinculado disponibles en este entorno, se instaló
+Postgres 16 local (`brew install postgresql@16`) y se armó un fixture
+mínimo con las tablas reales de las que dependen las migraciones
+(`organizations`, `customers`, `drivers`, `stops`, `plans`, `routes`,
+`plan_stops`, `driver_locations`) para correr ambas migraciones de PRD 26
+de punta a punta:
 
-1. **Confirmar reachability de red**: `backend-railway` → OSRM privado
-   (`OSRM_URL`, mismo proyecto Railway `vuoo-rutas`). No se pudo probar
-   desde este entorno (sin Docker/acceso a Railway).
-2. **Correr `run_stop_visits_batch(10)` manualmente** contra rutas
-   completadas reales antes de confiar en el cron nocturno — las constantes
-   de geofence (100m radio, 90s mínimo) y de confianza (`MIN_SAMPLES=5`,
-   `MAX_CV=0.5`, `k=5`) son valores iniciales sin calibrar.
-3. **`weights` no está expuesto en ninguna UI todavía** — `VroomWizardModal`
-   sigue mostrando los 5 modos de siempre. Exponer sliders es una decisión
-   de diseño/UX que merece su propio mockup, no algo para reemplazar en
-   silencio.
-4. Ninguna migración se corrió contra una base real — no había Docker/psql
-   disponibles en este entorno para probarlas. Revisar con
-   `supabase db push` (o equivalente) en un entorno de verdad antes de
-   confiar en que aplican limpio.
+- `compute_stop_visits_for_route`: probado con una ruta donde el camión se
+  queda 3 min en un stop (genera visita, dwell correcto) y pasa 30s por
+  otro (bajo el umbral de 90s, correctamente **no** genera visita — filtra
+  ruido/tránsito).
+- `refresh_customer_service_stats`: mean/median/stddev verificados a mano
+  contra los números esperados.
+- `refresh_customer_pair_affinity`: co-ocurrencia de 2 clientes que
+  comparten una ruta detectada correctamente (`count=1`).
+- `run_stop_visits_batch`: marca `visits_computed_at`, y reprocesar no
+  duplica filas (`on conflict do nothing` funciona).
+- `vuoo_distance_meters`: contrastado contra distancias conocidas (1° de
+  latitud ≈ 111,195 m — correcto).
+- La fórmula de confianza (`effectiveServiceMinutes` en `vroom.ts`)
+  probada aparte en Node con casos límite (pocas muestras, alta
+  variabilidad, cv exactamente en el borde, shrinkage gradual con n
+  creciente) — se comporta como se diseñó.
+
+Esto valida que la **lógica es correcta**, no que la infraestructura de
+producción (red Railway, cron real, volumen real de datos) se comporta
+igual — eso sigue pendiente.
+
+## Pendiente antes de producción (requiere al usuario)
+
+1. **Aplicar las migraciones a la base real.** No hay credenciales/acceso
+   a Supabase configurado en este entorno para correr `supabase db push`
+   (o `supabase link` + migración) contra el proyecto real. Alguien con
+   acceso tiene que correrlo.
+2. **Confirmar reachability de red**: `backend-railway` → OSRM privado
+   (`OSRM_URL=http://vuoo-routing.railway.internal:5000`, mismo proyecto
+   Railway `vuoo-rutas`). No se puede probar sin acceso a Railway — pedirle
+   a alguien con acceso al dashboard que agregue la env var y confirme que
+   el healthcheck/log no tira error de conexión.
+3. **Decisión de producto pendiente: `max_distance`.** Sigue sin
+   implementarse — necesita decidir si es por vehículo o por org, y si
+   amerita UI en Settings antes de agregar la columna. Ver pregunta al
+   usuario en la conversación.
+4. **Calibrar constantes con datos reales** una vez que el cron lleve unas
+   semanas corriendo (geofence 100m/90s, confianza `MIN_SAMPLES=5`/
+   `MAX_CV=0.5`/`k=5`) — no es un blocker, es trabajo de seguimiento.
+5. **Decidir si pushear la rama y abrir PR** — el trabajo vive local en
+   `feat/vroom-optimizer-foundations`, sin pushear.
 
 ---
 
@@ -131,7 +164,7 @@ En `backend-railway/src/routes/vroom.ts`:
   decisión de UI (¿por vehículo? ¿por org?) — se deja fuera de "quick wins"
   a propósito, no es solo cablear algo que ya existe.
 
-### Fase 2 — Matriz de costo ponderada [implementada, sin exponer en UI]
+### Fase 2 — Matriz de costo ponderada [implementada, UI beta en VroomWizardModal]
 
 - Nuevo `backend-railway/src/lib/osrm.ts`: cliente para `/table` de la
   instancia OSRM (mismo host que usa Vroom internamente via
