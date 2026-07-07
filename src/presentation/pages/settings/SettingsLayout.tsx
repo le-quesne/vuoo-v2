@@ -9,6 +9,7 @@ const tabs = [
   { to: '/settings/places', label: 'Lugares' },
   { to: '/settings/duplicates', label: 'Duplicados' },
   { to: '/settings/vehicles', label: 'Vehiculos' },
+  { to: '/settings/depots', label: 'Depots' },
   { to: '/settings/drivers', label: 'Conductores' },
   { to: '/settings/api-tokens', label: 'API & Integraciones' },
 ]

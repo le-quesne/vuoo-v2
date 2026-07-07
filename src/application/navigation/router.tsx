@@ -14,6 +14,7 @@ import { PlanDetailPage } from '@/presentation/pages/PlanDetailPage';
 import { OrdersPage } from '@/presentation/pages/OrdersPage';
 import { StopsPage } from '@/presentation/pages/StopsPage';
 import { VehiclesPage } from '@/presentation/pages/VehiclesPage';
+import { DepotsSettingsPage } from '@/presentation/pages/settings/DepotsSettingsPage';
 import { DriversPage } from '@/presentation/pages/DriversPage';
 import { UsersPage } from '@/presentation/pages/UsersPage';
 import { AnalyticsPage } from '@/presentation/pages/AnalyticsPage';
@@ -81,6 +82,7 @@ export function AppRouter() {
               <Route path="places" element={<StopsPage />} />
               <Route path="duplicates" element={<StopsDuplicatesPage />} />
               <Route path="vehicles" element={<VehiclesPage />} />
+              <Route path="depots" element={<DepotsSettingsPage />} />
               <Route path="drivers" element={<DriversPage />} />
               <Route path="api-tokens" element={<ApiTokensPage />} />
             </Route>
