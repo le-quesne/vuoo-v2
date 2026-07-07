@@ -34,7 +34,7 @@
 
 ---
 
-## PRDs nuevos (13–25)
+## PRDs nuevos (13–26)
 
 | # | PRD | Pri | Cubre |
 |---|-----|-----|-------|
@@ -52,6 +52,7 @@
 | **23** | Inteligencia Autónoma — capacidades en producto | P3 | Roadmap de capacidades de agentes en el producto. Diferido hasta validar PRD 24 + 2 dominios más |
 | **24** | **Vuoo Backoffice (Company OS)** | **P0** | **Web app `backoffice.vuoo.cl` construida desde cero. Stack: Vite + React + shadcn + Supabase (schema `backoffice.*`) + Edge Functions + Claude + Resend + Gmail OAuth + Firecrawl. Módulo 1 sales en 4 semanas. Crece módulo a módulo (soporte, ops, eng, finance)** |
 | **25** | Multi-Depot | P1 | Modelo de depots por org (warehouse/dark_store/cross_dock) + RLS por depot + DepotSwitcher UI + Vroom multi-depot + inter-depot transfers + analytics por depot. Extrae §E de PRD 19 |
+| **26** | Optimización Ponderada y Aprendizaje Histórico | P1 | Quick wins Vroom (priority, skills, volumen, per_km, max_stops) + matriz de costo propia (OSRM `/table` + `matrices.costs`) + dwell time real vía geofence sobre `driver_locations` + sesgo histórico de agrupación de stops. Extiende PRD 19 |
 
 ---
 

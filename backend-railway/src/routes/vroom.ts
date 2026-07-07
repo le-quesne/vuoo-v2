@@ -60,6 +60,7 @@ interface VroomVehicle {
   start: [number, number];
   end?: [number, number];
   capacity?: number[];
+  skills?: number[];
   time_window?: [number, number];
   max_tasks?: number;
   max_travel_time?: number;
@@ -71,8 +72,38 @@ interface VroomJob {
   location: [number, number];
   service?: number;
   delivery?: number[];
+  skills?: number[];
+  priority?: number;
   time_windows?: [number, number][];
 }
+
+// Vroom exige skills como enteros; la DB los guarda como strings
+// ('refrigerated', 'hazmat'). Se arma un índice ad-hoc por request — no
+// necesita persistir entre llamadas, solo ser consistente dentro de una.
+function buildSkillIndex(skillLists: Array<string[] | null | undefined>): Map<string, number> {
+  const index = new Map<string, number>();
+  let next = 1;
+  for (const list of skillLists) {
+    for (const skill of list ?? []) {
+      if (!index.has(skill)) index.set(skill, next++);
+    }
+  }
+  return index;
+}
+
+function toVroomSkills(
+  skills: string[] | null | undefined,
+  index: Map<string, number>,
+): number[] | undefined {
+  if (!skills || skills.length === 0) return undefined;
+  const mapped = skills.map((s) => index.get(s)).filter((n): n is number => n !== undefined);
+  return mapped.length > 0 ? mapped : undefined;
+}
+
+// Capacidad "sin límite" para la dimensión de volumen cuando un vehículo no
+// tiene volume_m3 configurado, pero OTRO vehículo del mismo plan sí — Vroom
+// exige que todos los arrays capacity/delivery tengan la misma longitud.
+const UNBOUNDED_CAPACITY = 999_999_999;
 
 interface VroomBody {
   plan_id?: string;
@@ -118,7 +149,8 @@ vroomRoutes.post('/optimize', async (c) => {
   const { data: planStops, error: psErr } = await supabase
     .from('plan_stops')
     .select(
-      `id, route_id, stop:stops (lat, lng, duration_minutes, weight_kg, time_window_start, time_window_end)`,
+      `id, route_id, priority, required_skills, volume_m3,
+       stop:stops (lat, lng, duration_minutes, weight_kg, time_window_start, time_window_end, priority, required_skills)`,
     )
     .eq('plan_id', planId)
     .neq('status', 'completed')
@@ -133,12 +165,14 @@ vroomRoutes.post('/optimize', async (c) => {
   // es solo un default histórico de la dirección. Si no usamos las órdenes, Vroom
   // ve capacity = 0 en cada job y mete todo en un vehículo (síntoma: planes con
   // 2+ vehículos quedan cargados en uno solo aunque haya sobrecarga obvia).
+  // Volumen sigue el mismo patrón que peso (real desde orders, cache en plan_stops).
   const planStopIds = (planStops ?? []).map((ps) => ps.id as string);
   const orderWeightByPlanStop = new Map<string, number>();
+  const orderVolumeByPlanStop = new Map<string, number>();
   if (planStopIds.length > 0) {
     const { data: orders, error: oErr } = await supabase
       .from('orders')
-      .select('plan_stop_id, total_weight_kg')
+      .select('plan_stop_id, total_weight_kg, total_volume_m3')
       .in('plan_stop_id', planStopIds);
 
     if (oErr) {
@@ -147,9 +181,15 @@ vroomRoutes.post('/optimize', async (c) => {
 
     for (const row of orders ?? []) {
       const psid = row.plan_stop_id as string | null;
+      if (!psid) continue;
       const kg = row.total_weight_kg as number | null;
-      if (!psid || kg == null || kg <= 0) continue;
-      orderWeightByPlanStop.set(psid, (orderWeightByPlanStop.get(psid) ?? 0) + kg);
+      if (kg != null && kg > 0) {
+        orderWeightByPlanStop.set(psid, (orderWeightByPlanStop.get(psid) ?? 0) + kg);
+      }
+      const vol = row.total_volume_m3 as number | null;
+      if (vol != null && vol > 0) {
+        orderVolumeByPlanStop.set(psid, (orderVolumeByPlanStop.get(psid) ?? 0) + vol);
+      }
     }
   }
 
@@ -172,7 +212,7 @@ vroomRoutes.post('/optimize', async (c) => {
   let routesQuery = supabase
     .from('routes')
     .select(
-      `id, vehicle_id, vehicle:vehicles (capacity_weight_kg, time_window_start, time_window_end, depot_lat, depot_lng, skills)`,
+      `id, vehicle_id, vehicle:vehicles (capacity_weight_kg, time_window_start, time_window_end, depot_lat, depot_lng, skills, volume_m3, price_per_km, max_stops)`,
     )
     .eq('plan_id', planId);
 
@@ -199,10 +239,35 @@ vroomRoutes.post('/optimize', async (c) => {
     return c.json({ error: 'Plan has no routes/vehicles assigned' }, 400);
   }
 
+  // Índice de skills (string → int) compartido por vehicles y jobs de esta
+  // request. Solo hace falta que sea consistente dentro de esta llamada.
+  const skillIndex = buildSkillIndex([
+    ...routes.map((r) => (r.vehicle as unknown as Record<string, unknown> | null)?.skills as string[] | null),
+    ...usableStops.map((ps) => {
+      const psSkills = ps.required_skills as string[] | null;
+      if (psSkills && psSkills.length > 0) return psSkills;
+      const stop = ps.stop as unknown as Record<string, unknown> | null;
+      return (stop?.required_skills as string[] | null) ?? null;
+    }),
+  ]);
+
+  // Si algún vehículo del plan tiene volumen configurado, todos los arrays de
+  // capacity/delivery pasan a 2 dimensiones [peso, volumen_litros]. Si ninguno
+  // lo usa, se mantiene el comportamiento actual de 1 sola dimensión — cero
+  // riesgo de regresión para orgs que no configuran volumen.
+  const anyVehicleHasVolume = routes.some(
+    (r) => typeof (r.vehicle as unknown as Record<string, unknown> | null)?.volume_m3 === 'number',
+  );
+
   // Mapeo UUID ↔ integer IDs para Vroom.
   const vehicleIdToRoute = new Map<number, { routeId: string; vehicleId: string }>();
   const jobIdToPlanStop = new Map<number, string>();
   const vehiclesMissingDepot: string[] = [];
+  // `vehicles.max_stops` es un techo duro operativo (ej. la camioneta no
+  // entra más de N paquetes por vuelta). Se aplica DESPUÉS del bloque de
+  // modos, como `min()` contra lo que calculen balance_stops/balance_time,
+  // para que el modo nunca lo relaje.
+  const configuredMaxStopsByVroomId = new Map<number, number>();
 
   const vroomVehicles: VroomVehicle[] = [];
   for (let idx = 0; idx < routes.length; idx++) {
@@ -225,16 +290,31 @@ vroomRoutes.post('/optimize', async (c) => {
 
     const capacityKg =
       v && typeof v.capacity_weight_kg === 'number' ? v.capacity_weight_kg : null;
+    const volumeM3 = v && typeof v.volume_m3 === 'number' ? v.volume_m3 : null;
     const tws = v ? parseTimeToSeconds(v.time_window_start as string | null) : null;
     const twe = v ? parseTimeToSeconds(v.time_window_end as string | null) : null;
+    const pricePerKm = v && typeof v.price_per_km === 'number' && v.price_per_km > 0 ? v.price_per_km : null;
+    const maxStopsConfigured = v && typeof v.max_stops === 'number' && v.max_stops > 0 ? v.max_stops : null;
 
     const vehicle: VroomVehicle = {
       id: vroomId,
       start: [depotLng, depotLat],
     };
     if (returnToDepot) vehicle.end = [depotLng, depotLat];
-    if (capacityKg !== null && capacityKg > 0) vehicle.capacity = [Math.round(capacityKg)];
+    if (anyVehicleHasVolume) {
+      vehicle.capacity = [
+        capacityKg !== null && capacityKg > 0 ? Math.round(capacityKg) : UNBOUNDED_CAPACITY,
+        volumeM3 !== null ? Math.round(volumeM3 * 1000) : UNBOUNDED_CAPACITY,
+      ];
+    } else if (capacityKg !== null && capacityKg > 0) {
+      vehicle.capacity = [Math.round(capacityKg)];
+    }
     if (tws !== null && twe !== null && twe > tws) vehicle.time_window = [tws, twe];
+    vehicle.skills = toVroomSkills(v?.skills as string[] | null, skillIndex);
+    // `per_km` requiere Vroom >= 1.14 (ver PRD 26 §Riesgos); se envía igual —
+    // si el binario desplegado lo ignora, no debería romper la request.
+    if (pricePerKm !== null) vehicle.costs = { per_km: Math.round(pricePerKm) };
+    if (maxStopsConfigured !== null) configuredMaxStopsByVroomId.set(vroomId, maxStopsConfigured);
     vroomVehicles.push(vehicle);
   }
 
@@ -264,11 +344,14 @@ vroomRoutes.post('/optimize', async (c) => {
   //     se vuelven `unassigned`. Para "on_time" lo que ajustamos es la PROPENSIÓN
   //     a abrir vehículos extras / aceptar detours para asignar más jobs.
   //   - `minimize_vehicles: true` cambia el objetivo: primero minimiza V, luego costo.
+  // Los bloques de modo hacen MERGE sobre `v.costs` (no reemplazo) para no
+  // pisar el `per_km` ya seteado desde `vehicles.price_per_km` en el loop
+  // de construcción de vehículos.
   if (vroomVehicles.length > 0 && usableStops.length > 0) {
     if (mode === 'efficiency') {
       // fixed=1200 (20min) → solo abre un vehículo extra si ahorra ≥20min de
       // viaje agregado. Default per_hour ya minimiza tiempo total.
-      for (const v of vroomVehicles) v.costs = { fixed: 1200 };
+      for (const v of vroomVehicles) v.costs = { ...v.costs, fixed: 1200 };
     } else if (mode === 'consolidate') {
       // fixed alto + minimize_vehicles fuerza concentración real. La flag
       // se aplica más abajo en `vroomPayload.options`.
@@ -278,13 +361,13 @@ vroomRoutes.post('/optimize', async (c) => {
       // viaje creíble por usar un camión extra; con 18000 (5h) no alcanzaba:
       // en planes de 30+ paradas el ahorro de driving por partir en 2 rutas
       // superaba esas 5h y Vroom seguía abriendo el 2do vehículo.
-      for (const v of vroomVehicles) v.costs = { fixed: 86400 };
+      for (const v of vroomVehicles) v.costs = { ...v.costs, fixed: 86400 };
     } else if (mode === 'balance_stops' || mode === 'balance_time') {
       // max_tasks=ceil(N/V) hace inviable la solución con V-1 vehículos, así
       // que Vroom se ve forzado a usar todos.
       // fixed=0 saca la presión de "menos vehículos = más barato", para que el
       // solver no consolide cuando podría repartir.
-      for (const v of vroomVehicles) v.costs = { fixed: 0 };
+      for (const v of vroomVehicles) v.costs = { ...v.costs, fixed: 0 };
       if (usableStops.length >= vroomVehicles.length) {
         const maxTasks = Math.ceil(usableStops.length / vroomVehicles.length);
         for (const v of vroomVehicles) v.max_tasks = maxTasks;
@@ -299,8 +382,20 @@ vroomRoutes.post('/optimize', async (c) => {
       //   2. per_hour bajo (360 = 1/10 default): un detour o esperar a una
       //      ventana cuesta 10× menos → Vroom prefiere rutas más largas o
       //      con espera si eso respeta más ventanas.
-      for (const v of vroomVehicles) v.costs = { fixed: 600, per_hour: 360 };
+      //      OJO: un `per_hour` no-default es incompatible con una matriz de
+      //      costo custom (Vroom tira error) — si en el futuro (PRD 26 Fase 2)
+      //      se agrega `matrices.costs`, este modo hay que rediseñarlo.
+      for (const v of vroomVehicles) v.costs = { ...v.costs, fixed: 600, per_hour: 360 };
     }
+  }
+
+  // `vehicles.max_stops` es un techo duro operativo — nunca se relaja por el
+  // modo, así que se aplica DESPUÉS como min() contra el max_tasks calculado
+  // arriba (si lo hay).
+  for (const v of vroomVehicles) {
+    const configured = configuredMaxStopsByVroomId.get(v.id);
+    if (configured === undefined) continue;
+    v.max_tasks = v.max_tasks !== undefined ? Math.min(v.max_tasks, configured) : configured;
   }
 
   if (vroomVehicles.length === 0) {
@@ -328,16 +423,43 @@ vroomRoutes.post('/optimize', async (c) => {
     const weightKg = orderWeight && orderWeight > 0
       ? orderWeight
       : (stop.weight_kg as number | null);
+    // Volumen sigue el mismo patrón que peso: real desde orders, fallback a
+    // plan_stops.volume_m3 (mergeado por assign_orders_to_plan). `stops` no
+    // tiene columna de volumen — solo existe a nivel plan_stops/vehicles.
+    const orderVolume = orderVolumeByPlanStop.get(ps.id as string);
+    const volumeM3 = orderVolume && orderVolume > 0
+      ? orderVolume
+      : (ps.volume_m3 as number | null);
     const tws = parseTimeToSeconds(stop.time_window_start as string | null);
     const twe = parseTimeToSeconds(stop.time_window_end as string | null);
+
+    // priority/required_skills: `plan_stops` trae el valor ya mergeado por
+    // `assign_orders_to_plan` (greatest/unión con el stop); si el plan_stop
+    // no vino de ese flujo (asignación manual), cae a `stops` directamente.
+    const psPriority = (ps.priority as number | null) ?? 0;
+    const stopPriority = (stop.priority as number | null) ?? 0;
+    const priority10 = psPriority > 0 ? psPriority : stopPriority; // rango Vuoo: 0–10
+
+    const psSkills = ps.required_skills as string[] | null;
+    const effectiveSkills = psSkills && psSkills.length > 0
+      ? psSkills
+      : (stop.required_skills as string[] | null);
 
     const job: VroomJob = {
       id: vroomId,
       location: [lng, lat],
       service: Math.max(0, Math.round(durationMin * 60)),
     };
-    if (weightKg !== null && weightKg > 0) job.delivery = [Math.round(weightKg)];
+    if (anyVehicleHasVolume) {
+      const w = weightKg !== null && weightKg > 0 ? Math.round(weightKg) : 0;
+      const vol = volumeM3 !== null && volumeM3 > 0 ? Math.round(volumeM3 * 1000) : 0;
+      job.delivery = [w, vol];
+    } else if (weightKg !== null && weightKg > 0) {
+      job.delivery = [Math.round(weightKg)];
+    }
     if (tws !== null && twe !== null && twe > tws) job.time_windows = [[tws, twe]];
+    if (priority10 > 0) job.priority = Math.min(100, priority10 * 10); // Vroom espera 0–100
+    job.skills = toVroomSkills(effectiveSkills, skillIndex);
     return job;
   });
 
@@ -382,6 +504,7 @@ vroomRoutes.post('/optimize', async (c) => {
     vehicles: vroomVehicles.map((v) => ({
       id: v.id,
       capacity: v.capacity,
+      skills: v.skills,
       time_window: v.time_window,
       max_tasks: v.max_tasks,
       max_travel_time: v.max_travel_time,
@@ -390,6 +513,9 @@ vroomRoutes.post('/optimize', async (c) => {
     jobs_count: vroomJobs.length,
     jobs_total_weight: vroomJobs.reduce((s, j) => s + (j.delivery?.[0] ?? 0), 0),
     jobs_with_tw: vroomJobs.filter((j) => j.time_windows && j.time_windows.length > 0).length,
+    jobs_with_priority: vroomJobs.filter((j) => (j.priority ?? 0) > 0).length,
+    jobs_with_skills: vroomJobs.filter((j) => j.skills && j.skills.length > 0).length,
+    capacity_dimensions: anyVehicleHasVolume ? 2 : 1,
     options: vroomOptions,
   }));
 
