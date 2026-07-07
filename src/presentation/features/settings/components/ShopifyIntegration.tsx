@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/application/hooks/useAuth';
 import { useShopifyIntegration } from '@/presentation/features/settings/hooks';
+import { IntegrationCard } from './IntegrationCard';
 import type { ShopifyInstallation } from '@/data/services/shopify';
 
 /** Logo de Shopify (bolsa verde). */
@@ -73,37 +74,34 @@ export function ShopifyIntegration({ children }: { children?: ReactNode }) {
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <div className="relative flex flex-col rounded-2xl border border-gray-200 bg-white p-5 hover:border-gray-300 transition-colors">
-          {connected && (
-            <span
-              className="absolute top-4 right-4 w-2.5 h-2.5 rounded-full bg-green-500"
-              title={`${active.length} tienda(s) conectada(s)`}
-            />
-          )}
-          <div className="w-12 h-12 rounded-xl bg-[#95BF47]/15 flex items-center justify-center mb-4">
-            <ShopifyLogo className="w-7 h-7" />
-          </div>
-          <h3 className="text-base font-semibold text-gray-900">Shopify</h3>
-          <p className="text-sm text-gray-500 mt-1 flex-1">
-            {connected
+        <IntegrationCard
+          icon={<ShopifyLogo className="w-7 h-7" />}
+          iconBgClassName="bg-[#95BF47]/15"
+          title="Shopify"
+          active={connected}
+          activeLabel={`${active.length} tienda(s) conectada(s)`}
+          description={
+            connected
               ? `${active.length} tienda${active.length > 1 ? 's' : ''} conectada${active.length > 1 ? 's' : ''}. Los pedidos entran automáticamente a Vuoo.`
-              : 'Conectá tu tienda para que los pedidos entren automáticamente a Vuoo, geocodificados y listos para rutear.'}
-          </p>
-          <button
-            onClick={() => setModalOpen(true)}
-            className="mt-4 self-start inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50"
-          >
-            {connected ? (
-              <>
-                <Settings2 size={15} /> Gestionar
-              </>
-            ) : (
-              <>
-                Conectar <ArrowRight size={15} />
-              </>
-            )}
-          </button>
-        </div>
+              : 'Conectá tu tienda para que los pedidos entren automáticamente a Vuoo, geocodificados y listos para rutear.'
+          }
+          action={
+            <button
+              onClick={() => setModalOpen(true)}
+              className="self-start inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50"
+            >
+              {connected ? (
+                <>
+                  <Settings2 size={15} /> Gestionar
+                </>
+              ) : (
+                <>
+                  Conectar <ArrowRight size={15} />
+                </>
+              )}
+            </button>
+          }
+        />
 
         {children}
       </div>

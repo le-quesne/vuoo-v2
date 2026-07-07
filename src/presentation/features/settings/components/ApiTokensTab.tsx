@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/application/hooks/useAuth';
 import { useApiTokens } from '@/presentation/features/settings/hooks';
+import { IntegrationCard } from './IntegrationCard';
 import type {
   ApiTokenCreateResult,
   ApiTokenRow,
@@ -51,29 +52,26 @@ export function ApiTokensCard() {
 
   return (
     <div>
-      <div className="relative flex flex-col rounded-2xl border border-gray-200 bg-white p-5 hover:border-gray-300 transition-colors">
-        {activeCount > 0 && (
-          <span
-            className="absolute top-4 right-4 w-2.5 h-2.5 rounded-full bg-green-500"
-            title={`${activeCount} token(s) activo(s)`}
-          />
-        )}
-        <div className="w-12 h-12 rounded-xl bg-blue-500/15 flex items-center justify-center mb-4">
-          <KeyRound className="w-6 h-6 text-blue-600" />
-        </div>
-        <h3 className="text-base font-semibold text-gray-900">API personalizada</h3>
-        <p className="text-sm text-gray-500 mt-1 flex-1">
-          {activeCount > 0
+      <IntegrationCard
+        icon={<KeyRound className="w-6 h-6 text-blue-600" />}
+        iconBgClassName="bg-blue-500/15"
+        title="API personalizada"
+        active={activeCount > 0}
+        activeLabel={`${activeCount} token(s) activo(s)`}
+        description={
+          activeCount > 0
             ? `${activeCount} token${activeCount > 1 ? 's' : ''} activo${activeCount > 1 ? 's' : ''}. Conectá VTEX, tu ERP o scripts vía POST /api/v1/orders.`
-            : 'Generá tokens para que VTEX, tu ERP o cualquier sistema creen pedidos vía POST /api/v1/orders.'}
-        </p>
-        <button
-          onClick={() => setOpen(true)}
-          className="mt-4 self-start inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50"
-        >
-          <Settings2 size={15} /> Gestionar
-        </button>
-      </div>
+            : 'Generá tokens para que VTEX, tu ERP o cualquier sistema creen pedidos vía POST /api/v1/orders.'
+        }
+        action={
+          <button
+            onClick={() => setOpen(true)}
+            className="self-start inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50"
+          >
+            <Settings2 size={15} /> Gestionar
+          </button>
+        }
+      />
 
       {open && <TokenManagerModal api={api} onClose={() => setOpen(false)} />}
     </div>
