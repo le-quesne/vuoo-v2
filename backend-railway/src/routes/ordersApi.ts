@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { supabaseUnsafeServiceRole } from '../lib/supabase.js';
 import { requireScope } from '../middleware/auth.js';
 import { OrderInputSchema, createOrderForOrg } from '../lib/createOrder.js';
@@ -12,13 +13,15 @@ export const ordersApiRoutes = new Hono();
  *
  * Headers:
  *   Authorization: Bearer <org_api_token>
- *   Idempotency-Key: <uuid>   ← requerido, dedupe 24 h
+ *   Idempotency-Key: <id único del pedido en el sistema del integrador>
+ *                    ← requerido, dedupe permanente por org
  *
  * Body: ver OrderInputSchema (`lib/createOrder.ts`).
  *
  * Respuesta:
  *   201 { id, match_quality, stop_id }
  *   200 { id, match_quality, stop_id, idempotent: true }  ← si ya existía
+ *   409 { error: duplicate_order_number }                 ← order_number repetido
  */
 ordersApiRoutes.post('/', requireScope('orders:write'), async (c) => {
   const auth = c.var.auth;
@@ -52,7 +55,7 @@ ordersApiRoutes.post('/', requireScope('orders:write'), async (c) => {
   });
 
   if (!result.ok) {
-    return c.json({ error: result.code, detail: result.detail }, result.status as 500);
+    return c.json({ error: result.code, detail: result.detail }, result.status as ContentfulStatusCode);
   }
 
   return c.json(

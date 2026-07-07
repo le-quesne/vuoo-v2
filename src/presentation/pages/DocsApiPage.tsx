@@ -24,23 +24,24 @@ interface Field {
 
 const REQUIRED_FIELDS: Field[] = [
   { name: 'customer_name', type: 'string', required: true, desc: 'Nombre del cliente o local que recibe (ej. "Do Sushi Providencia").' },
-  { name: 'address', type: 'string', required: true, desc: 'Dirección de entrega en texto libre. Se geocodifica y se hace match contra tus lugares guardados.' },
+  { name: 'address', type: 'string', required: true, desc: 'Dirección de entrega en texto libre. Se geocodifica y se hace match contra tus lugares guardados. Podés omitirla solo si enviás customer_code.' },
 ];
 
 const OPTIONAL_FIELDS: Field[] = [
-  { name: 'order_number', type: 'string', desc: 'Tu número de pedido / guía de despacho. Si lo omitís, Vuoo genera uno (ORD-00001). Único por organización.' },
+  { name: 'customer_code', type: 'string', desc: 'Código del cliente en tu sistema (ERP). Vincula el pedido a tu catálogo de clientes y da el match de mayor confianza; si el código no existe, el cliente se crea automáticamente. Con customer_code podés omitir address: se usa la dirección registrada del cliente.' },
+  { name: 'order_number', type: 'string', desc: 'Tu número de pedido / guía de despacho. Si lo omitís, Vuoo genera uno (ORD-00001). Único por organización — repetirlo devuelve 409.' },
   { name: 'items', type: 'array', desc: 'Líneas del pedido. Cada ítem: { name, quantity, sku? }. Ver detalle abajo.' },
   { name: 'total_weight_kg', type: 'number', desc: 'Peso total del pedido en kilos. Se usa para capacidad de vehículos en el ruteo.' },
   { name: 'total_volume_m3', type: 'number', desc: 'Volumen total en m³ (opcional, para capacidad volumétrica).' },
   { name: 'total_price', type: 'number', desc: 'Monto total del pedido.' },
   { name: 'currency', type: 'string(3)', desc: 'Código ISO de moneda. Default: CLP.' },
-  { name: 'lat', type: 'number', desc: 'Latitud del destino. Si la envías, se prioriza sobre la geocodificación del texto.' },
-  { name: 'lng', type: 'number', desc: 'Longitud del destino.' },
+  { name: 'lat', type: 'number', desc: 'Latitud del destino (-90 a 90). Si la enviás, se prioriza sobre la geocodificación del texto.' },
+  { name: 'lng', type: 'number', desc: 'Longitud del destino (-180 a 180).' },
   { name: 'customer_phone', type: 'string', desc: 'Teléfono de contacto (para notificaciones al cliente).' },
   { name: 'customer_email', type: 'string', desc: 'Email de contacto.' },
-  { name: 'time_window_start', type: 'string "HH:MM"', desc: 'Inicio de la ventana horaria de entrega (ej. "09:00").' },
+  { name: 'time_window_start', type: 'string "HH:MM"', desc: 'Inicio de la ventana horaria de entrega (ej. "09:00"). El formato se valida: otro formato devuelve 400.' },
   { name: 'time_window_end', type: 'string "HH:MM"', desc: 'Fin de la ventana horaria (ej. "13:00"). Ej. franja "AM" = 09:00–13:00.' },
-  { name: 'requested_date', type: 'string "YYYY-MM-DD"', desc: 'Fecha solicitada de entrega.' },
+  { name: 'requested_date', type: 'string "YYYY-MM-DD"', desc: 'Fecha solicitada de entrega. El formato se valida: otro formato devuelve 400.' },
   { name: 'service_duration_minutes', type: 'integer', desc: 'Minutos estimados de servicio en el punto. Default: 15.' },
   { name: 'priority', type: 'enum', desc: 'Prioridad: urgent · high · normal · low. Default: normal.' },
   { name: 'requires_signature', type: 'boolean', desc: 'Exige firma como prueba de entrega (POD).' },
@@ -63,7 +64,9 @@ const ERRORS: Array<{ status: string; code: string; desc: string }> = [
   { status: '401', code: 'invalid_token', desc: 'El token no existe o es inválido.' },
   { status: '401', code: 'token_revoked', desc: 'El token fue revocado desde el panel.' },
   { status: '403', code: 'insufficient_scope', desc: 'El token no tiene el scope orders:write.' },
+  { status: '409', code: 'duplicate_order_number', desc: 'Ya existe un pedido con ese order_number en tu organización. No se reintenta: corregí el número.' },
   { status: '500', code: 'match_failed', desc: 'Error interno al resolver el destino. Reintentá con la misma Idempotency-Key.' },
+  { status: '500', code: 'otros códigos', desc: 'Cualquier otro 500 (stop_create_failed, order_insert_failed…) también es seguro de reintentar con la misma Idempotency-Key.' },
 ];
 
 const CURL_EXAMPLE = `curl -X POST ${ENDPOINT} \\
@@ -72,9 +75,10 @@ const CURL_EXAMPLE = `curl -X POST ${ENDPOINT} \\
   -H "Content-Type: application/json" \\
   -d '{
     "customer_name": "Do Sushi Providencia",
+    "customer_code": "CLI-0042",
     "address": "Suecia 0155, Providencia",
     "order_number": "56680492146",
-    "requested_date": "2026-06-01",
+    "requested_date": "2026-08-01",
     "time_window_start": "09:00",
     "time_window_end": "13:00",
     "total_weight_kg": 72,
@@ -94,9 +98,10 @@ const JS_EXAMPLE = `const res = await fetch("${ENDPOINT}", {
   },
   body: JSON.stringify({
     customer_name: "Do Sushi Providencia",
+    customer_code: "CLI-0042",
     address: "Suecia 0155, Providencia",
     order_number: "56680492146",
-    requested_date: "2026-06-01",
+    requested_date: "2026-08-01",
     time_window_start: "09:00",
     time_window_end: "13:00",
     total_weight_kg: 72,
@@ -121,9 +126,10 @@ res = requests.post(
     },
     json={
         "customer_name": "Do Sushi Providencia",
+        "customer_code": "CLI-0042",
         "address": "Suecia 0155, Providencia",
         "order_number": "56680492146",
-        "requested_date": "2026-06-01",
+        "requested_date": "2026-08-01",
         "time_window_start": "09:00",
         "time_window_end": "13:00",
         "total_weight_kg": 72,
@@ -328,7 +334,10 @@ export function DocsApiPage() {
           </Section>
 
           <Section id="fields" title="Campos del pedido">
-            <p>El cuerpo es un objeto JSON. Solo dos campos son obligatorios:</p>
+            <p>
+              El cuerpo es un objeto JSON. Solo se exige <Code>customer_name</Code> más el destino:{' '}
+              <Code>address</Code>, o <Code>customer_code</Code> de un cliente con dirección registrada.
+            </p>
             <FieldTable title="Requeridos" fields={REQUIRED_FIELDS} />
             <FieldTable title="Opcionales" fields={OPTIONAL_FIELDS} />
             <h3 className="mb-2 mt-8 text-sm font-semibold text-gray-900">
@@ -366,7 +375,7 @@ export function DocsApiPage() {
                   <MatchRow q="high" color="emerald" desc="Match exacto con un lugar/cliente guardado. Listo para rutear." />
                   <MatchRow q="medium" color="amber" desc="Match probable — se marca para revisión manual en el panel." />
                   <MatchRow q="low" color="orange" desc="Match débil. Se crea el pedido pero conviene verificar la dirección." />
-                  <MatchRow q="none" color="gray" desc="Sin match: se creó un lugar nuevo con la dirección recibida." />
+                  <MatchRow q="none" color="gray" desc="Sin match: se creó un lugar nuevo con la dirección recibida (o el pedido quedó pendiente de dirección si solo enviaste customer_code)." />
                 </tbody>
               </table>
             </div>
@@ -412,6 +421,11 @@ export function DocsApiPage() {
               <Bullet>
                 <strong>Enviá coordenadas</strong> (<Code>lat</Code>/<Code>lng</Code>) cuando las tengas:
                 mejora la precisión del ruteo y evita ambigüedades de geocodificación.
+              </Bullet>
+              <Bullet>
+                <strong>Enviá <Code>customer_code</Code></strong> si tu ERP maneja códigos de cliente:
+                es la señal de match más confiable y evita revisiones manuales por nombres escritos
+                distinto.
               </Bullet>
               <Bullet>
                 <strong>Completá <Code>total_weight_kg</Code></strong> si tu operación tiene restricciones

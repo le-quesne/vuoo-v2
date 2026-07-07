@@ -1,17 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { supabaseFromJWT } from '../lib/supabase.js';
-
-/** Replica vuoo_normalize_address de Postgres en JS. */
-function normalizeAddressHash(addr: string): string {
-  return addr
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9 ]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+import { normalizeAddressHash } from '../lib/addressHash.js';
 
 export const ordersImportRoutes = new Hono();
 
