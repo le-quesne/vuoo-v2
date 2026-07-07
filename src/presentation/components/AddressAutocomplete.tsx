@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { MapPin } from 'lucide-react';
-import { MAPBOX_TOKEN } from '@/application/lib/mapbox';
+import { mapboxGeocodingService } from '@/data/services/mapbox';
 
 interface AddressAutocompleteProps {
   value: string;
   onChange: (val: string) => void;
   onSelect: (address: string, coords: { lat: number; lng: number }) => void;
   placeholder?: string;
+  countries?: string[];
 }
 
-export function AddressAutocomplete({ value, onChange, onSelect, placeholder }: AddressAutocompleteProps) {
+export function AddressAutocomplete({ value, onChange, onSelect, placeholder, countries }: AddressAutocompleteProps) {
   const [suggestions, setSuggestions] = useState<{ place_name: string; center: [number, number] }[]>([]);
   const [open, setOpen] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -22,18 +23,11 @@ export function AddressAutocomplete({ value, onChange, onSelect, placeholder }: 
       return;
     }
     timerRef.current = setTimeout(async () => {
-      try {
-        const res = await fetch(
-          `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${MAPBOX_TOKEN}&country=cl,ar&limit=5&language=es`,
-        );
-        const data = await res.json();
-        setSuggestions(data.features ?? []);
-        setOpen(true);
-      } catch {
-        setSuggestions([]);
-      }
+      const features = await mapboxGeocodingService.forwardGeocode(query, { countries });
+      setSuggestions(features);
+      setOpen(true);
     }, 300);
-  }, []);
+  }, [countries]);
 
   useEffect(() => () => clearTimeout(timerRef.current), []);
 

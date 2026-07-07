@@ -1049,6 +1049,7 @@ export function PlanDetailPage() {
       {showDepotModal && currentOrg && (
         <DepotConfigModal
           orgId={currentOrg.id}
+          countries={currentOrg.operating_countries}
           onClose={() => setShowDepotModal(false)}
           onSaved={() => {
             setShowDepotModal(false)

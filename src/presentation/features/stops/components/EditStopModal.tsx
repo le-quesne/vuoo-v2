@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Trash2, User, X } from 'lucide-react';
 import { supabase } from '@/application/lib/supabase';
+import { useAuth } from '@/application/hooks/useAuth';
 import { AddressAutocomplete } from '@/presentation/components/AddressAutocomplete';
 import type { Stop } from '@/data/types/database';
 
@@ -30,6 +31,7 @@ export function EditStopModal({
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null)
+  const { currentOrg } = useAuth()
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
@@ -91,6 +93,7 @@ export function EditStopModal({
               onChange={(val) => setForm({ ...form, address: val })}
               onSelect={(address, c) => { setForm({ ...form, address }); setCoords(c) }}
               placeholder="Av. Apoquindo 7709, Las Condes, Santiago"
+              countries={currentOrg?.operating_countries}
             />
           </div>
           <div className="grid grid-cols-2 gap-3">

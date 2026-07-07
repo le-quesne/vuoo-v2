@@ -37,6 +37,7 @@ export interface Organization {
   is_demo: boolean
   default_optimization_mode: OptimizationMode
   default_return_to_depot: boolean
+  operating_countries: string[]
 }
 
 export interface OrganizationMember {

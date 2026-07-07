@@ -154,9 +154,10 @@ export function Step3Preview({
       setLocalError(null);
       setGeocodingProgress({ done: 0, total: 0 });
 
+      const country = currentOrg?.operating_countries?.join(',');
       const inputs = baseRows
         .filter((r) => !r.error && (r.values.address ?? '').trim().length > 0)
-        .map((r) => ({ id: r.id, address: r.values.address!.trim() }));
+        .map((r) => ({ id: r.id, address: r.values.address!.trim(), country }));
 
       if (inputs.length === 0) {
         onPreviewRowsChange(baseRows);
