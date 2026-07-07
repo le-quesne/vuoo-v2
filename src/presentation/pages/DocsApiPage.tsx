@@ -29,6 +29,7 @@ const REQUIRED_FIELDS: Field[] = [
 
 const OPTIONAL_FIELDS: Field[] = [
   { name: 'customer_code', type: 'string', desc: 'Código del cliente en tu sistema (ERP). Vincula el pedido a tu catálogo de clientes y da el match de mayor confianza; si el código no existe, el cliente se crea automáticamente. Con customer_code podés omitir address: se usa la dirección registrada del cliente.' },
+  { name: 'place_name', type: 'string', desc: 'Nombre del punto de entrega (sucursal, local, tienda). Se usa como nombre del lugar guardado que se crea; si lo omitís, se usa customer_name.' },
   { name: 'order_number', type: 'string', desc: 'Tu número de pedido / guía de despacho. Si lo omitís, Vuoo genera uno (ORD-00001). Único por organización — repetirlo devuelve 409.' },
   { name: 'items', type: 'array', desc: 'Líneas del pedido. Cada ítem: { name, quantity, sku? }. Ver detalle abajo.' },
   { name: 'total_weight_kg', type: 'number', desc: 'Peso total del pedido en kilos. Se usa para capacidad de vehículos en el ruteo.' },
