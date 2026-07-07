@@ -7,7 +7,7 @@ export function ApiTokensPage() {
         <div className="mb-6">
           <h1 className="text-xl font-semibold text-gray-900">API & Integraciones</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Conectá tu tienda Shopify con un clic, o generá tokens para integraciones
+            Conecta tu tienda Shopify con un clic, o genera tokens para integraciones
             personalizadas (VTEX, scripts).
           </p>
         </div>

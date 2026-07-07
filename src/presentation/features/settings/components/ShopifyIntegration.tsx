@@ -83,7 +83,7 @@ export function ShopifyIntegration({ children }: { children?: ReactNode }) {
           description={
             connected
               ? `${active.length} tienda${active.length > 1 ? 's' : ''} conectada${active.length > 1 ? 's' : ''}. Los pedidos entran automáticamente a Vuoo.`
-              : 'Conectá tu tienda para que los pedidos entren automáticamente a Vuoo, geocodificados y listos para rutear.'
+              : 'Conecta tu tienda para que los pedidos entren automáticamente a Vuoo, geocodificados y listos para rutear.'
           }
           action={
             <button
@@ -157,7 +157,7 @@ function ShopifyModal({
               </span>
             </div>
             <p className="text-[11px] text-gray-500 mt-1">
-              Te vamos a llevar a Shopify para aprobar los permisos. Después volvés acá.
+              Te vamos a llevar a Shopify para aprobar los permisos. Después vuelves aquí.
             </p>
           </div>
 

@@ -60,8 +60,8 @@ export function ApiTokensCard() {
         activeLabel={`${activeCount} token(s) activo(s)`}
         description={
           activeCount > 0
-            ? `${activeCount} token${activeCount > 1 ? 's' : ''} activo${activeCount > 1 ? 's' : ''}. Conectá VTEX, tu ERP o scripts vía POST /api/v1/orders.`
-            : 'Generá tokens para que VTEX, tu ERP o cualquier sistema creen pedidos vía POST /api/v1/orders.'
+            ? `${activeCount} token${activeCount > 1 ? 's' : ''} activo${activeCount > 1 ? 's' : ''}. Conecta VTEX, tu ERP o scripts vía POST /api/v1/orders.`
+            : 'Genera tokens para que VTEX, tu ERP o cualquier sistema creen pedidos vía POST /api/v1/orders.'
         }
         action={
           <button
@@ -181,7 +181,7 @@ function EmptyTokens() {
       </div>
       <p className="text-sm font-medium text-gray-700">Todavía no hay tokens</p>
       <p className="text-xs text-gray-500 mt-1 max-w-sm">
-        Creá un token para que Shopify, VTEX u otros sistemas puedan crear órdenes
+        Crea un token para que Shopify, VTEX u otros sistemas puedan crear órdenes
         automáticamente vía <code className="font-mono">POST /api/v1/orders</code>.
       </p>
     </div>
@@ -307,7 +307,7 @@ function CreateTokenModal({
               className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
             />
             <p className="text-[11px] text-gray-500 mt-1">
-              Usá un nombre descriptivo. No se puede cambiar después.
+              Usa un nombre descriptivo. No se puede cambiar después.
             </p>
           </div>
 
@@ -403,8 +403,8 @@ function NewTokenRevealModal({
           <div className="flex items-start gap-2 p-3 bg-amber-50 rounded-lg text-xs text-amber-800">
             <AlertTriangle size={14} className="shrink-0 mt-0.5" />
             <span>
-              <strong>Guardá este token ahora mismo.</strong> No se volverá a mostrar. Si lo
-              perdés, deberás crear uno nuevo.
+              <strong>Guarda este token ahora mismo.</strong> No se volverá a mostrar. Si lo
+              pierdes, deberás crear uno nuevo.
             </span>
           </div>
 
