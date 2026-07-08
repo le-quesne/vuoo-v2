@@ -7,6 +7,18 @@ import type { OptimizationMode } from '@/data/types/database';
 /** Alias — mismo union que OptimizationMode en database.ts. */
 export type VroomMode = OptimizationMode;
 
+/**
+ * Pesos 0–1 para la matriz de costo ponderada (PRD 26 Fase 2, beta). Si se
+ * mandan, el backend ignora `mode` por completo y arma su propia matriz de
+ * costo (tiempo + distancia + afinidad histórica) en vez de usar los 5
+ * presets. No hace falta que sumen 1 — cada uno pondera su propio término.
+ */
+export interface VroomWeights {
+  time?: number;
+  distance?: number;
+  history?: number;
+}
+
 export interface VroomRequest {
   plan_id: string;
   mode: VroomMode;
@@ -19,6 +31,8 @@ export interface VroomRequest {
    * Sin esto, se sigue usando `organizations.default_depot_*` como siempre.
    */
   depot_id?: string;
+  /** Opcional (beta): activa la matriz de costo ponderada en vez de `mode`. */
+  weights?: VroomWeights;
 }
 
 export interface VroomRoute {

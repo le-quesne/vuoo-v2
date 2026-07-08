@@ -101,13 +101,20 @@ export function OrganizationSettingsPage() {
     if (!currentOrg || countries.length === 0) return
     setSavingCountries(true)
     setCountriesError(null)
-    const { error: updErr } = await supabase
+    // RLS: un UPDATE sin permisos afecta 0 filas SIN error — con `.select()`
+    // detectamos ese caso y lo mostramos como error en vez de "Guardado" falso.
+    const { data, error: updErr } = await supabase
       .from('organizations')
       .update({ operating_countries: countries })
       .eq('id', currentOrg.id)
+      .select('id')
     setSavingCountries(false)
     if (updErr) {
       setCountriesError(updErr.message)
+      return
+    }
+    if (!data || data.length === 0) {
+      setCountriesError('No tenés permisos para modificar esta organización.')
       return
     }
     setCountriesSavedAt(Date.now())
@@ -119,7 +126,7 @@ export function OrganizationSettingsPage() {
     if (!currentOrg || !depotCoords) return
     setSaving(true)
     setDepotError(null)
-    const { error: updErr } = await supabase
+    const { data, error: updErr } = await supabase
       .from('organizations')
       .update({
         default_depot_lat: depotCoords.lat,
@@ -127,9 +134,14 @@ export function OrganizationSettingsPage() {
         default_depot_address: depotAddress,
       })
       .eq('id', currentOrg.id)
+      .select('id')
     setSaving(false)
     if (updErr) {
       setDepotError(updErr.message)
+      return
+    }
+    if (!data || data.length === 0) {
+      setDepotError('No tenés permisos para modificar esta organización.')
       return
     }
     setSavedAt(Date.now())
@@ -142,7 +154,7 @@ export function OrganizationSettingsPage() {
     if (!confirm('¿Eliminar el depot configurado?')) return
     setSaving(true)
     setDepotError(null)
-    const { error: updErr } = await supabase
+    const { data, error: updErr } = await supabase
       .from('organizations')
       .update({
         default_depot_lat: null,
@@ -150,9 +162,14 @@ export function OrganizationSettingsPage() {
         default_depot_address: null,
       })
       .eq('id', currentOrg.id)
+      .select('id')
     setSaving(false)
     if (updErr) {
       setDepotError(updErr.message)
+      return
+    }
+    if (!data || data.length === 0) {
+      setDepotError('No tenés permisos para modificar esta organización.')
       return
     }
     setDepotAddress('')
@@ -163,16 +180,21 @@ export function OrganizationSettingsPage() {
     if (!currentOrg) return
     setSavingMode(true)
     setModeError(null)
-    const { error: updErr } = await supabase
+    const { data, error: updErr } = await supabase
       .from('organizations')
       .update({
         default_optimization_mode: optMode,
         default_return_to_depot: optReturnToDepot,
       })
       .eq('id', currentOrg.id)
+      .select('id')
     setSavingMode(false)
     if (updErr) {
       setModeError(updErr.message)
+      return
+    }
+    if (!data || data.length === 0) {
+      setModeError('No tenés permisos para modificar esta organización.')
       return
     }
     setModeSavedAt(Date.now())

@@ -1,0 +1,17 @@
+-- =============================================
+-- Fix: policy UPDATE duplicada en `organizations`
+-- =============================================
+--
+-- Al aplicar 20260708140000 se descubrió que ya existía en producción una
+-- policy UPDATE ("Owners and admins can update their org") con la misma
+-- lógica (organization_members.role in owner/admin), pero sin ninguna
+-- migración que la respalde — drift no documentado, probablemente aplicada
+-- a mano en algún momento. El P1 del review de PR #38 ya estaba resuelto
+-- en producción; el barrido de migraciones no podía verlo porque esta
+-- policy nunca quedó en el repo.
+--
+-- Se consolida en una sola policy (la de 20260708140000, que usa el helper
+-- reusable `is_org_admin()`) para no tener dos policies UPDATE haciendo lo
+-- mismo. Es seguro: ambas checkean exactamente la misma condición
+-- (organization_members.role in owner/admin), así que nadie pierde acceso.
+drop policy if exists "Owners and admins can update their org" on organizations;
