@@ -9,6 +9,7 @@ import {
   AlertTriangle,
   ChevronDown,
   Settings2,
+  SlidersHorizontal,
 } from 'lucide-react'
 import { supabase } from '@/application/lib/supabase'
 import { optimize as optimizeVroom, OPTIMIZATION_MODES } from '@/data/services/vroom'
@@ -73,12 +74,26 @@ export function VroomWizardModal({
   const [result, setResult] = useState<VroomResponse | null>(initialPreview ?? null)
   const [error, setError] = useState<string | null>(null)
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  // Beta (PRD 26 Fase 2): matriz de costo ponderada en vez de los 5 modos
+  // fijos. Sin probar todavía contra datos reales — por eso queda detrás de
+  // un toggle explícito y no reemplaza el picker de modo por default.
+  const [weightsEnabled, setWeightsEnabled] = useState(false)
+  const [weightTime, setWeightTime] = useState(70)
+  const [weightDistance, setWeightDistance] = useState(30)
+  const [weightHistory, setWeightHistory] = useState(20)
 
   async function handleOptimize() {
     setStep('running')
     setError(null)
 
-    const res = await optimizeVroom({ plan_id: planId, mode, return_to_depot: returnToDepot })
+    const res = await optimizeVroom({
+      plan_id: planId,
+      mode,
+      return_to_depot: returnToDepot,
+      weights: weightsEnabled
+        ? { time: weightTime / 100, distance: weightDistance / 100, history: weightHistory / 100 }
+        : undefined,
+    })
 
     if (!res.success) {
       if (/no\s*depot/i.test(res.error)) {
@@ -179,8 +194,8 @@ export function VroomWizardModal({
                   ) : null}.
                 </p>
                 <p>
-                  Modo: <strong>{modeLabel(mode)}</strong> ·{' '}
-                  {returnToDepot ? 'Regresa al depot' : 'Termina en última parada'}.
+                  Modo: <strong>{weightsEnabled ? 'Pesos personalizados (beta)' : modeLabel(mode)}</strong>{' '}
+                  · {returnToDepot ? 'Regresa al depot' : 'Termina en última parada'}.
                 </p>
               </div>
 
@@ -202,8 +217,60 @@ export function VroomWizardModal({
 
                 {advancedOpen && (
                   <div className="border-t border-gray-100 p-4 space-y-4 bg-gray-50">
-                    {/* Mode selector */}
-                    <div>
+                    {/* Pesos personalizados (beta) — reemplaza el modo si está activo */}
+                    <div className="border border-purple-200 bg-purple-50/60 rounded-lg p-3">
+                      <button
+                        onClick={() => setWeightsEnabled((v) => !v)}
+                        className="w-full flex items-center justify-between text-left"
+                      >
+                        <div className="flex items-center gap-2">
+                          <SlidersHorizontal size={14} className="text-purple-600" />
+                          <span className="text-xs font-semibold text-gray-800">
+                            Pesos personalizados (beta)
+                          </span>
+                        </div>
+                        <div
+                          className={`w-9 h-5 rounded-full transition-colors relative ${
+                            weightsEnabled ? 'bg-purple-600' : 'bg-gray-300'
+                          }`}
+                        >
+                          <div
+                            className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+                              weightsEnabled ? 'translate-x-4' : 'translate-x-0.5'
+                            }`}
+                          />
+                        </div>
+                      </button>
+                      <p className="text-[11px] text-gray-500 mt-1.5">
+                        Sin validar todavía contra datos reales. Si lo activás, reemplaza el modo
+                        de abajo por una matriz de costo propia (tiempo, distancia, consistencia
+                        con rutas anteriores).
+                      </p>
+
+                      {weightsEnabled && (
+                        <div className="mt-3 space-y-3">
+                          <WeightSlider
+                            label="Tiempo de viaje"
+                            value={weightTime}
+                            onChange={setWeightTime}
+                          />
+                          <WeightSlider
+                            label="Distancia / combustible"
+                            value={weightDistance}
+                            onChange={setWeightDistance}
+                          />
+                          <WeightSlider
+                            label="Consistencia con rutas anteriores"
+                            value={weightHistory}
+                            onChange={setWeightHistory}
+                            hint="Requiere historial de rutas completadas — sin datos, no tiene efecto."
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Mode selector — ignorado por el backend si weights está activo */}
+                    <div className={weightsEnabled ? 'opacity-40 pointer-events-none' : undefined}>
                       <div className="text-xs font-semibold text-gray-700 mb-2">Modo de optimización</div>
                       <div className="grid grid-cols-1 gap-2">
                         {OPTIMIZATION_MODES.map((m) => {
@@ -405,6 +472,36 @@ function StatCard({ label, value }: { label: string; value: string }) {
     <div className="bg-white border border-gray-200 rounded-lg p-3">
       <div className="text-[10px] text-gray-500 uppercase tracking-wide">{label}</div>
       <div className="text-base font-bold text-gray-900 mt-0.5">{value}</div>
+    </div>
+  )
+}
+
+function WeightSlider({
+  label,
+  value,
+  onChange,
+  hint,
+}: {
+  label: string
+  value: number
+  onChange: (v: number) => void
+  hint?: string
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between text-xs text-gray-700 mb-1">
+        <span>{label}</span>
+        <span className="font-semibold text-gray-900">{value}%</span>
+      </div>
+      <input
+        type="range"
+        min={0}
+        max={100}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-full accent-purple-600"
+      />
+      {hint && <div className="text-[10px] text-gray-400 mt-0.5">{hint}</div>}
     </div>
   )
 }
