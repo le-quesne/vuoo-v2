@@ -10,10 +10,12 @@ const BatchSchema = z.object({
       z.object({
         id: z.string(),
         address: z.string().min(1),
-        country: z
-          .string()
-          .regex(/^[a-z]{2}(,[a-z]{2})*$/i, 'country debe ser ISO-3166 alpha-2, opcionalmente separado por comas')
-          .optional(),
+        // `country` NO se acepta del cliente: se deriva server-side de
+        // `organizations.operating_countries` (ver más abajo). El resultado
+        // se cachea org-wide sin country en la key — si aceptáramos el país
+        // del cliente, cualquier miembro autenticado podría envenenar el
+        // cache de toda la org mandando un country distinto al real
+        // (ej. `{ address: "San Martín 100", country: "us" }`).
       }),
     )
     .min(1)
@@ -49,6 +51,18 @@ geocodeRoutes.post('/batch', async (c) => {
   const { addresses } = parsed.data;
   const orgId = auth.orgId;
 
+  // 0. País(es) de operación de la org — SIEMPRE server-side, nunca del
+  // cliente (ver comentario en BatchSchema). Default a CL si la org no
+  // tiene nada configurado.
+  const { data: orgRow } = await db
+    .from('organizations')
+    .select('operating_countries')
+    .eq('id', orgId)
+    .maybeSingle();
+  const country = ((orgRow?.operating_countries as string[] | null) ?? ['CL'])
+    .join(',')
+    .toLowerCase();
+
   // 1. hash + cache lookup
   const hashes = addresses.map((a) => ({ ...a, hash: normalizeAddress(a.address) }));
   const { data: cached, error: cacheErr } = await db
@@ -70,7 +84,7 @@ geocodeRoutes.post('/batch', async (c) => {
   if (misses.length > 0) {
     const provider = getGeocodingProvider();
     geocoded = await provider.geocode(
-      misses.map((m) => ({ id: m.id, address: m.address, country: m.country })),
+      misses.map((m) => ({ id: m.id, address: m.address, country })),
     );
   }
 
