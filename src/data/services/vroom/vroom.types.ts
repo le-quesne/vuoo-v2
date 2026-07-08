@@ -25,6 +25,12 @@ export interface VroomRequest {
   return_to_depot: boolean;
   /** Opcional: restringir la optimización a estos vehículos. */
   vehicle_ids?: string[];
+  /**
+   * Opcional (PRD 25 — multi-depot): depot a usar como fallback para
+   * vehículos que no tengan su propio `vehicles.depot_id`/`depot_lat/lng`.
+   * Sin esto, se sigue usando `organizations.default_depot_*` como siempre.
+   */
+  depot_id?: string;
   /** Opcional (beta): activa la matriz de costo ponderada en vez de `mode`. */
   weights?: VroomWeights;
 }

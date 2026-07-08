@@ -144,6 +144,8 @@ interface VroomBody {
   mode?: VroomMode;
   return_to_depot?: boolean;
   vehicle_ids?: string[];
+  /** PRD 25 (multi-depot): depot elegido en el wizard para esta corrida. */
+  depot_id?: string;
   weights?: VroomWeights;
 }
 
@@ -191,6 +193,7 @@ vroomRoutes.post('/optimize', async (c) => {
   const mode: VroomMode = body?.mode ?? 'efficiency';
   const returnToDepot = body?.return_to_depot !== false;
   const filterVehicleIds = body?.vehicle_ids;
+  const depotIdOverride = body?.depot_id;
   const weights = body?.weights ?? null;
   const useWeightedMatrix = weights !== null;
 
@@ -274,11 +277,29 @@ vroomRoutes.post('/optimize', async (c) => {
   const orgDefaultDepotLng = (planOrg?.default_depot_lng as number | null) ?? null;
   const orgDefaultDepotLat = (planOrg?.default_depot_lat as number | null) ?? null;
 
+  // 2b. PRD 25 (multi-depot): depot elegido en el wizard para esta corrida.
+  // Se valida implícitamente por RLS — si depotIdOverride no pertenece a la
+  // org del caller, la policy de `depots` no devuelve la fila y cae al
+  // default de la org como si no se hubiese mandado nada.
+  let selectedDepotLat: number | null = null;
+  let selectedDepotLng: number | null = null;
+  if (depotIdOverride) {
+    const { data: depotRow } = await supabase
+      .from('depots')
+      .select('lat, lng')
+      .eq('id', depotIdOverride)
+      .maybeSingle();
+    if (depotRow) {
+      selectedDepotLat = depotRow.lat as number;
+      selectedDepotLng = depotRow.lng as number;
+    }
+  }
+
   // 3. Fetch routes con vehicle + filtro opcional por vehicle_ids.
   let routesQuery = supabase
     .from('routes')
     .select(
-      `id, vehicle_id, vehicle:vehicles (capacity_weight_kg, time_window_start, time_window_end, depot_lat, depot_lng, skills, volume_m3, price_per_km, max_stops)`,
+      `id, vehicle_id, vehicle:vehicles (capacity_weight_kg, time_window_start, time_window_end, depot_lat, depot_lng, skills, volume_m3, price_per_km, max_stops, depot:depots(lat, lng))`,
     )
     .eq('plan_id', planId);
 
@@ -398,9 +419,21 @@ vroomRoutes.post('/optimize', async (c) => {
     const route = routes[idx];
     const vroomId = idx + 1;
     const v = route.vehicle as unknown as Record<string, unknown> | null;
+    // Precedencia de depot (PRD 25): depot propio del vehículo (vehicles.depot_id,
+    // vía FK a `depots`) > override legacy ad-hoc (vehicles.depot_lat/lng) >
+    // depot elegido en el wizard para esta corrida > default de la org.
+    const vDepot = v?.depot as { lat: number; lng: number } | null | undefined;
 
-    const depotLng = (v?.depot_lng as number | null) ?? orgDefaultDepotLng;
-    const depotLat = (v?.depot_lat as number | null) ?? orgDefaultDepotLat;
+    const depotLng =
+      (vDepot?.lng as number | undefined) ??
+      (v?.depot_lng as number | null) ??
+      selectedDepotLng ??
+      orgDefaultDepotLng;
+    const depotLat =
+      (vDepot?.lat as number | undefined) ??
+      (v?.depot_lat as number | null) ??
+      selectedDepotLat ??
+      orgDefaultDepotLat;
 
     if (depotLng === null || depotLat === null) {
       vehiclesMissingDepot.push(route.vehicle_id as string);

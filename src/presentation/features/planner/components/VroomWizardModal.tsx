@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   X,
   Zap,
@@ -9,11 +9,14 @@ import {
   AlertTriangle,
   ChevronDown,
   Settings2,
+  Warehouse,
   SlidersHorizontal,
 } from 'lucide-react'
 import { supabase } from '@/application/lib/supabase'
+import { useAuth } from '@/application/hooks/useAuth'
 import { optimize as optimizeVroom, OPTIMIZATION_MODES } from '@/data/services/vroom'
 import type { VroomMode, VroomResponse } from '@/data/services/vroom'
+import { depotsService, type Depot } from '@/data/services/depots'
 
 export type { VroomResponse }
 
@@ -82,6 +85,22 @@ export function VroomWizardModal({
   const [weightDistance, setWeightDistance] = useState(30)
   const [weightHistory, setWeightHistory] = useState(20)
 
+  const { currentOrg } = useAuth()
+  const [depots, setDepots] = useState<Depot[]>([])
+  const [depotId, setDepotId] = useState<string | undefined>(undefined)
+
+  useEffect(() => {
+    if (!currentOrg) return
+    depotsService.listDepots(currentOrg.id).then((res) => {
+      if (!res.success) return
+      setDepots(res.data)
+      // Preseleccionar el default de la org — el dispatcher puede cambiarlo,
+      // no hace falta que arranque vacío.
+      const def = res.data.find((d) => d.is_default)
+      if (def) setDepotId(def.id)
+    })
+  }, [currentOrg])
+
   async function handleOptimize() {
     setStep('running')
     setError(null)
@@ -90,6 +109,7 @@ export function VroomWizardModal({
       plan_id: planId,
       mode,
       return_to_depot: returnToDepot,
+      depot_id: depotId,
       weights: weightsEnabled
         ? { time: weightTime / 100, distance: weightDistance / 100, history: weightHistory / 100 }
         : undefined,
@@ -198,6 +218,34 @@ export function VroomWizardModal({
                   · {returnToDepot ? 'Regresa al depot' : 'Termina en última parada'}.
                 </p>
               </div>
+
+              {/* Depot de salida — solo si la org tiene más de uno configurado
+                  (Settings → Depots). Con 0 o 1 depot, no hay nada que elegir:
+                  se sigue usando vehicles.depot_lat/lng u organizations.default_depot_*
+                  como siempre. */}
+              {depots.length > 1 && (
+                <div>
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 mb-2">
+                    <Warehouse size={13} className="text-gray-400" />
+                    Depot de salida
+                  </label>
+                  <select
+                    value={depotId ?? ''}
+                    onChange={(e) => setDepotId(e.target.value || undefined)}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  >
+                    {depots.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name}
+                        {d.is_default ? ' (default)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Aplica a los vehículos sin un depot propio asignado en Settings → Vehículos.
+                  </p>
+                </div>
+              )}
 
               {/* Advanced config collapsible */}
               <div className="border border-gray-200 rounded-lg overflow-hidden">
