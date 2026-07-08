@@ -1,9 +1,10 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { MapPin, Save, Loader2, Check, Trash2, Zap, RotateCcw, ArrowRight } from 'lucide-react'
+import { MapPin, Save, Loader2, Check, Trash2, Zap, RotateCcw, ArrowRight, Globe } from 'lucide-react'
 import { supabase } from '@/application/lib/supabase'
 import { useAuth } from '@/application/hooks/useAuth'
 import { refreshMemberships } from '@/application/lib/auth'
-import { MAPBOX_TOKEN } from '@/application/lib/mapbox'
+import { mapboxGeocodingService } from '@/data/services/mapbox'
+import { OPERATING_COUNTRIES } from '@/data/constants/countries'
 import type { OptimizationMode } from '@/data/types/database'
 import { OPTIMIZATION_MODES } from '@/data/services/vroom'
 
@@ -12,6 +13,13 @@ type Suggestion = { place_name: string; center: [number, number] }
 export function OrganizationSettingsPage() {
   const { currentOrg } = useAuth()
   const [loading, setLoading] = useState(true)
+
+  // Operating countries state
+  const [countries, setCountries] = useState<string[]>(['CL'])
+  const [multiCountry, setMultiCountry] = useState(false)
+  const [savingCountries, setSavingCountries] = useState(false)
+  const [countriesSavedAt, setCountriesSavedAt] = useState<number | null>(null)
+  const [countriesError, setCountriesError] = useState<string | null>(null)
 
   // Depot state
   const [saving, setSaving] = useState(false)
@@ -37,7 +45,7 @@ export function OrganizationSettingsPage() {
     let cancelled = false
     supabase
       .from('organizations')
-      .select('default_depot_lat, default_depot_lng, default_depot_address, default_optimization_mode, default_return_to_depot')
+      .select('default_depot_lat, default_depot_lng, default_depot_address, default_optimization_mode, default_return_to_depot, operating_countries')
       .eq('id', currentOrg.id)
       .single()
       .then(({ data }) => {
@@ -48,6 +56,9 @@ export function OrganizationSettingsPage() {
         }
         setOptMode((data.default_optimization_mode as OptimizationMode) ?? 'efficiency')
         setOptReturnToDepot(data.default_return_to_depot ?? true)
+        const orgCountries = data.operating_countries ?? ['CL']
+        setCountries(orgCountries)
+        setMultiCountry(orgCountries.length > 1)
         setLoading(false)
       })
     return () => {
@@ -62,18 +73,11 @@ export function OrganizationSettingsPage() {
       return
     }
     timerRef.current = setTimeout(async () => {
-      try {
-        const res = await fetch(
-          `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${MAPBOX_TOKEN}&country=cl,ar&limit=5&language=es`,
-        )
-        const data = await res.json()
-        setSuggestions(data.features ?? [])
-        setOpen(true)
-      } catch {
-        setSuggestions([])
-      }
+      const features = await mapboxGeocodingService.forwardGeocode(query, { countries })
+      setSuggestions(features)
+      setOpen(true)
     }, 300)
-  }, [])
+  }, [countries])
 
   useEffect(() => () => clearTimeout(timerRef.current), [])
 
@@ -87,11 +91,42 @@ export function OrganizationSettingsPage() {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
+  function toggleCountry(code: string) {
+    setCountries((prev) =>
+      prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code],
+    )
+  }
+
+  async function handleSaveCountries() {
+    if (!currentOrg || countries.length === 0) return
+    setSavingCountries(true)
+    setCountriesError(null)
+    // RLS: un UPDATE sin permisos afecta 0 filas SIN error — con `.select()`
+    // detectamos ese caso y lo mostramos como error en vez de "Guardado" falso.
+    const { data, error: updErr } = await supabase
+      .from('organizations')
+      .update({ operating_countries: countries })
+      .eq('id', currentOrg.id)
+      .select('id')
+    setSavingCountries(false)
+    if (updErr) {
+      setCountriesError(updErr.message)
+      return
+    }
+    if (!data || data.length === 0) {
+      setCountriesError('No tenés permisos para modificar esta organización.')
+      return
+    }
+    setCountriesSavedAt(Date.now())
+    setTimeout(() => setCountriesSavedAt(null), 2000)
+    await refreshMemberships()
+  }
+
   async function handleSaveDepot() {
     if (!currentOrg || !depotCoords) return
     setSaving(true)
     setDepotError(null)
-    const { error: updErr } = await supabase
+    const { data, error: updErr } = await supabase
       .from('organizations')
       .update({
         default_depot_lat: depotCoords.lat,
@@ -99,9 +134,14 @@ export function OrganizationSettingsPage() {
         default_depot_address: depotAddress,
       })
       .eq('id', currentOrg.id)
+      .select('id')
     setSaving(false)
     if (updErr) {
       setDepotError(updErr.message)
+      return
+    }
+    if (!data || data.length === 0) {
+      setDepotError('No tenés permisos para modificar esta organización.')
       return
     }
     setSavedAt(Date.now())
@@ -114,7 +154,7 @@ export function OrganizationSettingsPage() {
     if (!confirm('¿Eliminar el depot configurado?')) return
     setSaving(true)
     setDepotError(null)
-    const { error: updErr } = await supabase
+    const { data, error: updErr } = await supabase
       .from('organizations')
       .update({
         default_depot_lat: null,
@@ -122,9 +162,14 @@ export function OrganizationSettingsPage() {
         default_depot_address: null,
       })
       .eq('id', currentOrg.id)
+      .select('id')
     setSaving(false)
     if (updErr) {
       setDepotError(updErr.message)
+      return
+    }
+    if (!data || data.length === 0) {
+      setDepotError('No tenés permisos para modificar esta organización.')
       return
     }
     setDepotAddress('')
@@ -135,16 +180,21 @@ export function OrganizationSettingsPage() {
     if (!currentOrg) return
     setSavingMode(true)
     setModeError(null)
-    const { error: updErr } = await supabase
+    const { data, error: updErr } = await supabase
       .from('organizations')
       .update({
         default_optimization_mode: optMode,
         default_return_to_depot: optReturnToDepot,
       })
       .eq('id', currentOrg.id)
+      .select('id')
     setSavingMode(false)
     if (updErr) {
       setModeError(updErr.message)
+      return
+    }
+    if (!data || data.length === 0) {
+      setModeError('No tenés permisos para modificar esta organización.')
       return
     }
     setModeSavedAt(Date.now())
@@ -168,6 +218,88 @@ export function OrganizationSettingsPage() {
           <p className="text-sm text-gray-500 mt-1">
             Ajustes generales de {currentOrg?.name}
           </p>
+        </div>
+
+        {/* Operating Countries Section */}
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-100">
+            <div className="flex items-center gap-2">
+              <Globe size={18} className="text-indigo-600" />
+              <h2 className="text-sm font-semibold text-gray-900">País de operación</h2>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              Filtra las sugerencias de direcciones (Mapbox) para que solo muestren resultados de tu país o países de operación.
+            </p>
+          </div>
+
+          <div className="p-5 space-y-3">
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={multiCountry}
+                onChange={(e) => {
+                  const checked = e.target.checked
+                  setMultiCountry(checked)
+                  if (!checked && countries.length > 1) {
+                    setCountries([countries[0]])
+                  }
+                }}
+                className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-400"
+              />
+              Opera en más de un país
+            </label>
+
+            {!multiCountry ? (
+              <select
+                value={countries[0] ?? 'CL'}
+                onChange={(e) => setCountries([e.target.value])}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              >
+                {OPERATING_COUNTRIES.map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="border border-gray-200 rounded-lg max-h-48 overflow-y-auto p-2 space-y-1">
+                {OPERATING_COUNTRIES.map((c) => (
+                  <label
+                    key={c.code}
+                    className="flex items-center gap-2 px-2 py-1.5 text-sm text-gray-700 hover:bg-gray-50 rounded"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={countries.includes(c.code)}
+                      onChange={() => toggleCountry(c.code)}
+                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-400"
+                    />
+                    {c.name}
+                  </label>
+                ))}
+              </div>
+            )}
+
+            {countriesError && (
+              <div className="text-xs text-red-600 bg-red-50 rounded px-3 py-2">{countriesError}</div>
+            )}
+          </div>
+
+          <div className="flex items-center justify-end gap-3 px-5 py-3 border-t border-gray-100 bg-gray-50">
+            {countriesSavedAt && (
+              <span className="flex items-center gap-1 text-xs text-emerald-600">
+                <Check size={12} /> Guardado
+              </span>
+            )}
+            <button
+              onClick={handleSaveCountries}
+              disabled={countries.length === 0 || savingCountries}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {savingCountries ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              Guardar
+            </button>
+          </div>
         </div>
 
         {/* Depot Section */}

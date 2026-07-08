@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Search, X, MapPin } from 'lucide-react';
 import { supabase } from '@/application/lib/supabase';
 import { useAuth } from '@/application/hooks/useAuth';
-import { MAPBOX_TOKEN } from '@/application/lib/mapbox';
+import { mapboxGeocodingService } from '@/data/services/mapbox';
 import type { Stop } from '@/data/types/database';
 
 export function AddStopToPlanModal({
@@ -103,17 +103,13 @@ export function AddStopToPlanModal({
 
   async function geocode(address: string) {
     if (!address) return null
-    try {
-      const res = await fetch(
-        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(address)}.json?access_token=${MAPBOX_TOKEN}&country=cl,ar&limit=1`
-      )
-      const data = await res.json()
-      if (data.features?.[0]) {
-        const [lng, lat] = data.features[0].center
-        return { lat, lng }
-      }
-    } catch {
-      /* geocoding best-effort */
+    const features = await mapboxGeocodingService.forwardGeocode(address, {
+      countries: currentOrg?.operating_countries,
+      limit: 1,
+    })
+    if (features[0]) {
+      const [lng, lat] = features[0].center
+      return { lat, lng }
     }
     return null
   }

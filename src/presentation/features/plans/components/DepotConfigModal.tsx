@@ -1,16 +1,18 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { MapPin, X, Loader2 } from 'lucide-react'
 import { supabase } from '@/application/lib/supabase'
-import { MAPBOX_TOKEN } from '@/application/lib/mapbox'
+import { mapboxGeocodingService } from '@/data/services/mapbox'
 
 type Suggestion = { place_name: string; center: [number, number] }
 
 export function DepotConfigModal({
   orgId,
+  countries,
   onClose,
   onSaved,
 }: {
   orgId: string
+  countries?: string[]
   onClose: () => void
   onSaved: () => void
 }) {
@@ -31,18 +33,11 @@ export function DepotConfigModal({
       return
     }
     timerRef.current = setTimeout(async () => {
-      try {
-        const res = await fetch(
-          `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${MAPBOX_TOKEN}&country=cl,ar&limit=5&language=es`,
-        )
-        const data = await res.json()
-        setSuggestions(data.features ?? [])
-        setOpen(true)
-      } catch {
-        setSuggestions([])
-      }
+      const features = await mapboxGeocodingService.forwardGeocode(query, { countries })
+      setSuggestions(features)
+      setOpen(true)
     }, 300)
-  }, [])
+  }, [countries])
 
   useEffect(() => () => clearTimeout(timerRef.current), [])
 
@@ -60,7 +55,9 @@ export function DepotConfigModal({
     if (!coords) return
     setSaving(true)
     setError(null)
-    const { error: updErr } = await supabase
+    // RLS: un UPDATE sin permisos afecta 0 filas SIN error — con `.select()`
+    // detectamos ese caso en vez de mostrar éxito falso.
+    const { data, error: updErr } = await supabase
       .from('organizations')
       .update({
         default_depot_lat: coords.lat,
@@ -68,9 +65,14 @@ export function DepotConfigModal({
         default_depot_address: address,
       })
       .eq('id', orgId)
+      .select('id')
     setSaving(false)
     if (updErr) {
       setError(updErr.message)
+      return
+    }
+    if (!data || data.length === 0) {
+      setError('No tenés permisos para modificar esta organización.')
       return
     }
     onSaved()
