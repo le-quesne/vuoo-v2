@@ -32,6 +32,7 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable'
 import { supabase } from '@/application/lib/supabase'
+import { depotsService } from '@/data/services/depots'
 import { useAuth } from '@/application/hooks/useAuth'
 import { RouteMap, ROUTE_COLORS } from '@/presentation/components/RouteMap'
 import { MapErrorBoundary } from '@/presentation/components/MapErrorBoundary'
@@ -64,6 +65,35 @@ import { parseLocalDateISO } from '@/application/utils/dateHelpers'
 
 const UNASSIGNED_ID = 'unassigned'
 
+type OrgDepot = { lat: number; lng: number; address: string | null }
+
+// El depot "de la org" para el badge/mapa/wizard: prioriza el default de la
+// tabla `depots` (sistema multi-depot) y solo cae al campo legacy
+// `organizations.default_depot_*` en orgs que nunca migraron. Sin esto, una
+// org nueva con depots ya configurados seguía mostrando "Depot faltante"
+// porque el badge solo miraba el campo viejo.
+async function resolveOrgDepot(orgId: string): Promise<OrgDepot | null> {
+  const depotsRes = await depotsService.listDepots(orgId)
+  if (depotsRes.success && depotsRes.data.length > 0) {
+    const d = depotsRes.data[0]
+    return { lat: d.lat, lng: d.lng, address: d.address }
+  }
+
+  const { data } = await supabase
+    .from('organizations')
+    .select('default_depot_lat, default_depot_lng, default_depot_address')
+    .eq('id', orgId)
+    .single()
+  if (data && data.default_depot_lat != null && data.default_depot_lng != null) {
+    return {
+      lat: data.default_depot_lat,
+      lng: data.default_depot_lng,
+      address: data.default_depot_address ?? null,
+    }
+  }
+  return null
+}
+
 export function PlanDetailPage() {
   const { planId } = useParams<{ planId: string }>()
   const navigate = useNavigate()
@@ -77,7 +107,7 @@ export function PlanDetailPage() {
   const [showAddVehicle, setShowAddVehicle] = useState(false)
   const [showVroomWizard, setShowVroomWizard] = useState(false)
   const [showDepotModal, setShowDepotModal] = useState(false)
-  const [orgDepot, setOrgDepot] = useState<{ lat: number; lng: number; address: string | null } | null>(null)
+  const [orgDepot, setOrgDepot] = useState<OrgDepot | null>(null)
   const [fetchedDistancesKm, setFetchedDistancesKm] = useState<Record<string, number>>({})
   const [activeDragId, setActiveDragId] = useState<string | null>(null)
   const [deletePlanStopId, setDeletePlanStopId] = useState<string | null>(null)
@@ -129,22 +159,13 @@ export function PlanDetailPage() {
 
   useEffect(() => {
     if (!currentOrg) return
-    supabase
-      .from('organizations')
-      .select('default_depot_lat, default_depot_lng, default_depot_address')
-      .eq('id', currentOrg.id)
-      .single()
-      .then(({ data }) => {
-        if (data && data.default_depot_lat != null && data.default_depot_lng != null) {
-          setOrgDepot({
-            lat: data.default_depot_lat,
-            lng: data.default_depot_lng,
-            address: data.default_depot_address ?? null,
-          })
-        } else {
-          setOrgDepot(null)
-        }
-      })
+    let cancelled = false
+    resolveOrgDepot(currentOrg.id).then((depot) => {
+      if (!cancelled) setOrgDepot(depot)
+    })
+    return () => {
+      cancelled = true
+    }
   }, [currentOrg])
 
   const routeDistanceKey = useMemo(() =>
@@ -1054,20 +1075,7 @@ export function PlanDetailPage() {
           onSaved={() => {
             setShowDepotModal(false)
             setShowVroomWizard(true)
-            supabase
-              .from('organizations')
-              .select('default_depot_lat, default_depot_lng, default_depot_address')
-              .eq('id', currentOrg.id)
-              .single()
-              .then(({ data }) => {
-                if (data && data.default_depot_lat != null && data.default_depot_lng != null) {
-                  setOrgDepot({
-                    lat: data.default_depot_lat,
-                    lng: data.default_depot_lng,
-                    address: data.default_depot_address ?? null,
-                  })
-                }
-              })
+            resolveOrgDepot(currentOrg.id).then(setOrgDepot)
           }}
         />
       )}

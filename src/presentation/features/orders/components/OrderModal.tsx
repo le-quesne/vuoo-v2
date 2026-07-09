@@ -5,6 +5,7 @@ import { useAuth } from '@/application/hooks/useAuth';
 import { AddressAutocomplete } from '@/presentation/components/AddressAutocomplete';
 import { ConfirmDialog } from '@/presentation/components/ConfirmDialog';
 import { deleteOrders } from '@/data/services/orders';
+import { userMessage } from '@/application/utils/errorMessages';
 import type { Order, OrderItem, OrderPriority } from '@/data/types/database';
 import {
   PRIORITY_LABEL,
@@ -136,6 +137,87 @@ async function upsertCustomerStop(args: {
   }
 
   return { backfilledOrderCount: backfilled?.length ?? 0 }
+}
+
+/**
+ * Resuelve el stop de una orden nueva creada manualmente desde el panel
+ * (Fase B, PRD 12): reusa un stop existente si `match_stop_for_order` encuentra
+ * uno, o crea uno nuevo. Espeja la lógica de `createOrderForOrg`
+ * (backend-railway/src/lib/createOrder.ts) para que las órdenes creadas a mano
+ * entren al mismo flujo pedido→ruta que las de CSV/Shopify/API — sin esto,
+ * `orders.stop_id` queda null y `assign_orders_to_plan` ("Programar") revienta
+ * con `order_without_stop` al intentar llevarlas a un plan.
+ */
+async function resolveStopForNewOrder(args: {
+  orgId: string
+  address: string
+  customerName: string
+  customerId: string | null
+  customerPhone: string | null
+  customerEmail: string | null
+  lat: number | null
+  lng: number | null
+  userId: string | null
+}): Promise<{
+  stopId: string | null
+  matchQuality: 'high' | 'medium' | 'low' | 'none'
+  stopCustomerId: string | null
+}> {
+  const { data: matchRows, error: matchErr } = await supabase.rpc('match_stop_for_order', {
+    p_org_id: args.orgId,
+    p_address: args.address,
+    p_customer_name: args.customerName,
+    p_customer_id: args.customerId,
+    p_lat: args.lat,
+    p_lng: args.lng,
+  })
+  if (matchErr || !matchRows || matchRows.length === 0) {
+    throw new Error(matchErr?.message ?? 'No se pudo resolver la parada del pedido')
+  }
+  const match = matchRows[0] as {
+    stop_id: string | null
+    match_quality: 'high' | 'medium' | 'low' | 'none'
+    should_create_new: boolean
+  }
+
+  if (!match.should_create_new) {
+    // Paridad con createOrderForOrg: heredar customer_id del stop reusado para
+    // que el JOIN de orders hidrate email/teléfono desde el Customer master.
+    let stopCustomerId: string | null = null
+    if (!args.customerId && match.stop_id) {
+      const { data: stopRow } = await supabase
+        .from('stops')
+        .select('customer_id')
+        .eq('id', match.stop_id)
+        .eq('org_id', args.orgId)
+        .maybeSingle()
+      stopCustomerId = (stopRow as { customer_id: string | null } | null)?.customer_id ?? null
+    }
+    return { stopId: match.stop_id, matchQuality: match.match_quality, stopCustomerId }
+  }
+
+  const { data: newStop, error: stopErr } = await supabase
+    .from('stops')
+    .insert({
+      org_id: args.orgId,
+      user_id: args.userId,
+      customer_id: args.customerId,
+      name: args.customerName,
+      address: args.address,
+      lat: args.lat,
+      lng: args.lng,
+      customer_name: args.customerName,
+      customer_phone: args.customerPhone,
+      customer_email: args.customerEmail,
+      geocoding_confidence: args.lat != null && args.lng != null ? 0.8 : null,
+      geocoding_provider: 'manual',
+    })
+    .select('id')
+    .single()
+  if (stopErr || !newStop) {
+    throw new Error(stopErr?.message ?? 'No se pudo crear la parada del pedido')
+  }
+  return { stopId: (newStop as { id: string }).id, matchQuality: match.match_quality, stopCustomerId: null }
 }
 
 /**
@@ -311,6 +393,36 @@ export function OrderModal({
         setSaving(false)
         return
       }
+
+      // Fase B (PRD 12): toda orden con dirección debe resolver un stop antes
+      // de insertarse — si no, queda huérfana y "Programar" la rechaza después.
+      let stopId: string | null = null
+      let matchQuality: 'high' | 'medium' | 'low' | 'none' = 'none'
+      if (trimmedAddress) {
+        try {
+          const resolved = await resolveStopForNewOrder({
+            orgId: currentOrg.id,
+            address: trimmedAddress,
+            customerName: form.customer_name.trim(),
+            customerId: resolvedCustomerId,
+            customerPhone: trimmedPhone,
+            customerEmail: trimmedEmail,
+            lat: payload.lat,
+            lng: payload.lng,
+            userId: user?.id ?? null,
+          })
+          stopId = resolved.stopId
+          matchQuality = resolved.matchQuality
+          if (!resolvedCustomerId && resolved.stopCustomerId) {
+            resolvedCustomerId = resolved.stopCustomerId
+          }
+        } catch (e) {
+          setError(userMessage(e instanceof Error ? e.message : null))
+          setSaving(false)
+          return
+        }
+      }
+
       const { error: insErr } = await supabase.from('orders').insert({
         ...payload,
         order_number: numData as string,
@@ -318,6 +430,11 @@ export function OrderModal({
         status: 'pending',
         created_by: user?.id ?? null,
         customer_id: resolvedCustomerId,
+        stop_id: stopId,
+        match_quality: matchQuality,
+        // Paridad con createOrderForOrg: un match "medium" es misma dirección
+        // pero cliente distinto — reusa el stop pero queda marcado para revisión.
+        match_review_needed: matchQuality === 'medium',
       })
       if (insErr) {
         setError(insErr.message)

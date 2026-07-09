@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { supabase } from '@/application/lib/supabase';
 import { useAuth } from '@/application/hooks/useAuth';
 import type { FuelType, Vehicle } from '@/data/types/database';
+import { FUEL_TYPE_LABEL } from '../utils/constants';
 
 function Field({
   label,
@@ -148,10 +149,11 @@ export function VehicleFormModal({
                 }
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
               >
-                <option value="gasoline">Gasolina</option>
-                <option value="diesel">Diesel</option>
-                <option value="electric">Electrico</option>
-                <option value="hybrid">Hibrido</option>
+                {(Object.entries(FUEL_TYPE_LABEL) as [FuelType, string][]).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
