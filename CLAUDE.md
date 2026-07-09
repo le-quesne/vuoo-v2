@@ -59,7 +59,7 @@ Siempre trabajar con ramas de feature, nunca pushear directo a `main`:
 1. Crear rama antes de tocar código: `git checkout -b feat/<nombre>` (o `fix/`, `chore/`).
 2. Hacer commits en la rama.
 3. Al shipper: abrir PR de la rama hacia `main` con `gh pr create --base main`.
-4. No mergear directo a `main` desde la CLI — el PR se revisa/aprueba en GitHub.
+4. Los PRs se pueden mergear desde la CLI (`gh pr merge --squash`) una vez revisados y con los checks en verde. Lo que sigue prohibido es pushear commits directo a `main` sin pasar por un PR.
 
 ## gstack (recommended)
 
