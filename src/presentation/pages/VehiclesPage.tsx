@@ -4,6 +4,7 @@ import { supabase } from '@/application/lib/supabase'
 import { useAuth } from '@/application/hooks/useAuth'
 import type { Vehicle } from '@/data/types/database'
 import { VehicleAvatar, VehicleFormModal } from '@/presentation/features/vehicles/components'
+import { FUEL_TYPE_LABEL } from '@/presentation/features/vehicles'
 
 export function VehiclesPage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
@@ -113,7 +114,7 @@ export function VehiclesPage() {
                 <td className="p-3 text-gray-500">{v.brand ?? '-'}</td>
                 <td className="p-3 text-gray-500">{v.model ?? '-'}</td>
                 <td className="p-3 text-gray-500">{v.price_per_km ?? '-'}</td>
-                <td className="p-3 text-gray-500 capitalize">{v.fuel_type}</td>
+                <td className="p-3 text-gray-500">{FUEL_TYPE_LABEL[v.fuel_type]}</td>
                 <td className="p-3 text-gray-500">
                   {v.avg_consumption ? `${v.avg_consumption}L/100km` : '-'}
                 </td>

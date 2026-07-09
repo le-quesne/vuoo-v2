@@ -139,6 +139,71 @@ async function upsertCustomerStop(args: {
 }
 
 /**
+ * Resuelve el stop de una orden nueva creada manualmente desde el panel
+ * (Fase B, PRD 12): reusa un stop existente si `match_stop_for_order` encuentra
+ * uno, o crea uno nuevo. Espeja la lógica de `createOrderForOrg`
+ * (backend-railway/src/lib/createOrder.ts) para que las órdenes creadas a mano
+ * entren al mismo flujo pedido→ruta que las de CSV/Shopify/API — sin esto,
+ * `orders.stop_id` queda null y `assign_orders_to_plan` ("Programar") revienta
+ * con `order_without_stop` al intentar llevarlas a un plan.
+ */
+async function resolveStopForNewOrder(args: {
+  orgId: string
+  address: string
+  customerName: string
+  customerId: string | null
+  customerPhone: string | null
+  customerEmail: string | null
+  lat: number | null
+  lng: number | null
+  userId: string | null
+}): Promise<{ stopId: string | null; matchQuality: 'high' | 'medium' | 'low' | 'none' }> {
+  const { data: matchRows, error: matchErr } = await supabase.rpc('match_stop_for_order', {
+    p_org_id: args.orgId,
+    p_address: args.address,
+    p_customer_name: args.customerName,
+    p_customer_id: args.customerId,
+    p_lat: args.lat,
+    p_lng: args.lng,
+  })
+  if (matchErr || !matchRows || matchRows.length === 0) {
+    throw new Error(matchErr?.message ?? 'No se pudo resolver la parada del pedido')
+  }
+  const match = matchRows[0] as {
+    stop_id: string | null
+    match_quality: 'high' | 'medium' | 'low' | 'none'
+    should_create_new: boolean
+  }
+
+  if (!match.should_create_new) {
+    return { stopId: match.stop_id, matchQuality: match.match_quality }
+  }
+
+  const { data: newStop, error: stopErr } = await supabase
+    .from('stops')
+    .insert({
+      org_id: args.orgId,
+      user_id: args.userId,
+      customer_id: args.customerId,
+      name: args.customerName,
+      address: args.address,
+      lat: args.lat,
+      lng: args.lng,
+      customer_name: args.customerName,
+      customer_phone: args.customerPhone,
+      customer_email: args.customerEmail,
+      geocoding_confidence: args.lat != null && args.lng != null ? 0.8 : null,
+      geocoding_provider: 'manual',
+    })
+    .select('id')
+    .single()
+  if (stopErr || !newStop) {
+    throw new Error(stopErr?.message ?? 'No se pudo crear la parada del pedido')
+  }
+  return { stopId: (newStop as { id: string }).id, matchQuality: match.match_quality }
+}
+
+/**
  * Persiste email/teléfono al Customer master (single source of truth).
  *
  * - Si la orden ya está vinculada a un Customer (customer_id), actualiza el master.
@@ -311,6 +376,33 @@ export function OrderModal({
         setSaving(false)
         return
       }
+
+      // Fase B (PRD 12): toda orden con dirección debe resolver un stop antes
+      // de insertarse — si no, queda huérfana y "Programar" la rechaza después.
+      let stopId: string | null = null
+      let matchQuality: 'high' | 'medium' | 'low' | 'none' = 'none'
+      if (trimmedAddress) {
+        try {
+          const resolved = await resolveStopForNewOrder({
+            orgId: currentOrg.id,
+            address: trimmedAddress,
+            customerName: form.customer_name.trim(),
+            customerId: resolvedCustomerId,
+            customerPhone: trimmedPhone,
+            customerEmail: trimmedEmail,
+            lat: payload.lat,
+            lng: payload.lng,
+            userId: user?.id ?? null,
+          })
+          stopId = resolved.stopId
+          matchQuality = resolved.matchQuality
+        } catch (e) {
+          setError(e instanceof Error ? e.message : 'No se pudo resolver la parada del pedido')
+          setSaving(false)
+          return
+        }
+      }
+
       const { error: insErr } = await supabase.from('orders').insert({
         ...payload,
         order_number: numData as string,
@@ -318,6 +410,8 @@ export function OrderModal({
         status: 'pending',
         created_by: user?.id ?? null,
         customer_id: resolvedCustomerId,
+        stop_id: stopId,
+        match_quality: matchQuality,
       })
       if (insErr) {
         setError(insErr.message)
