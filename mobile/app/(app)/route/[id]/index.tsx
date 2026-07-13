@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons'
 import * as Notifications from 'expo-notifications'
 import { supabase } from '@/lib/supabase'
 import { isTrackingActive, startTracking, stopTracking } from '@/lib/location'
+import { resolveDepotForVehicle } from '@/lib/depot'
 import { useAuth } from '@/contexts/AuthContext'
 import type { PlanStop, Stop, Route, Plan, StopStatus } from '@/types/database'
 import { colors, spacing, radius } from '@/theme'
@@ -81,37 +82,21 @@ export default function RouteDetailScreen() {
     load().finally(() => setLoading(false))
   }, [load])
 
-  // Fetch org depot so the map mirrors the web: depot as start/end of the
-  // route line plus a distinct house-icon marker.
+  // Fetch the route's vehicle depot so the map mirrors the web: depot as
+  // start/end of the route line plus a distinct house-icon marker.
   useEffect(() => {
-    if (!driver?.org_id) {
+    if (!route?.vehicle_id) {
       setDepot(null)
       return
     }
     let cancelled = false
-    supabase
-      .from('organizations')
-      .select('default_depot_lat, default_depot_lng, default_depot_address')
-      .eq('id', driver.org_id)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (cancelled || !data) return
-        const lat = data.default_depot_lat as number | null
-        const lng = data.default_depot_lng as number | null
-        if (typeof lat === 'number' && typeof lng === 'number') {
-          setDepot({
-            lat,
-            lng,
-            address: (data.default_depot_address as string | null) ?? null,
-          })
-        } else {
-          setDepot(null)
-        }
-      })
+    resolveDepotForVehicle(route.vehicle_id).then((resolved) => {
+      if (!cancelled) setDepot(resolved)
+    })
     return () => {
       cancelled = true
     }
-  }, [driver?.org_id])
+  }, [route?.vehicle_id])
 
   // Reflect actual tracking state on mount — if the app was backgrounded and
   // the OS kept the location task alive, we want the badge to show up

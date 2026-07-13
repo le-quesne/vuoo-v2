@@ -360,23 +360,12 @@ async function main() {
   if (orgExisting) {
     orgId = orgExisting.id;
     console.log(`[apple-review] org existe: ${orgId}`);
-    await db
-      .from('organizations')
-      .update({
-        default_depot_lat: DEPOT.lat,
-        default_depot_lng: DEPOT.lng,
-        default_depot_address: DEPOT.address,
-      })
-      .eq('id', orgId);
   } else {
     const { data: orgNew, error: orgErr } = await db
       .from('organizations')
       .insert({
         name: 'Vuoo Demo (Apple Review)',
         slug: ORG_SLUG,
-        default_depot_lat: DEPOT.lat,
-        default_depot_lng: DEPOT.lng,
-        default_depot_address: DEPOT.address,
       })
       .select('id')
       .single();
@@ -384,6 +373,22 @@ async function main() {
     orgId = orgNew.id;
     console.log(`[apple-review] org creada: ${orgId}`);
   }
+
+  // Depot principal (PRD 25 multi-depot) — idempotente vía unique(org_id, name).
+  const { error: depotErr } = await db
+    .from('depots')
+    .upsert(
+      {
+        org_id: orgId,
+        name: 'Depot principal',
+        address: DEPOT.address,
+        lat: DEPOT.lat,
+        lng: DEPOT.lng,
+        is_default: true,
+      },
+      { onConflict: 'org_id,name' },
+    );
+  if (depotErr) throw new Error(`depot upsert: ${depotErr.message}`);
 
   // 3) Membership
   const { data: memExisting } = await db

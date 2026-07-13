@@ -38,7 +38,6 @@ import { RouteMap, ROUTE_COLORS } from '@/presentation/components/RouteMap'
 import { MapErrorBoundary } from '@/presentation/components/MapErrorBoundary'
 import {
   PODModal,
-  DepotConfigModal,
   EditRouteModal,
   ActivityTimeline,
   PlanDetailSkeleton,
@@ -67,31 +66,10 @@ const UNASSIGNED_ID = 'unassigned'
 
 type OrgDepot = { lat: number; lng: number; address: string | null }
 
-// El depot "de la org" para el badge/mapa/wizard: prioriza el default de la
-// tabla `depots` (sistema multi-depot) y solo cae al campo legacy
-// `organizations.default_depot_*` en orgs que nunca migraron. Sin esto, una
-// org nueva con depots ya configurados seguía mostrando "Depot faltante"
-// porque el badge solo miraba el campo viejo.
 async function resolveOrgDepot(orgId: string): Promise<OrgDepot | null> {
-  const depotsRes = await depotsService.listDepots(orgId)
-  if (depotsRes.success && depotsRes.data.length > 0) {
-    const d = depotsRes.data[0]
-    return { lat: d.lat, lng: d.lng, address: d.address }
-  }
-
-  const { data } = await supabase
-    .from('organizations')
-    .select('default_depot_lat, default_depot_lng, default_depot_address')
-    .eq('id', orgId)
-    .single()
-  if (data && data.default_depot_lat != null && data.default_depot_lng != null) {
-    return {
-      lat: data.default_depot_lat,
-      lng: data.default_depot_lng,
-      address: data.default_depot_address ?? null,
-    }
-  }
-  return null
+  const res = await depotsService.getDefaultDepotForOrg(orgId)
+  if (!res.success || !res.data) return null
+  return { lat: res.data.lat, lng: res.data.lng, address: res.data.address }
 }
 
 export function PlanDetailPage() {
@@ -106,7 +84,6 @@ export function PlanDetailPage() {
   const [showAddStop, setShowAddStop] = useState(false)
   const [showAddVehicle, setShowAddVehicle] = useState(false)
   const [showVroomWizard, setShowVroomWizard] = useState(false)
-  const [showDepotModal, setShowDepotModal] = useState(false)
   const [orgDepot, setOrgDepot] = useState<OrgDepot | null>(null)
   const [fetchedDistancesKm, setFetchedDistancesKm] = useState<Record<string, number>>({})
   const [activeDragId, setActiveDragId] = useState<string | null>(null)
@@ -677,13 +654,13 @@ export function PlanDetailPage() {
                 Actividad
               </button>
               <button
-                onClick={() => setShowDepotModal(true)}
+                onClick={() => navigate('/settings/depots')}
                 className={`flex items-center gap-1 text-[11px] px-2 py-1 rounded border transition-colors ${
                   orgDepot
                     ? 'border-gray-200 text-gray-500 hover:bg-gray-50'
                     : 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
                 }`}
-                title={orgDepot?.address ?? 'Configurar depot (requerido para optimizar)'}
+                title={orgDepot?.address ?? 'Configurar depot en Settings → Depots (requerido para optimizar)'}
               >
                 <Settings size={12} />
                 {orgDepot ? 'Depot' : 'Depot faltante'}
@@ -1022,8 +999,10 @@ export function PlanDetailPage() {
           numStops={[...routes.flatMap((r) => r.planStops), ...unassignedStops].filter(
             (ps) => ps.stop.lat && ps.stop.lng,
           ).length}
-          numVehicles={routes.length}
-          depotAddress={orgDepot?.address ?? null}
+          planVehicles={routes.map((r) => ({
+            vehicleId: r.vehicle_id,
+            depotId: r.vehicle?.depot_id ?? null,
+          }))}
           defaultMode={currentOrg?.default_optimization_mode}
           defaultReturnToDepot={currentOrg?.default_return_to_depot}
           onClose={() => setShowVroomWizard(false)}
@@ -1031,14 +1010,14 @@ export function PlanDetailPage() {
             setShowVroomWizard(false)
             loadPlanData()
           }}
+          onVehiclesAdded={() => loadPlanData()}
           onDepotMissing={() => {
             setShowVroomWizard(false)
-            setShowDepotModal(true)
+            navigate('/settings/depots')
           }}
         />
       )}
 
-      {/* Depot Config Modal */}
       {/* Activity drawer (timeline realtime) */}
       {showActivity && currentOrg && (
         <div className="fixed inset-y-0 right-0 z-30 w-96 bg-white border-l border-gray-200 shadow-xl flex flex-col">
@@ -1065,19 +1044,6 @@ export function PlanDetailPage() {
             />
           </div>
         </div>
-      )}
-
-      {showDepotModal && currentOrg && (
-        <DepotConfigModal
-          orgId={currentOrg.id}
-          countries={currentOrg.operating_countries}
-          onClose={() => setShowDepotModal(false)}
-          onSaved={() => {
-            setShowDepotModal(false)
-            setShowVroomWizard(true)
-            resolveOrgDepot(currentOrg.id).then(setOrgDepot)
-          }}
-        />
       )}
 
       {/* Add Stop Modal */}

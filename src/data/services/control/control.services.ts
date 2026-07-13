@@ -3,6 +3,7 @@ import type { ServiceResult } from '@/data/services/_shared/response';
 import { ok, fail, toErrorMessage } from '@/data/services/_shared/response';
 import type { AlertRow, LiveDashboard, LiveRoute } from '@/domain/entities/liveControl';
 import type { Stop } from '@/data/types/database';
+import { depotsService } from '@/data/services/depots';
 
 export interface PlanStopRow {
   id: string;
@@ -126,22 +127,8 @@ export async function fetchLiveRoutesEta(
 }
 
 export async function fetchOrgDepot(orgId: string): Promise<ServiceResult<OrgDepot | null>> {
-  try {
-    const { data, error } = await supabase
-      .from('organizations')
-      .select('default_depot_lat, default_depot_lng, default_depot_address')
-      .eq('id', orgId)
-      .single();
-    if (error) return fail(error.message);
-    if (!data || data.default_depot_lat == null || data.default_depot_lng == null) {
-      return ok(null);
-    }
-    return ok({
-      lat: data.default_depot_lat,
-      lng: data.default_depot_lng,
-      address: data.default_depot_address ?? null,
-    });
-  } catch (e) {
-    return fail(toErrorMessage(e));
-  }
+  const res = await depotsService.getDefaultDepotForOrg(orgId);
+  if (!res.success) return fail(res.error);
+  if (!res.data) return ok(null);
+  return ok({ lat: res.data.lat, lng: res.data.lng, address: res.data.address });
 }

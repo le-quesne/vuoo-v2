@@ -1,20 +1,28 @@
 import { useEffect, useState } from 'react'
-import { Plus, Search, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Search, Warehouse } from 'lucide-react'
 import { supabase } from '@/application/lib/supabase'
 import { useAuth } from '@/application/hooks/useAuth'
 import type { Vehicle } from '@/data/types/database'
-import { VehicleAvatar, VehicleFormModal } from '@/presentation/features/vehicles/components'
-import { FUEL_TYPE_LABEL } from '@/presentation/features/vehicles'
+import {
+  MoveVehiclesModal,
+  VehicleFormModal,
+  VehicleTable,
+} from '@/presentation/features/vehicles/components'
+import { depotsService, type Depot } from '@/data/services/depots'
 
 export function VehiclesPage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
+  const [depots, setDepots] = useState<Depot[]>([])
   const [showModal, setShowModal] = useState(false)
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null)
   const [search, setSearch] = useState('')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [showMoveModal, setShowMoveModal] = useState(false)
   const { currentOrg } = useAuth()
 
   useEffect(() => {
     loadVehicles()
+    loadDepots()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentOrg?.id])
 
@@ -28,9 +36,42 @@ export function VehiclesPage() {
     if (data) setVehicles(data)
   }
 
+  async function loadDepots() {
+    if (!currentOrg) return setDepots([])
+    const res = await depotsService.listDepots(currentOrg.id)
+    if (res.success) setDepots(res.data)
+  }
+
   async function handleDelete(v: Vehicle) {
     if (!window.confirm(`Eliminar vehiculo ${v.name}?`)) return
     await supabase.from('vehicles').delete().eq('id', v.id)
+    loadVehicles()
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAll(ids: string[]) {
+    setSelectedIds((prev) => {
+      const allSelected = ids.length > 0 && ids.every((id) => prev.has(id))
+      const next = new Set(prev)
+      ids.forEach((id) => (allSelected ? next.delete(id) : next.add(id)))
+      return next
+    })
+  }
+
+  async function handleMoveSelected(depotId: string | null) {
+    const ids = Array.from(selectedIds)
+    if (ids.length === 0) return
+    await supabase.from('vehicles').update({ depot_id: depotId }).in('id', ids)
+    setSelectedIds(new Set())
+    setShowMoveModal(false)
     loadVehicles()
   }
 
@@ -53,6 +94,19 @@ export function VehiclesPage() {
     v.name.toLowerCase().includes(search.toLowerCase())
   )
 
+  // Agrupar por depot para que sea fácil ver en qué centro de distribución
+  // está cada vehículo. `depot_id` null cae en el depot default de la org
+  // (es el que efectivamente usa el optimizador para esos vehículos).
+  const defaultDepot = depots.find((d) => d.is_default)
+  const vehiclesByDepot = new Map<string, Vehicle[]>()
+  for (const v of filtered) {
+    const depotId = v.depot_id ?? defaultDepot?.id
+    if (!depotId) continue
+    const group = vehiclesByDepot.get(depotId) ?? []
+    group.push(v)
+    vehiclesByDepot.set(depotId, group)
+  }
+
   return (
     <div className="flex-1 p-6 overflow-y-auto">
       <div className="flex items-center justify-between mb-4">
@@ -69,6 +123,18 @@ export function VehiclesPage() {
             />
           </div>
           <button
+            onClick={() => selectedIds.size > 0 && setShowMoveModal(true)}
+            disabled={selectedIds.size === 0}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              selectedIds.size > 0
+                ? 'bg-blue-500 text-white hover:bg-blue-600'
+                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+            }`}
+          >
+            <Warehouse size={16} />
+            Mover a depot{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+          </button>
+          <button
             onClick={openCreate}
             className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600"
           >
@@ -78,89 +144,31 @@ export function VehiclesPage() {
         </div>
       </div>
 
-      <div className="text-xs text-gray-400 mb-2">
+      <div className="text-xs text-gray-400 mb-4">
         {filtered.length} vehiculos
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs text-gray-500 bg-gray-50 border-b border-gray-200">
-              <th className="p-3 font-medium w-8"></th>
-              <th className="p-3 font-medium">Nombre</th>
-              <th className="p-3 font-medium">Matrícula</th>
-              <th className="p-3 font-medium">Marca</th>
-              <th className="p-3 font-medium">Modelo</th>
-              <th className="p-3 font-medium">Precio/km ($)</th>
-              <th className="p-3 font-medium">Combustible</th>
-              <th className="p-3 font-medium">Consumo medio</th>
-              <th className="p-3 font-medium">Capacidad (kg)</th>
-              <th className="p-3 font-medium">Fecha creación</th>
-              <th className="p-3 font-medium w-20">Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((v, i) => (
-              <tr
-                key={v.id}
-                onClick={() => openEdit(v)}
-                className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer"
-              >
-                <td className="p-3">
-                  <VehicleAvatar name={v.name} index={i} />
-                </td>
-                <td className="p-3 font-medium">{v.name}</td>
-                <td className="p-3 text-gray-500">{v.license_plate ?? '-'}</td>
-                <td className="p-3 text-gray-500">{v.brand ?? '-'}</td>
-                <td className="p-3 text-gray-500">{v.model ?? '-'}</td>
-                <td className="p-3 text-gray-500">{v.price_per_km ?? '-'}</td>
-                <td className="p-3 text-gray-500">{FUEL_TYPE_LABEL[v.fuel_type]}</td>
-                <td className="p-3 text-gray-500">
-                  {v.avg_consumption ? `${v.avg_consumption}L/100km` : '-'}
-                </td>
-                <td className="p-3 text-gray-500">{v.capacity_weight_kg}kg</td>
-                <td className="p-3 text-gray-500">
-                  {new Date(v.created_at).toLocaleDateString('es-CL', {
-                    day: '2-digit',
-                    month: '2-digit',
-                  })}
-                </td>
-                <td className="p-3">
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        openEdit(v)
-                      }}
-                      className="p-1.5 rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-                      title="Editar"
-                    >
-                      <Pencil size={15} />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleDelete(v)
-                      }}
-                      className="p-1.5 rounded-md text-red-500 hover:bg-red-50 hover:text-red-600"
-                      title="Eliminar"
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {filtered.length === 0 && (
-              <tr>
-                <td colSpan={11} className="p-8 text-center text-gray-400">
-                  No hay vehiculos
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      {filtered.length === 0 ? (
+        <div className="bg-white border border-gray-200 rounded-lg p-8 text-center text-gray-400 text-sm">
+          No hay vehiculos
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {depots.map((d) => (
+            <VehicleTable
+              key={d.id}
+              title={d.name}
+              badge={d.is_default ? 'Default' : undefined}
+              vehicles={vehiclesByDepot.get(d.id) ?? []}
+              selectedIds={selectedIds}
+              onToggleSelect={toggleSelect}
+              onToggleSelectAll={toggleSelectAll}
+              onEdit={openEdit}
+              onDelete={handleDelete}
+            />
+          ))}
+        </div>
+      )}
 
       {showModal && (
         <VehicleFormModal
@@ -170,6 +178,15 @@ export function VehiclesPage() {
             closeModal()
             loadVehicles()
           }}
+        />
+      )}
+
+      {showMoveModal && (
+        <MoveVehiclesModal
+          count={selectedIds.size}
+          depots={depots}
+          onClose={() => setShowMoveModal(false)}
+          onMove={handleMoveSelected}
         />
       )}
     </div>

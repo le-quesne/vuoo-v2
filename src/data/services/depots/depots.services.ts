@@ -3,6 +3,22 @@ import type { ServiceResult } from '@/data/services/_shared/response';
 import { ok, fail, toErrorMessage } from '@/data/services/_shared/response';
 import type { Depot, DepotInsert, DepotUpdate } from './depots.types';
 
+export async function getDefaultDepotForOrg(orgId: string): Promise<ServiceResult<Depot | null>> {
+  try {
+    const { data, error } = await supabase
+      .from('depots')
+      .select('*')
+      .eq('org_id', orgId)
+      .eq('is_default', true)
+      .eq('is_active', true)
+      .maybeSingle();
+    if (error) return fail(error.message);
+    return ok((data ?? null) as Depot | null);
+  } catch (e) {
+    return fail(toErrorMessage(e));
+  }
+}
+
 export async function listDepots(orgId: string): Promise<ServiceResult<Depot[]>> {
   try {
     const { data, error } = await supabase

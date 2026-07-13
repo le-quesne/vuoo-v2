@@ -21,6 +21,7 @@ import Animated, {
 } from 'react-native-reanimated'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { resolveDepotForVehicle } from '@/lib/depot'
 import { colors, spacing, radius } from '@/theme'
 
 interface DoneSearchParams {
@@ -81,29 +82,22 @@ export default function RouteDoneScreen() {
         : ''
 
   useEffect(() => {
-    if (!driver?.org_id) return
+    if (!routeId) return
     let cancelled = false
     supabase
-      .from('organizations')
-      .select('default_depot_lat, default_depot_lng, default_depot_address')
-      .eq('id', driver.org_id)
+      .from('routes')
+      .select('vehicle_id')
+      .eq('id', routeId)
       .maybeSingle()
-      .then(({ data }) => {
-        if (cancelled || !data) return
-        const lat = data.default_depot_lat as number | null
-        const lng = data.default_depot_lng as number | null
-        if (typeof lat === 'number' && typeof lng === 'number') {
-          setDepot({
-            lat,
-            lng,
-            address: (data.default_depot_address as string | null) ?? null,
-          })
-        }
+      .then(async ({ data }) => {
+        if (cancelled || !data?.vehicle_id) return
+        const resolved = await resolveDepotForVehicle(data.vehicle_id)
+        if (!cancelled && resolved) setDepot(resolved)
       })
     return () => {
       cancelled = true
     }
-  }, [driver?.org_id])
+  }, [routeId])
 
   // Animacion: el accent color crece desde el centro (radial fill) y llena
   // toda la pantalla. Despues entra el icono con un spring grande, y al final
