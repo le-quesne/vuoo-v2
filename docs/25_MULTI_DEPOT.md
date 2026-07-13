@@ -3,9 +3,19 @@
 **Pri**: P1
 **Cruza con**: PRD 01 (Flota), PRD 09 (Pedidos), PRD 19 (Vroom Avanzada),
 PRD 20 (Analytics), PRD 22 §A (Territorios)
-**Estado**: Hoy el sistema asume **un único depot implícito** por
-organización. Sin migración explícita no escala a clientes con > 1 hub
-físico (que son la mayoría del mid-market).
+**Estado**: **v1 mínimo implementado y migración completa cerrada.** La
+tabla `depots` (multi-depot, `is_default`/`is_active`) es la única fuente de
+verdad para el depot de una org — `organizations.default_depot_lat/lng/address`
+(el modelo de un-solo-depot-implícito descrito abajo) ya no existe, se
+eliminó en `supabase/migrations/20260713150000_backfill_depot_id_drop_legacy.sql`
+tras migrar backend (`vroom.ts`), mobile y frontend a leer exclusivamente
+`vehicles.depot_id` → `depots` (o el override legacy `vehicles.depot_lat/lng`).
+UI: pestaña "Depots" en Settings (`DepotsSettingsPage.tsx`) — única UI de
+depot, ya no coexiste con la card vieja de la pestaña "General".
+El resto de este documento (§B RLS por depot, §C DepotSwitcher, §D Vroom
+multi-depot avanzado, §E transfers, §F analytics, §G onboarding) sigue
+siendo diseño a futuro, no implementado — el contexto/objetivos/scope de
+abajo describen la visión completa del PRD, no el estado actual.
 
 ---
 

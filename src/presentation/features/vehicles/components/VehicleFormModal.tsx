@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '@/application/lib/supabase';
 import { useAuth } from '@/application/hooks/useAuth';
+import { depotsService, type Depot } from '@/data/services/depots';
 import type { FuelType, Vehicle } from '@/data/types/database';
 import { FUEL_TYPE_LABEL } from '../utils/constants';
 
@@ -55,9 +56,18 @@ export function VehicleFormModal({
       vehicle?.avg_consumption != null ? String(vehicle.avg_consumption) : '',
     time_window_start: vehicle?.time_window_start ?? '',
     time_window_end: vehicle?.time_window_end ?? '',
+    depot_id: vehicle?.depot_id ?? '',
   })
 
   const { user, currentOrg } = useAuth()
+  const [depots, setDepots] = useState<Depot[]>([])
+
+  useEffect(() => {
+    if (!currentOrg) return
+    depotsService.listDepots(currentOrg.id).then((res) => {
+      if (res.success) setDepots(res.data)
+    })
+  }, [currentOrg])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -74,6 +84,7 @@ export function VehicleFormModal({
       avg_consumption: form.avg_consumption ? Number(form.avg_consumption) : null,
       time_window_start: form.time_window_start || null,
       time_window_end: form.time_window_end || null,
+      depot_id: form.depot_id || null,
     }
 
     if (isEdit && vehicle) {
@@ -190,6 +201,29 @@ export function VehicleFormModal({
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
               />
             </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">
+              Depot
+            </label>
+            <select
+              value={form.depot_id}
+              onChange={(e) => setForm({ ...form, depot_id: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+            >
+              <option value="">Depot default de la org</option>
+              {depots.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                  {d.is_default ? ' (default)' : ''}
+                </option>
+              ))}
+            </select>
+            {depots.length === 0 && (
+              <p className="text-xs text-gray-400 mt-1">
+                Todavía no hay depots configurados en Settings → Depots.
+              </p>
+            )}
           </div>
         </div>
 

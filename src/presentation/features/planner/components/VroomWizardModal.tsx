@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   X,
   Zap,
@@ -17,6 +17,14 @@ import { useAuth } from '@/application/hooks/useAuth'
 import { optimize as optimizeVroom, OPTIMIZATION_MODES } from '@/data/services/vroom'
 import type { VroomMode, VroomResponse } from '@/data/services/vroom'
 import { depotsService, type Depot } from '@/data/services/depots'
+import { vehiclesService } from '@/data/services/vehicles'
+import type { Vehicle } from '@/data/types/database'
+
+/** Vehículo ya asignado al plan (una `route`), con el depot que resuelve. */
+export interface PlanVehicleInfo {
+  vehicleId: string
+  depotId: string | null
+}
 
 export type { VroomResponse }
 
@@ -40,11 +48,11 @@ function formatDuration(seconds: number) {
 export function VroomWizardModal({
   planId,
   numStops,
-  numVehicles,
-  depotAddress,
+  planVehicles,
   onClose,
   onApplied,
   onDepotMissing,
+  onVehiclesAdded,
   initialPreview,
   initialMode,
   defaultMode = 'efficiency',
@@ -52,11 +60,13 @@ export function VroomWizardModal({
 }: {
   planId: string
   numStops: number
-  numVehicles: number
-  depotAddress: string | null
+  /** Vehículos (routes) ya asignados al plan, con su depot resuelto. */
+  planVehicles: PlanVehicleInfo[]
   onClose: () => void
   onApplied: () => void
   onDepotMissing: () => void
+  /** Llamado cuando el wizard agrega vehículos al plan automáticamente (multi-depot). Debe refrescar el plan sin cerrar el modal. */
+  onVehiclesAdded: () => void
   /**
    * Preview precalculado (ej. desde `useOneClickOptimize`). Si viene,
    * el wizard abre directamente en el step 'result' y omite config/preview.
@@ -85,9 +95,16 @@ export function VroomWizardModal({
   const [weightDistance, setWeightDistance] = useState(30)
   const [weightHistory, setWeightHistory] = useState(20)
 
-  const { currentOrg } = useAuth()
+  const { user, currentOrg } = useAuth()
   const [depots, setDepots] = useState<Depot[]>([])
   const [depotId, setDepotId] = useState<string | undefined>(undefined)
+  const [orgVehicles, setOrgVehicles] = useState<Vehicle[]>([])
+  // Multi-depot (PRD 25 §D): centros de distribución a incluir en esta
+  // corrida. Con 0 o 1 depot configurado no hay nada que elegir — se sigue
+  // usando todos los vehículos del plan como siempre. `null` = "el usuario
+  // todavía no tocó nada", usa el default derivado; una vez que toca algo,
+  // queda fijo (no se resetea cuando `onVehiclesAdded` refresca `planVehicles`).
+  const [checkedDepotIdsOverride, setCheckedDepotIdsOverride] = useState<Set<string> | null>(null)
 
   useEffect(() => {
     if (!currentOrg) return
@@ -99,16 +116,125 @@ export function VroomWizardModal({
       const def = res.data.find((d) => d.is_default)
       if (def) setDepotId(def.id)
     })
+    vehiclesService.listVehicles(currentOrg.id).then((res) => {
+      if (res.success) setOrgVehicles(res.data)
+    })
   }, [currentOrg])
+
+  const defaultDepotId = depots.find((d) => d.is_default)?.id
+  function resolveDepotId(depotId: string | null | undefined): string | undefined {
+    return depotId ?? defaultDepotId
+  }
+
+  // Default derivado: los depots que ya tienen vehículos en el plan, o si
+  // ninguno tiene, el depot default de la org — mismo criterio que antes,
+  // pero recalculado en cada render en vez de "snapshoteado" una vez.
+  const defaultCheckedDepotIds = useMemo(() => {
+    if (depots.length === 0) return new Set<string>()
+    const depotsWithPlanVehicles = new Set(
+      planVehicles
+        .map((pv) => resolveDepotId(pv.depotId))
+        .filter((id): id is string => !!id),
+    )
+    if (depotsWithPlanVehicles.size > 0) return depotsWithPlanVehicles
+    return defaultDepotId ? new Set([defaultDepotId]) : new Set<string>()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [depots, planVehicles, defaultDepotId])
+
+  const checkedDepotIds = checkedDepotIdsOverride ?? defaultCheckedDepotIds
+
+  function toggleDepot(id: string) {
+    setCheckedDepotIdsOverride((prev) => {
+      const base = prev ?? defaultCheckedDepotIds
+      const next = new Set(base)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  // Vehículos que participarán en esta corrida: los que ya están en el plan
+  // + los de la org que todavía no están, ambos filtrados por los depots
+  // tildados. Con ≤1 depot configurado no se filtra nada (comportamiento de
+  // siempre).
+  const plannedVehicles = useMemo(() => {
+    if (depots.length <= 1 || checkedDepotIds.size === 0) {
+      return { existing: planVehicles, toAdd: [] as Vehicle[] }
+    }
+    const planVehicleIdSet = new Set(planVehicles.map((pv) => pv.vehicleId))
+    const existing = planVehicles.filter((pv) => {
+      const d = resolveDepotId(pv.depotId)
+      return d ? checkedDepotIds.has(d) : false
+    })
+    const toAdd = orgVehicles.filter((v) => {
+      if (planVehicleIdSet.has(v.id)) return false
+      const d = resolveDepotId(v.depot_id)
+      return d ? checkedDepotIds.has(d) : false
+    })
+    return { existing, toAdd }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [depots, checkedDepotIds, planVehicles, orgVehicles])
+
+  const previewVehicleCount = plannedVehicles.existing.length + plannedVehicles.toAdd.length
+
+  const depotSummaryText = useMemo(() => {
+    if (depots.length <= 1) return depots[0]?.address ?? null
+    const active = depots.filter((d) => checkedDepotIds.has(d.id))
+    if (active.length === 0) return null
+    if (active.length === 1) return active[0].name
+    return `${active.length} centros de distribución (${active.map((d) => d.name).join(', ')})`
+  }, [depots, checkedDepotIds])
 
   async function handleOptimize() {
     setStep('running')
     setError(null)
 
+    let effectivePlanVehicles = planVehicles
+
+    if (plannedVehicles.toAdd.length > 0) {
+      if (!user || !currentOrg) {
+        setError('No se pudo agregar vehículos: sesión inválida.')
+        setStep('config')
+        return
+      }
+      const { error: insertErr } = await supabase.from('routes').insert(
+        plannedVehicles.toAdd.map((v) => ({
+          plan_id: planId,
+          vehicle_id: v.id,
+          driver_id: null,
+          status: 'not_started' as const,
+          user_id: user.id,
+          org_id: currentOrg.id,
+        })),
+      )
+      if (insertErr) {
+        setError(insertErr.message)
+        setStep('config')
+        return
+      }
+      effectivePlanVehicles = [
+        ...planVehicles,
+        ...plannedVehicles.toAdd.map((v) => ({ vehicleId: v.id, depotId: v.depot_id })),
+      ]
+      onVehiclesAdded()
+    }
+
+    let vehicleIds: string[] | undefined
+    if (depots.length > 1 && checkedDepotIds.size > 0) {
+      const filtered = effectivePlanVehicles
+        .filter((pv) => {
+          const d = resolveDepotId(pv.depotId)
+          return d ? checkedDepotIds.has(d) : false
+        })
+        .map((pv) => pv.vehicleId)
+      if (filtered.length < effectivePlanVehicles.length) vehicleIds = filtered
+    }
+
     const res = await optimizeVroom({
       plan_id: planId,
       mode,
       return_to_depot: returnToDepot,
+      vehicle_ids: vehicleIds,
       depot_id: depotId,
       weights: weightsEnabled
         ? { time: weightTime / 100, distance: weightDistance / 100, history: weightHistory / 100 }
@@ -208,41 +334,88 @@ export function VroomWizardModal({
               <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 space-y-1.5 text-sm text-gray-800">
                 <p>
                   Asignando <strong>{numStops} paradas</strong> a{' '}
-                  <strong>{numVehicles} vehículo{numVehicles === 1 ? '' : 's'}</strong>
-                  {depotAddress ? (
-                    <>, desde <strong>{depotAddress}</strong></>
+                  <strong>
+                    {previewVehicleCount} vehículo{previewVehicleCount === 1 ? '' : 's'}
+                  </strong>
+                  {depotSummaryText ? (
+                    <>, desde <strong>{depotSummaryText}</strong></>
                   ) : null}.
                 </p>
+                {plannedVehicles.toAdd.length > 0 && (
+                  <p className="text-xs text-blue-700">
+                    Vuoo va a agregar {plannedVehicles.toAdd.length} vehículo
+                    {plannedVehicles.toAdd.length === 1 ? '' : 's'} al plan desde el/los centro(s)
+                    recién seleccionados.
+                  </p>
+                )}
                 <p>
                   Modo: <strong>{weightsEnabled ? 'Pesos personalizados (beta)' : modeLabel(mode)}</strong>{' '}
                   · {returnToDepot ? 'Regresa al depot' : 'Termina en última parada'}.
                 </p>
               </div>
 
-              {/* Depot de salida — solo si la org tiene más de uno configurado
-                  (Settings → Depots). Con 0 o 1 depot, no hay nada que elegir:
-                  se sigue usando vehicles.depot_lat/lng u organizations.default_depot_*
-                  como siempre. */}
+              {/* Multi-depot (PRD 25 §D) — solo si la org tiene más de un
+                  depot configurado (Settings → Depots). Con 0 o 1 depot no
+                  hay nada que elegir: se sigue usando todos los vehículos
+                  del plan como siempre. */}
               {depots.length > 1 && (
                 <div>
                   <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 mb-2">
                     <Warehouse size={13} className="text-gray-400" />
-                    Depot de salida
+                    Centros de distribución a usar
                   </label>
-                  <select
-                    value={depotId ?? ''}
-                    onChange={(e) => setDepotId(e.target.value || undefined)}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
-                  >
-                    {depots.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name}
-                        {d.is_default ? ' (default)' : ''}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="space-y-1.5">
+                    {depots.map((d) => {
+                      const inPlan = plannedVehicles.existing.filter(
+                        (pv) => resolveDepotId(pv.depotId) === d.id,
+                      ).length
+                      const totalAvailable =
+                        planVehicles.filter((pv) => resolveDepotId(pv.depotId) === d.id).length +
+                        orgVehicles.filter(
+                          (v) =>
+                            !planVehicles.some((pv) => pv.vehicleId === v.id) &&
+                            resolveDepotId(v.depot_id) === d.id,
+                        ).length
+                      const checked = checkedDepotIds.has(d.id)
+                      const empty = totalAvailable === 0
+                      return (
+                        <label
+                          key={d.id}
+                          className={`flex items-center justify-between gap-2 px-3 py-2 border rounded-lg text-sm transition-colors ${
+                            empty
+                              ? 'opacity-50 cursor-not-allowed bg-gray-50 border-gray-200'
+                              : `cursor-pointer hover:border-gray-300 ${
+                                  checked ? 'border-blue-400 bg-blue-50/40' : 'border-gray-200 bg-white'
+                                }`
+                          }`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={empty}
+                              onChange={() => toggleDepot(d.id)}
+                              className="accent-blue-600"
+                            />
+                            <span className="font-medium text-gray-800">
+                              {d.name}
+                              {d.is_default ? ' (default)' : ''}
+                            </span>
+                          </span>
+                          <span className="text-xs text-gray-400">
+                            {empty
+                              ? 'sin vehículos'
+                              : inPlan > 0
+                              ? `${inPlan} vehículo${inPlan === 1 ? '' : 's'} en el plan`
+                              : `se agregarán ${totalAvailable} vehículo${totalAvailable === 1 ? '' : 's'}`}
+                          </span>
+                        </label>
+                      )
+                    })}
+                  </div>
                   <p className="text-xs text-gray-400 mt-1">
-                    Aplica a los vehículos sin un depot propio asignado en Settings → Vehículos.
+                    Si un centro tildado no tiene vehículos en este plan todavía, Vuoo agrega
+                    automáticamente sus vehículos activos al optimizar.
                   </p>
                 </div>
               )}
@@ -265,6 +438,33 @@ export function VroomWizardModal({
 
                 {advancedOpen && (
                   <div className="border-t border-gray-100 p-4 space-y-4 bg-gray-50">
+                    {/* Depot de respaldo — solo aplica a vehículos sin depot
+                        propio en Settings → Vehículos (no restringe el resto). */}
+                    {depots.length > 1 && (
+                      <div>
+                        <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 mb-2">
+                          <Warehouse size={13} className="text-gray-400" />
+                          Depot de respaldo
+                        </label>
+                        <select
+                          value={depotId ?? ''}
+                          onChange={(e) => setDepotId(e.target.value || undefined)}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        >
+                          {depots.map((d) => (
+                            <option key={d.id} value={d.id}>
+                              {d.name}
+                              {d.is_default ? ' (default)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Aplica solo a vehículos sin un depot propio asignado en Settings →
+                          Vehículos. No afecta a los centros tildados arriba.
+                        </p>
+                      </div>
+                    )}
+
                     {/* Pesos personalizados (beta) — reemplaza el modo si está activo */}
                     <div className="border border-purple-200 bg-purple-50/60 rounded-lg p-3">
                       <button

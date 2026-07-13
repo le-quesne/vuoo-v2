@@ -416,6 +416,13 @@ function rebalanceByStops(
 ### Estado actual
 Todos los vehiculos salen del mismo punto (depot unico, no configurable).
 
+> **Nota (post-implementación):** este diseño original de depot único a
+> nivel `organizations` fue reemplazado por la tabla `depots` (multi-depot),
+> migrada completamente — ver `docs/25_MULTI_DEPOT.md` y la migración
+> `supabase/migrations/20260713150000_backfill_depot_id_drop_legacy.sql`.
+> Las secciones SQL de abajo describen la propuesta original, no el schema
+> actual.
+
 ### Mejora
 - Agregar campo `start_location` (lat/lng) en `drivers` o `vehicles`
 - Si no tiene, usar un depot default de la org

@@ -261,10 +261,10 @@ vroomRoutes.post('/optimize', async (c) => {
     }
   }
 
-  // 2. Fetch plan's org default depot (fallback).
+  // 2. Fetch plan's org_id.
   const { data: planRow, error: planErr } = await supabase
     .from('plans')
-    .select(`org_id, org:organizations (default_depot_lat, default_depot_lng)`)
+    .select(`org_id`)
     .eq('id', planId)
     .maybeSingle();
 
@@ -273,9 +273,6 @@ vroomRoutes.post('/optimize', async (c) => {
   }
 
   const planOrgId = (planRow?.org_id as string | null) ?? null;
-  const planOrg = (planRow?.org as unknown as Record<string, unknown> | null) ?? null;
-  const orgDefaultDepotLng = (planOrg?.default_depot_lng as number | null) ?? null;
-  const orgDefaultDepotLat = (planOrg?.default_depot_lat as number | null) ?? null;
 
   // 2b. PRD 25 (multi-depot): depot elegido en el wizard para esta corrida.
   // Se valida implícitamente por RLS — si depotIdOverride no pertenece a la
@@ -419,21 +416,20 @@ vroomRoutes.post('/optimize', async (c) => {
     const route = routes[idx];
     const vroomId = idx + 1;
     const v = route.vehicle as unknown as Record<string, unknown> | null;
-    // Precedencia de depot (PRD 25): depot propio del vehículo (vehicles.depot_id,
-    // vía FK a `depots`) > override legacy ad-hoc (vehicles.depot_lat/lng) >
-    // depot elegido en el wizard para esta corrida > default de la org.
+    // Precedencia de depot (PRD 25, migración completa): depot propio del
+    // vehículo (vehicles.depot_id, vía FK a `depots`) > override legacy
+    // ad-hoc (vehicles.depot_lat/lng) > depot elegido en el wizard para esta
+    // corrida. Ya no hay fallback a nivel de organización.
     const vDepot = v?.depot as { lat: number; lng: number } | null | undefined;
 
     const depotLng =
       (vDepot?.lng as number | undefined) ??
       (v?.depot_lng as number | null) ??
-      selectedDepotLng ??
-      orgDefaultDepotLng;
+      selectedDepotLng;
     const depotLat =
       (vDepot?.lat as number | undefined) ??
       (v?.depot_lat as number | null) ??
-      selectedDepotLat ??
-      orgDefaultDepotLat;
+      selectedDepotLat;
 
     if (depotLng === null || depotLat === null) {
       vehiclesMissingDepot.push(route.vehicle_id as string);
@@ -567,7 +563,7 @@ vroomRoutes.post('/optimize', async (c) => {
       {
         error: 'No depot configured',
         message:
-          'Configura un depot default en la organización (Settings) o por vehículo antes de optimizar.',
+          'Configura un depot en Settings → Depots, o asigná uno al vehículo, antes de optimizar.',
         vehicles_missing_depot: vehiclesMissingDepot,
       },
       400,

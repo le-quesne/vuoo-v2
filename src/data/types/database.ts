@@ -31,9 +31,6 @@ export interface Organization {
   name: string
   slug: string
   created_at: string
-  default_depot_lat: number | null
-  default_depot_lng: number | null
-  default_depot_address: string | null
   is_demo: boolean
   default_optimization_mode: OptimizationMode
   default_return_to_depot: boolean
@@ -65,6 +62,7 @@ export interface Vehicle {
   depot_lat: number | null
   depot_lng: number | null
   depot_address: string | null
+  depot_id: string | null
   created_at: string
   user_id: string
   org_id: string
