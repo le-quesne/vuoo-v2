@@ -136,7 +136,13 @@ export function PlanDetailPage() {
 
   useEffect(() => {
     if (!currentOrg) return
-    resolveOrgDepot(currentOrg.id).then(setOrgDepot)
+    let cancelled = false
+    resolveOrgDepot(currentOrg.id).then((depot) => {
+      if (!cancelled) setOrgDepot(depot)
+    })
+    return () => {
+      cancelled = true
+    }
   }, [currentOrg])
 
   const routeDistanceKey = useMemo(() =>
