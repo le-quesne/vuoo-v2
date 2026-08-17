@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { createClient } from '@supabase/supabase-js';
 import { fetchOsrmTable } from '../lib/osrm.js';
+import { ensureRoutingAwake } from '../lib/routingWake.js';
 
 export const vroomRoutes = new Hono();
 
@@ -206,6 +207,14 @@ vroomRoutes.post('/optimize', async (c) => {
       500,
     );
   }
+
+  // OSRM y Vroom duermen cuando nadie optimiza (app sleeping en Railway).
+  // Arrancamos el despertar acá, sin await, para que el contenedor levante en
+  // paralelo con las queries a Supabase de más abajo; se espera recién antes
+  // de usarlos. El catch vacío solo evita un unhandled rejection si falla
+  // antes de que lleguemos al await — el error se reporta ahí.
+  const routingAwake = ensureRoutingAwake();
+  routingAwake.catch(() => {});
 
   // Cliente con JWT del caller → RLS aplica.
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -658,6 +667,25 @@ vroomRoutes.post('/optimize', async (c) => {
       return { ok: false, status: 422, body: data };
     }
     return { ok: true, data };
+  }
+
+  // Punto único de espera del arranque en frío: cubre las dos rutas que
+  // siguen, porque ambas terminan pegándole a OSRM — la matriz ponderada
+  // directamente vía `fetchOsrmTable`, y `callVroom` a través del OSRM_HOST
+  // que Vroom tiene configurado.
+  try {
+    await routingAwake;
+  } catch (e) {
+    return c.json(
+      {
+        error: 'routing_unavailable',
+        message:
+          e instanceof Error
+            ? e.message
+            : 'El servicio de ruteo no está disponible. Intenta de nuevo en un minuto.',
+      },
+      503,
+    );
   }
 
   // PRD 26 Fase 2: matriz de costo ponderada. Solo se activa si `weights`
